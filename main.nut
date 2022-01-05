@@ -5,6 +5,7 @@ require("pathfinder.nut");
 require("roadpathfinder.nut");
 require("place.nut");
 require("station.nut");
+require("route.nut");
 require("trainroute.nut");
 require("railbuilder.nut");
 require("road.nut");
@@ -252,113 +253,7 @@ class HogeAI extends AIController {
 		}
 	}
 
-	function ScanRoutes() {
-		HgLog.Info("###### Scan routes");
-		local limitDate = AIDate.GetCurrentDate() + 600;
-		
-		local aiTestMode = AITestMode();
-		local routeRands = []
-		foreach(route in TrainRoute.instances) {
-			routeRands.push([route, AIBase.RandRange(1000)]);
-		}
-		routeRands.sort(function(a,b) {
-			return a[1] - b[1];
-		});
-		
-		foreach(routeRand in routeRands) {
-			local route = routeRand[0];
-			if(route.transferRoute != null) {
-				continue;
-			}
-			AIRail.SetCurrentRailType(route.GetRailType());
-			route.isBuilding = true;
-
-
-			if(route.parentRoute == null) {
-				if(route.additionalRoute == null ) {
-					SearchAndBuildAdditionalSrc(route);
-				}
-				if(SearchAndBuildAdditionalDest(route) != null && stockpiled && route.destHgStation.place != null) {
-					//TreatStockpile(route.destHgStation.place, route.cargo);
-				}
-			}
-			CheckBuildReturnRoute(route);
-			route.isBuilding = false;
-			DoInterval();
-			
-			if(limitDate > AIDate.GetCurrentDate()) {
-				break;
-			}
-		}
-	}
 	
-	function CanUseTownBus(townCargo) {
-		local townBus = TownBus.GetByTown(townCargo.town);
-		if(townBus == null) {
-			return true;
-		} else {
-			return townBus.IsNotUsedTransfer();
-		}
-	}
- 
-	function GetRouteCandidatesGen() {
-		local pathFindCostBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 400000;
-		local considerSlope = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
-		local maxDistance = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000 ? 200 : 200;
-		local roiBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
-		foreach(i, src in GetMaxCargoPlaces()) {
-			src.production = Place.AdjustProduction(src.place, src.production);
-			local destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
-/*			local destPlaceScores;
-			if(src.bestDistance != 0) {
-				destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
-			} else {
-				destPlaceScores = Place.SearchAcceptingPlaces(src.cargo, src.place.GetLocation());
-			}*/
-			foreach(e in destPlaceScores) {
-				if(e.distance > maxDistance) {
-					continue;
-				}
-				local route = clone src;
-				local distanceType = route.distanceTypes[min(9,e.distance/20)];
-				//route.score *= AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 0/*500000*/ ? 1 : distanceType.roi;
-				if(distanceType==null) {
-					continue;
-				}
-				route.vehicleType <- distanceType.vehicleType;
-				
-				if(route.vehicleType == AIVehicle.VT_RAIL && route.cargo != HogeAI.GetPassengerCargo() && route.place.IsIncreasableProcessingOrRaw() == false) {
-					continue;
-				}
-				route.distance <- e.distance;
-				route.destPlace <- e.place;
-				if(route.cargo != HogeAI.GetPassengerCargo()) {
-					if(route.place instanceof TownCargo && !CanUseTownBus(route.place)) {
-						continue;
-					}
-					if(route.destPlace instanceof TownCargo && !CanUseTownBus(route.destPlace)) {
-						continue;
-					}
-				}
-				
-				route.score = (roiBase ? distanceType.roi : distanceType.income) * route.production; //(route.vehicleType==AIVehicle.VT_ROAD ? min(50,src.production) : src.production);
-				if (considerSlope) {
-					route.score = route.score * 3 / (3 + max( AITile.GetMaxHeight(route.destPlace.GetLocation()) - AITile.GetMaxHeight(route.place.GetLocation()) , 0 ));
-				}
-				if(IsBidirectionalCargo(route.cargo) && !route.destPlace.GetProducing().IsTreatCargo(route.cargo)) {
-					route.score /= 2;
-					//HgLog.Warning("**********"+route.destPlace.GetName()+" "+route.score+" "+e.score+" "+src.score);
-				} else {
-					//HgLog.Info("**********"+route.destPlace.GetName()+" "+route.score+" "+e.score+" "+src.score);
-				}
-				
-				yield route;
-			}
-			DoInterval();
-		}
-		return null;
-	}
- 
 	function ScanPlaces() {
 		HgLog.Info("###### Scan places");
 		AIController.Sleep(1);
@@ -409,9 +304,112 @@ class HogeAI extends AIController {
 		}
 	}
 	
+	function ScanRoutes() {
+		HgLog.Info("###### Scan routes");
+		local limitDate = AIDate.GetCurrentDate() + 600;
+		
+		local aiTestMode = AITestMode();
+		local routeRands = []
+		foreach(route in TrainRoute.instances) {
+			routeRands.push([route, AIBase.RandRange(1000)]);
+		}
+		routeRands.sort(function(a,b) {
+			return a[1] - b[1];
+		});
+		
+		foreach(routeRand in routeRands) {
+			local route = routeRand[0];
+			if(route.transferRoute != null) {
+				continue;
+			}
+			AIRail.SetCurrentRailType(route.GetRailType());
+			route.isBuilding = true;
+
+
+			if(route.parentRoute == null) {
+				if(route.additionalRoute == null ) {
+					SearchAndBuildAdditionalSrc(route);
+				}
+				if(SearchAndBuildAdditionalDest(route) != null && stockpiled && route.destHgStation.place != null) {
+					//TreatStockpile(route.destHgStation.place, route.cargo);
+				}
+			}
+			CheckBuildReturnRoute(route);
+			route.isBuilding = false;
+			DoInterval();
+			
+			if(limitDate > AIDate.GetCurrentDate()) {
+				break;
+			}
+		}
+	}
+	function GetRouteCandidatesGen() {
+		local pathFindCostBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 400000;
+		local considerSlope = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
+		local maxDistance = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000 ? 200 : 200;
+		local roiBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
+		foreach(i, src in GetMaxCargoPlaces()) {
+			src.production = Place.AdjustProduction(src.place, src.production);
+			local destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
+/*			local destPlaceScores;
+			if(src.bestDistance != 0) {
+				destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
+			} else {
+				destPlaceScores = Place.SearchAcceptingPlaces(src.cargo, src.place.GetLocation());
+			}*/
+			foreach(e in destPlaceScores) {
+				if(e.distance > maxDistance) {
+					continue;
+				}
+				local route = clone src;
+				local distanceType = route.distanceTypes[min(9,e.distance/20)];
+				//route.score *= AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 0/*500000*/ ? 1 : distanceType.roi;
+				if(distanceType==null) {
+					continue;
+				}
+				route.vehicleType <- distanceType.vehicleType;
+				
+				if(route.vehicleType == AIVehicle.VT_RAIL && route.cargo != HogeAI.GetPassengerCargo() && route.place.IsIncreasableProcessingOrRaw() == false) {
+					continue;
+				}
+				route.distance <- e.distance;
+				route.destPlace <- e.place;
+				if(route.cargo == HogeAI.GetPassengerCargo()) {
+					if(route.place instanceof TownCargo && !CanUseTownBus(route.place)) {
+						continue;
+					}
+					if(route.destPlace instanceof TownCargo && !CanUseTownBus(route.destPlace)) {
+						continue;
+					}
+				}
+				if(IsBidirectionalCargo(route.cargo)) {
+					route.production += route.destPlace.GetProducing().GetLastMonthProduction(route.cargo);
+					route.production /= 2;
+				}
+				route.score = (roiBase ? distanceType.roi : distanceType.income) * route.production; //(route.vehicleType==AIVehicle.VT_ROAD ? min(50,src.production) : src.production);
+				if (considerSlope) {
+					route.score = route.score * 3 / (3 + max( AITile.GetMaxHeight(route.destPlace.GetLocation()) - AITile.GetMaxHeight(route.place.GetLocation()) , 0 ));
+				}
+				
+				yield route;
+			}
+			DoInterval();
+		}
+		return null;
+	}
+ 
+	function CanUseTownBus(townCargo) {
+		local townBus = TownBus.GetByTown(townCargo.town);
+		if(townBus == null) {
+			return true;
+		} else {
+			return townBus.CanUseTransfer();
+		}
+	}
+ 
 	function CheckAndBuildCascadeRoute(destPlace,cargo) {
-		if(stockpiled) {
-			return;
+		if(stockpiled && AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000) {
+			return; // ほんの少ししか生産されないためにbankruptするリスクを回避
 		}
 		local cascaded = false;
 		local producing = destPlace.GetProducing();
@@ -641,6 +639,28 @@ class HogeAI extends AIController {
 		return additionalPlaces;
 	}
 	
+	function GetPlansToMeetSrcDemandUsingRoadTransfer(route,isDest) {
+		local maxDistance = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 100000 ? 100 : 200;
+		local additionalPlaces = [];
+		local hgStation = isDest ? route.destHgStation : route.srcHgStation;
+		local finalDestLocation = isDest ? route.srcHgStation.platformTile : route.GetFinalDestPlace().GetLocation();
+		
+		foreach(data in Place.SearchSrcAdditionalPlaces( 
+				hgStation.stationGroup.hgStations[0].platformTile, finalDestLocation, 
+				route.cargo, 0, maxDistance, 1, 80, 200, true, false)) {
+			local t = {};
+			t.route <- route;
+			t.cargo <- route.cargo;
+			t.dest <- hgStation.stationGroup;
+			t.srcPlace <- data.place;
+			t.distance <- data.distance;
+			t.production <- data.production;
+			t.isRaw <- false;
+			additionalPlaces.push(t);
+		}
+		return additionalPlaces;
+	}
+	
 	function SearchAndBuildToMeetSrcDemandUsingRoad(originalRoute=null, limitDate=null) {
 		HgLog.Info((originalRoute==null ? "###### " : "") + "Search and build to meet src demand using road."+(originalRoute!=null?originalRoute:"(all)"));
 		local additionalPlaces = [];
@@ -651,24 +671,11 @@ class HogeAI extends AIController {
 			routes = RouteUtils.GetAllRoutes();
 		}
 		local tooManyRoadVehicles = AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD) > HogeAI.Get().maxRoadVehicle * 0.9;
-		local maxDistance = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 100000 ? 100 : 200;
 		
 		foreach(route in routes) {
 			if(route.NeedsAdditionalProducing()) {
 				if(!tooManyRoadVehicles && (route instanceof TrainRoute || route instanceof TrainReturnRoute)) {
-					foreach(data in Place.SearchSrcAdditionalPlaces( 
-							route.srcHgStation.stationGroup.hgStations[0].platformTile, route.GetFinalDestPlace().GetLocation(), 
-							route.cargo, 0, maxDistance, 1, 80, 200, true, false)) {
-						local t = {};
-						t.route <- route;
-						t.cargo <- route.cargo;
-						t.dest <- route.srcHgStation.stationGroup;
-						t.srcPlace <- data.place;
-						t.distance <- data.distance;
-						t.production <- data.production;
-						t.isRaw <- false;
-						additionalPlaces.push(t);
-					}
+					additionalPlaces.extend(GetPlansToMeetSrcDemandUsingRoadTransfer(route,false));
 				}
 				if(route.srcHgStation.place != null && !(route instanceof RoadRoute && route.isTransfer)) {
 					local srcAcceptingPlace = route.srcHgStation.place.GetAccepting();
@@ -677,6 +684,12 @@ class HogeAI extends AIController {
 					}
 				}
 			}
+			if(route.IsBiDirectional() && route.NeedsAdditionalProducing(null,true)) {
+				if(!tooManyRoadVehicles && (route instanceof TrainRoute || route instanceof TrainReturnRoute)) {
+					additionalPlaces.extend(GetPlansToMeetSrcDemandUsingRoadTransfer(route,true));
+				}
+			}
+			
 			DoInterval();
 		}
 		local maxRoads = AICompany.GetBankBalance(AICompany.COMPANY_SELF) / 100000 + 3;
@@ -719,7 +732,7 @@ class HogeAI extends AIController {
 	
 	
 	function SearchAndBuildAdditionalDest(route) {
-		if(PlaceDictionary.Get().IsUsedAsSrouceByTrain(route.destHgStation.place.GetProducing())) {
+		if(PlaceDictionary.Get().IsUsedAsSrouceByTrain(route.destHgStation.place.GetProducing(), route)) {
 			return null;
 		}
 		if(route.GetLastRoute().returnRoute != null) {
@@ -730,6 +743,19 @@ class HogeAI extends AIController {
 		}
 		local lastAcceptingTile = route.destHgStation.platformTile;
 		foreach(placeScore in Place.SearchAdditionalAcceptingPlaces(route.cargo, route.GetSrcStationTiles(), route.destHgStation.platformTile)) {
+			if(route.IsBiDirectional() && route.srcHgStation.place!=null && route.destHgStation.place!=null) {
+				if(placeScore[0].GetProducing().GetLastMonthProduction(route.cargo) 
+						< min( route.srcHgStation.place.GetProducing().GetLastMonthProduction(route.cargo), 
+							route.destHgStation.place.GetProducing().GetLastMonthProduction(route.cargo)) * 2 / 3) {
+					continue;
+				}
+			}
+			if(route.cargo == HogeAI.GetPassengerCargo()) {
+				if(placeScore[0] instanceof TownCargo && !CanUseTownBus(placeScore[0])) {
+					continue;
+				}
+			}
+
 			HgLog.Info("Found an additional accepting place:"+placeScore[0].GetName()+" route:"+route);
 			if(BuildDestRouteAdditional(route,placeScore[0])) {
 				CheckAndBuildCascadeRoute(placeScore[0],route.cargo);
@@ -836,7 +862,7 @@ class HogeAI extends AIController {
 							}
 						}
 						HgLog.Info("distance:"+distance+" trainROI:"+roi+" income:"+trainIncome+" useRail:"+useRail+" capacity:"+engineSet.capacity
-							+" engine:"+AIEngine.GetName(engineSet.trainEngine)+" wagon:"+AIEngine.GetName(engineSet.wagonEngine)+"x"+engineSet.numWagon);
+							+" engine:"+AIEngine.GetName(engineSet.trainEngine)+(engineSet.wagonEngine==null?"":" wagon:"+AIEngine.GetName(engineSet.wagonEngine)+"x"+engineSet.numWagon));
 					}
 				}
 			}
@@ -844,6 +870,16 @@ class HogeAI extends AIController {
 			HgLog.Info("cargo:"+AICargo.GetName(cargo)+" maxROI:"+maxROI+" maxIncome:"+maxIncome+" bestDistance:"+bestDistance);
 			if(maxROI >= 1) {
 				foreach(place in Place.GetNotUsedProducingPlaces(cargo,false).array) {
+					local canSteal = true;
+					foreach(route in PlaceDictionary.Get().GetRoutesBySource(place)) {
+						if(route instanceof RoadRoute && route.GetDestRoute() == false) {
+							continue;
+						}
+						canSteal = route.IsOverflowPlace(place); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
+					}
+					if(!canSteal) {
+						continue;
+					}
 					local production = place.GetLastMonthProduction(cargo);
 					if(production > 0) {
 						foreach(acceptingCargo in place.GetAccepting().GetCargos()) {
@@ -969,6 +1005,9 @@ class HogeAI extends AIController {
 
 	function BuildDestRouteAdditional(route, additionalPlace) {
 		AIRail.SetCurrentRailType(route.GetRailType());
+		if(additionalPlace.GetProducing().IsTreatCargo(route.cargo)) {
+			additionalPlace = additionalPlace.GetProducing();
+		}
 		local additionalHgStation = TerminalStationFactory(route.additionalRoute!=null?3:2).CreateBest(additionalPlace, route.cargo, route.destHgStation.platformTile);
 		if(additionalHgStation == null) {
 			HgLog.Info("cannot build additional station");
@@ -1029,6 +1068,13 @@ class HogeAI extends AIController {
 			oldDestStation.Remove();
 		});
 		*/
+		
+		
+		if(route.cargo == HogeAI.GetPassengerCargo()) {
+			foreach(townBus in TownBus.instances) {
+				townBus.CheckTransfer();
+			}
+		}
 			
 
 		HgLog.Info("BuildDestRouteAdditional succeeded: "+route);

@@ -328,3 +328,39 @@ class PerformanceCounter {
 	}
 }
 
+
+class VehicleUtils {
+	static function GetCargoWeight(cargo, quantity) {
+		local result;
+		local label = AICargo.GetCargoLabel(cargo);
+		if (AICargo.HasCargoClass(cargo, AICargo.CC_PASSENGERS)) {
+			result = quantity / 16;
+		} else if (AICargo.HasCargoClass(cargo, AICargo.CC_MAIL)) {
+			result = quantity / 4;
+		} else if (AICargo.HasCargoClass(cargo, AICargo.CC_EXPRESS) 
+				&& (AICargo.GetTownEffect(cargo) == AICargo.TE_GOODS || AICargo.GetTownEffect(cargo) == AICargo.TE_WATER/*for FIRS*/)) {
+			result = quantity / 2;
+		} else if (label == "LVST"){
+			result = quantity / 6;
+		} else if (label == "VALU"){
+			result = quantity / 10;
+		} else {
+			result = quantity;
+		}
+
+		if (AICargo.IsFreight(cargo)) {
+			result *= AIGameSettings.GetValue("vehicle.freight_trains")
+		}
+		return result;
+	}	
+
+	static function GetSlopeForce(weight, slope, totalWeight) {
+		return slope * weight * AIGameSettings.GetValue("vehicle.train_slope_steepness") + totalWeight * 10;
+	}
+	
+	static function GetForce(maxTractiveEffort, power, requestSpeed) {
+		return min((maxTractiveEffort * 1000), power * 746 * 18 / requestSpeed / 5);
+	}
+	
+}
+

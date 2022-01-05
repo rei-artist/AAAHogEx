@@ -43,7 +43,7 @@ function MyRoadPF::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
 	return tiles;
 }
 
-class RoadRoute {
+class RoadRoute extends Route {
 	static MAX_VEHICLES = 30;
 	static instances = [];
 
@@ -426,7 +426,7 @@ class RoadRoute {
 		local isBiDirectional = IsBiDirectional();
 
 		if(AIBase.RandRange(100) < 100) {
-			HgLog.Warning("check SendVehicleToDepot "+this+" vehicleList:"+vehicleList.Count());
+			//HgLog.Warning("check SendVehicleToDepot "+this+" vehicleList:"+vehicleList.Count());
 			foreach(vehicle,v in vehicleList) {
 				if((!isBiDirectional && AIVehicle.GetCargoLoad(vehicle,cargo) >= 1) || AIVehicle.GetAge(vehicle) <= 365) {
 					continue;
@@ -440,7 +440,7 @@ class RoadRoute {
 						maxVehicles = min(vehicleList.Count(), maxVehicles);
 						maxVehicles = max(0, maxVehicles - 1);
 					}
-					HgLog.Info("SendVehicleToDepot(road) "+AIVehicle.GetName(vehicle)+" "+this);
+					//HgLog.Info("SendVehicleToDepot(road) "+AIVehicle.GetName(vehicle)+" "+this);
 					break;
 				}
 			}
@@ -617,7 +617,7 @@ class RoadRoute {
 			
 			if(!isTmpClosed 
 					&& ((!isTransfer && !IsValidDestStationCargo())
-						|| (isTransfer && destRoute.IsClosed()))) {
+						|| (isTransfer && (!destRoute || destRoute.IsClosed())))) {
 				if(!isTransfer) {
 					HgLog.Warning("RoadRoute Close (dest can not accept)"+this);
 					local destPlace = destHgStation.place.GetProducing();
@@ -802,8 +802,8 @@ class RoadRouteBuilder {
 		}
 
 		local testMode = AITestMode();
-		
-		if(RoadRoute.ChooseEngineCargo(cargo, srcPlace.DistanceManhattan(GetDestLocation()))==null) {
+		local engine = RoadRoute.ChooseEngineCargo(cargo, srcPlace.DistanceManhattan(GetDestLocation()));
+		if(engine==null) {
 			HgLog.Warning("No suitable engine.");
 			return null;
 		}
@@ -859,6 +859,8 @@ class RoadRouteBuilder {
 			return null;
 		}
 		local roadBuilder = RoadBuilder();
+		roadBuilder.engine = engine;
+		roadBuilder.cargo = cargo;
 		if(!roadBuilder.BuildRoad(destHgStation.GetEntrances(), srcHgStation.GetEntrances())) {
 			Place.AddNgPathFindPair(srcPlace, dest);
 			HgLog.Warning("BuildRoad failed.");
@@ -890,6 +892,8 @@ class RoadRouteBuilder {
 
 class RoadBuilder {	
 	path = null;
+	cargo = null;
+	engine = null;
 
 	function BuildRoad(starts ,goals, suppressInterval=false) {
 		local pathfinder = MyRoadPF();
@@ -903,7 +907,7 @@ class RoadBuilder {
 		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000) {
 			pathfinder._max_tunnel_length = 6;
 		}
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 100000 || RouteUtils.GetAllRoutes().len()==0) {
+		if(IsConsiderSlope()) {
 			pathfinder._cost_slope = 200;
 			pathfinder._cost_no_existing_road = 100;
 			pathfinder._cost_coast = 100;
@@ -982,6 +986,18 @@ class RoadBuilder {
 	function RetryBuildRoad(curPath, goals) {
 		HgLog.Warning("RetryBuildRoad");
 		return BuildRoad(curPath.GetTiles(), goals);
+	}
+	
+	function IsConsiderSlope() {
+		if(engine == null || cargo == null) {
+			return false;
+		}
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 100000 && RouteUtils.GetAllRoutes().len()>=1) {
+			return false;
+		}
+		local weight = VehicleUtils.GetCargoWeight(cargo, AIEngine.GetCapacity(engine));
+		return VehicleUtils.GetForce(AIEngine.GetMaxTractiveEffort(engine), AIEngine.GetPower(engine), AIEngine.GetMaxSpeed(engine)/2) 
+			- VehicleUtils.GetSlopeForce(weight,1,weight) < 0;
 	}
 	
 }
@@ -1265,12 +1281,12 @@ class TownBus {
 		return TownCargo(town, HogeAI.GetPassengerCargo(), true);
 	}
 	
-	function IsNotUsedTransfer() {
-		return stations.len()<2;
+	function CanUseTransfer() {
+		return stations.len() == 2;
 	}
 		
 	function CheckTransfer() {
-		if(IsNotUsedTransfer()) {
+		if(!CanUseTransfer()) {
 			return;
 		}
 		

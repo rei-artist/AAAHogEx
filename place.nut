@@ -95,7 +95,7 @@ class PlaceDictionary {
 			AddRouteTo(sources, route.srcHgStation.place, route);
 		}
 		if(route.destHgStation.place != null) {
-			if(HogeAI.IsBidirectionalCargo(route.cargo)) {
+			if(route.IsBiDirectional()) {
 				AddRouteTo(sources, route.destHgStation.place.GetProducing(), route);
 			} else {
 				AddRouteTo(dests, route.destHgStation.place, route);
@@ -117,21 +117,35 @@ class PlaceDictionary {
 		routes.push(route);
 	}
 	
-	function ChangeDest(route, oldPlace) {
-		if(HogeAI.IsBidirectionalCargo(route.cargo)) {
-			HgLog.Error("Unsupported(PlaceDictionary.ChangeDest)");
-		}
-		
+	function ChangeSource(route, oldPlace) {
 		local newRoutes = [];
-		foreach(r in GetRoutesByDest(oldPlace)) {
+		foreach(r in GetRoutesBySource(oldPlace)) {
 			if(r != route) {
 				newRoutes.push(r);
 			}
 		}
-		dests[oldPlace.Id()] = newRoutes;
+		sources[oldPlace.Id()] = newRoutes;
 		
 		if(route.destHgStation.place != null) {
-			GetRoutesByDest(route.destHgStation.place).push(route);
+			GetRoutesBySource(route.destHgStation.place.GetProducing()).push(route);
+		}
+	}
+	
+	function ChangeDest(route, oldPlace) {
+		if(route.IsBiDirectional()) {
+			ChangeSource(route, oldPlace);
+		} else {
+			local newRoutes = [];
+			foreach(r in GetRoutesByDest(oldPlace)) {
+				if(r != route) {
+					newRoutes.push(r);
+				}
+			}
+			dests[oldPlace.Id()] = newRoutes;
+			
+			if(route.destHgStation.place != null) {
+				GetRoutesByDest(route.destHgStation.place).push(route);
+			}
 		}
 	}
 	
@@ -154,9 +168,9 @@ class PlaceDictionary {
 		return false;
 	}
 	
-	function IsUsedAsSrouceByTrain(place) {
+	function IsUsedAsSrouceByTrain(place, except=null) {
 		foreach(route in GetRoutesBySource(place)) {
-			if(route instanceof TrainRoute) {
+			if(route instanceof TrainRoute && route != except) {
 				return true;
 			}
 		}
@@ -861,7 +875,7 @@ class TownCargo extends Place {
 	}
 	
 	function GetLastMonthProduction(cargo) {
-		return AITown.GetLastMonthProduction( town, cargo );
+		return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
 	}
 	
 	function IsAccepting() {
