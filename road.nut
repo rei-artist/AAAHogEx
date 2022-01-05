@@ -599,21 +599,17 @@ class RoadRoute extends Route {
 	function CheckRenewal() {
 		local execMode = AIExecMode();
 		
-		PerformanceCounter.Start();
 		if(!isClosed) {
 		
 			local destRoute = GetDestRoute();
-			//if(destRoute == false || destRoute instanceof RoadRoute) {
-				foreach(route in PlaceDictionary.Get().GetUsedAsSourceCargoByTrain(srcHgStation.place, cargo)) {
-					//HgLog.Info("GetUsedTrainRoutes:"+route+" destRoute:"+destRoute+" "+this);
-					if(destRoute != route && route.NeedsAdditionalProducing()) {
-						isClosed = true;
-						isRemoved = true;
-						HgLog.Warning("RoadRoute Remove (Collided train route found)"+this);
-						PlaceDictionary.Get().AddRoute(this);
-					}
+			foreach(route in PlaceDictionary.Get().GetUsedAsSourceCargoByTrain(srcHgStation.place, cargo)) {
+				//HgLog.Info("GetUsedTrainRoutes:"+route+" destRoute:"+destRoute+" "+this);
+				if(destRoute != route && route.NeedsAdditionalProducing()) {
+					isClosed = true;
+					isRemoved = true;
+					HgLog.Warning("RoadRoute Remove (Collided train route found)"+this);
 				}
-			//}
+			}
 			
 			if(!isTmpClosed 
 					&& ((!isTransfer && !IsValidDestStationCargo())
@@ -627,27 +623,6 @@ class RoadRoute extends Route {
 							isTmpClosed = true;
 						}
 					}
-					/*
-					local destPlace = destHgStation.place.GetProducing();
-					if(destPlace instanceof HgIndustry) {
-						local stock = AIIndustry.GetStockpiledCargo(destPlace.industry, cargo) ;
-						if(stock > 0 && (lastTreatStockpile == null)) {
-							lastTreatStockpile = AIDate.GetCurrentDate();
-							isTmpClosed = true;
-							foreach(destCargo in destPlace.GetCargos()) {
-//								HogeAI.Get().BuildDestRailOrRoadRoute(destPlace, destCargo);
-								HogeAI.Get().AddPending("BuildDestRailOrRoadRoute",[destPlace.Save(), destCargo]);
-							}
-							foreach(srcCargo in destHgStation.place.GetAccepting().GetCargos()) {
-								if(srcCargo != cargo && AIIndustry.GetStockpiledCargo(destPlace.industry, srcCargo)  < stock / 2) {
-//									HogeAI.Get().BuildSrcRailOrRoadRoute(destHgStation.place, srcCargo);
-									HogeAI.Get().AddPending("BuildSrcRailOrRoadRoute",[destHgStation.place.Save(), srcCargo]);
-								}
-							}
-							
-	//						Place.AddNeedUsed(destPlace, cargos[0]);
-						}
-					}*/
 				} else {
 					HgLog.Warning("RoadRoute Close (DestRoute["+destRoute+"] closed)"+this);
 				}
@@ -658,11 +633,7 @@ class RoadRoute extends Route {
 				}
 			}
 		}
-		if(isClosed || isTmpClosed) {
-			if(isRemoved) {
-				PerformanceCounter.Stop("CheckRenewal1");
-				return;
-			}
+		if((isClosed || isTmpClosed) && !isRemoved) {
 			local destRoute = GetDestRoute();
 			if((!isTransfer && IsValidDestStationCargo())
 					|| (isTransfer && destRoute!=false && !destRoute.IsClosed())) {
@@ -671,8 +642,6 @@ class RoadRoute extends Route {
 				HgLog.Warning("RoadRoute ReOpen road route."+this);
 			}
 		}
-		PerformanceCounter.Stop("CheckRenewal1");
-		PerformanceCounter.Start();
 		
 		if(isClosed) {
 			foreach(vehicle,v in GetVehicleList()) {
@@ -681,22 +650,18 @@ class RoadRoute extends Route {
 				}
 			}
 			//TODO 全部いなくなったらstationを削除
-			PerformanceCounter.Stop("CheckRenewal2");
 			return;
 		}
-		PerformanceCounter.Stop("CheckRenewal2");
 		
 		if(AIBase.RandRange(100)>=1) {
 			return;
 		}
-		PerformanceCounter.Start();
 		
 		destRoute = null; //たまにキャッシュをクリアする
 		hasRailDest = null;
 
 		local engine = ChooseEngine();
 		if(engine==null) {
-			PerformanceCounter.Stop("CheckRenewal3");
 			return;
 		}
 		
@@ -707,7 +672,6 @@ class RoadRoute extends Route {
 				}
 			}
 		}
-		PerformanceCounter.Stop("CheckRenewal3");
 	}
 	
 

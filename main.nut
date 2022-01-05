@@ -319,7 +319,7 @@ class HogeAI extends AIController {
 		
 		foreach(routeRand in routeRands) {
 			local route = routeRand[0];
-			if(route.transferRoute != null) {
+			if(route.transferRoute != null || route.IsUpdatingRail()) {
 				continue;
 			}
 			AIRail.SetCurrentRailType(route.GetRailType());
@@ -872,9 +872,9 @@ class HogeAI extends AIController {
 				foreach(place in Place.GetNotUsedProducingPlaces(cargo,false).array) {
 					local canSteal = true;
 					foreach(route in PlaceDictionary.Get().GetRoutesBySource(place)) {
-						if(route instanceof RoadRoute && route.GetDestRoute() == false) {
+						/*if(route instanceof RoadRoute && route.GetDestRoute() == false) {
 							continue;
-						}
+						}*/
 						canSteal = route.IsOverflowPlace(place); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
 					}
 					if(!canSteal) {

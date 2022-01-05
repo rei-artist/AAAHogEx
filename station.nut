@@ -959,7 +959,13 @@ class RoadStation extends HgStation {
 			}
 		}
 
-
+		if(!BuildPlatform(isTestMode)) {
+			if(!isTestMode) {
+				HgLog.Warning("BuildPlatform failed");
+			}
+			return false;
+		}
+		
 		local prev = null;
 		foreach(road in roads) {
 			if(prev != null) {
@@ -973,12 +979,6 @@ class RoadStation extends HgStation {
 			prev = road;
 		}
 		
-		if(!BuildPlatform(isTestMode)) {
-			if(!isTestMode) {
-				HgLog.Warning("BuildPlatform failed");
-			}
-			return false;
-		}
 		return true;
 	}
 	

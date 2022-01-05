@@ -885,7 +885,9 @@ class RailBuilder {
 						HgLog.Warning("demolish tile for buildrail:"+HgTile(prev));
 						AITile.DemolishTile(prev);
 					}
-					local isGoalOrStart = prevprevprev == null || path.GetParent()==null /*|| path.GetParent().GetParent()==null  必要なChangeBridgeがされない事があった。isReverseで判定必要かも？ */;
+					local isGoalOrStart = (prevprevprev == null && AITile.HasTransportType(prevprev,AITile.TRANSPORT_RAIL)) 
+						|| (path.GetParent()==null && AITile.HasTransportType(path.GetTile(),AITile.TRANSPORT_RAIL));
+						/*|| path.GetParent().GetParent()==null  必要なChangeBridgeがされない事があった。isReverseで判定必要かも？ */;
 					if(!HgTile.IsDiagonalTrack(AIRail.GetRailTracks(prev))) {
 						if(!isGoalOrStart && AITile.HasTransportType(prev, AITile.TRANSPORT_RAIL) && BuildedPath.Contains(prev)) {		
 							if(!ChangeBridge(prev,path.GetTile())) {

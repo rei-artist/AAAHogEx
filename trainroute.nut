@@ -1108,6 +1108,17 @@ class TrainRoute extends Route {
 		}
 	}
 	
+	
+	function AddSendUpdateDepotOrder() {
+		local execMode = AIExecMode();
+		AIOrder.InsertOrder(latestEngineVehicle, 0, updateRailDepot, AIOrder.OF_NON_STOP_INTERMEDIATE | AIOrder.OF_STOP_IN_DEPOT );
+	}
+	
+	function RemoveSendUpdateDepotOrder() {
+		local execMode = AIExecMode();
+		AIOrder.RemoveOrder(latestEngineVehicle,0);
+	}
+	
 	function AddAdditionalRoute(additionalRoute) {
 		this.additionalRoute = additionalRoute;
 		additionalRoute.parentRoute = this;
@@ -1191,7 +1202,7 @@ class TrainRoute extends Route {
 				HgLog.Warning("Cannot build depot for railupdate "+this);
 				return false;
 			}
-			AIOrder.AppendOrder(latestEngineVehicle, updateRailDepot, AIOrder.OF_NON_STOP_INTERMEDIATE | AIOrder.OF_STOP_IN_DEPOT );
+			AddSendUpdateDepotOrder();
 		}
 	}
 	
@@ -1262,8 +1273,9 @@ class TrainRoute extends Route {
 		updateRailDepot = null;
 		
 		latestEngineVehicle = newTrain;
-		engineVehicles.AddItem(newTrain,newTrain);
-		AIOrder.RemoveOrder(newTrain,AIOrder.GetOrderCount(newTrain)-1);
+		engineVehicles.AddItem(newTrain,newTrain);			
+		RemoveSendUpdateDepotOrder();
+
 		AIVehicle.StartStopVehicle(newTrain);
 		return true;
 	}
@@ -1635,6 +1647,10 @@ class TrainRoute extends Route {
 				}
 			}
 		}
+	}
+	
+	function IsUpdatingRail() {
+		return updateRailDepot != null;
 	}
 	
 	function CheckRailUpdate() {
