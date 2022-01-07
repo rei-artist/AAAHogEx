@@ -371,10 +371,11 @@ class TrainPlanner {
 		if(slopes == null) {
 			slopes = max(1,GetLengthWeightsLength(lengthWeights).tointeger() / 3);
 		}
-		local force = GetForce(maxTractiveEffort, power, requestSpeed);
+		local engineForce = VehicleUtils.GetForce(maxTractiveEffort, power, requestSpeed);
 		local slopeForce = GetMaxSlopeForce(lengthWeights, slopes, totalWeight);
-		//HgLog.Info("maxSlopes:"+maxSlopes+" force:"+force+" slopeForce:"+slopeForce+" totalWeight:"+totalWeight);
-		return (force - slopeForce) / (totalWeight * 4);
+		
+		//HgLog.Info("maxSlopes:"+slopes+" engineForce:"+engineForce+" slopeForce:"+slopeForce+" totalWeight:"+totalWeight+" requestSpeed:"+requestSpeed);
+		return (engineForce - slopeForce) / (totalWeight * 4);
 	}
 	
 	function GetLengthWeightsWeight(lengthWeights) {
@@ -1049,6 +1050,7 @@ class TrainRoute extends Route {
 		} else {
 			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD);
 		}
+		AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_NEAR);
 		return true;
 	}
 	
@@ -1076,8 +1078,10 @@ class TrainRoute extends Route {
 		
 			if(AIOrder.GetOrderCount (latestEngineVehicle) >= 4) {
 				AIOrder.InsertOrder(latestEngineVehicle, 3, destHgStation.platformTile, orderFlags);
+				AIOrder.SetStopLocation	(latestEngineVehicle, 3, AIOrder.STOPLOCATION_NEAR);
 			} else {
 				AIOrder.AppendOrder(latestEngineVehicle, destHgStation.platformTile, orderFlags);
+				AIOrder.SetStopLocation	(latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.STOPLOCATION_NEAR);
 			}
 			AIOrder.RemoveOrder(latestEngineVehicle, 2);
 		}

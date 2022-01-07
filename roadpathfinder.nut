@@ -54,13 +54,13 @@ class Road
 	 * @param goals The target tiles.
 	 * @see AyStar::InitializePath()
 	 */
-	function InitializePath(sources, goals) {
+	function InitializePath(sources, goals, ignoreTiles=[]) {
 		local nsources = [];
 
 		foreach (node in sources) {
 			nsources.push([node, 0xFF]);
 		}
-		this._pathfinder.InitializePath(nsources, goals);
+		this._pathfinder.InitializePath(nsources, goals, ignoreTiles);
 	}
 
 	/**
@@ -272,6 +272,39 @@ function Road::_Neighbours(self, path, cur_node)
 	}
 	return tiles;
 }
+/*
+function Road::_BuildRoad(a,b) {
+	local accounting = AIAccounting();
+	local result = AIRoad.BuildRoad(a,b);
+	if(_IsTooExpensive(accounting.GetCosts())) {
+		return false;
+	}
+	return result;
+}
+
+
+function Road::_BuildBridge(a,b,c,d) {
+	local accounting = AIAccounting();
+	local result = AIRoad.BuildBridge(a,b,c,d);
+	if(_IsTooExpensive(accounting.GetCosts())) {
+		return false;
+	}
+	return result;
+}
+
+function Road::_BuildTunnel(a,b) {
+	local accounting = AIAccounting();
+	local result = AIRoad.BuildTunnel(a,b);
+	if(_IsTooExpensive(accounting.GetCosts())) {
+		return false;
+	}
+	return result;
+}
+
+function Road::_IsTooExpensive(cost) {
+	return usableMoney < cost;
+}*/
+
 
 function Road::_CheckDirection(self, tile, existing_direction, new_direction)
 {
@@ -302,7 +335,7 @@ function Road::_GetTunnelsBridges(last_node, cur_node, bridge_dir)
 	for (local i = 2; i < this._max_bridge_length; i++) {
 		local bridge_list = AIBridgeList_Length(i + 1);
 		local target = cur_node + i * (cur_node - last_node);
-		if (!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
+		if (!bridge_list.IsEmpty() && AIRoad.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
 			tiles.push([target, bridge_dir]);
 		}
 	}

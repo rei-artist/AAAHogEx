@@ -500,7 +500,7 @@ function Rail::_Neighbours(path, cur_node, self)
 	
 	
 	if (AITile.HasTransportType(cur_node, AITile.TRANSPORT_RAIL)) {
-		if(goal2 != null || par==null || par.GetParent()==null || (self.useInitializePath2 && par.GetParent().GetParent() == null)) { // start tile
+		if(goal2 != null || par==null || par.GetParent()==null || (self.useInitializePath2 && par.GetParent().GetParent() == null)) { // start or goal tile
 		} else if(BuildedPath.Contains(cur_node)) {
 			if(!HgTile.IsDiagonalTrack(AIRail.GetRailTracks(cur_node))) {
 				if(!self._CanChangeBridge(path, cur_node)) {
@@ -623,6 +623,9 @@ function Rail::_RaiseAtWater(t0,t1) {
 		return false;
 	}
 	if(AIMap.DistanceFromEdge (t1) <= 2) {
+		return false;
+	}
+	if(HogeAI.Get().avoidClearWater) {
 		return false;
 	}
 	local boundCorner = HgTile.GetCorners( HgTile(t0).GetDirection(HgTile(t1)) );

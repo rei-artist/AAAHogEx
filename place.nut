@@ -84,10 +84,12 @@ class PlaceDictionary {
 	
 	sources = null;
 	dests = null;
+	nearWaters = null;
 	
 	constructor() {
 		sources = {};
 		dests = {};
+		nearWaters = {};
 	}
 	
 	function AddRoute(route) {
@@ -287,7 +289,10 @@ class Place {
 		}
 		data.closedIndustries <- array;
 		
+		
 		PlaceProduction.Get().Save(data);
+
+		data.nearWaters <- PlaceDictionary.Get().nearWaters;
 	}
 
 	
@@ -313,6 +318,7 @@ class Place {
 		}
 		PlaceProduction.Get().Load(data);
 		
+		PlaceDictionary.Get().nearWaters = data.nearWaters;
 	}
 	
 	static function Load(t) {		
@@ -527,25 +533,45 @@ class Place {
 		}).Filter(function(t):(fromTile) {
 			return 60 <= t.distance && t.cost < 300 && !Place.IsNgPathFindPair(t.place,fromTile) && t.place.IsAccepting();
 		}).Map(function(t) {
-			t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
+			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
 			return t;
 		});
-		return hgArray.Sort(function(a,b) {
+		return hgArray.array;
+/*		return hgArray.Sort(function(a,b) {
 			return b.score - a.score;
-		}).array;
+		}).array;*/
 	}
 	
-	static function SearchAcceptingPlacesBestDistance(cargo,fromTile,bestDistance) {
-		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance) : (cargo,fromTile,bestDistance)  {
+	static function SearchAcceptingPlacesBestDistance(cargo,srcPlace,typeDistanceEstimate) {
+		local fromTile = srcPlace.GetLocation();
+		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance) : (cargo,fromTile,srcPlace,typeDistanceEstimate)  {
 			local t = {};
 			t.cargo <- cargo;
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
-			t.cost <- HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
-			t.score <- 100 - min(abs(bestDistance - t.distance),100);
+			local cost = HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
+			local vehicleTypes = cost >= 300 ? [] : [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD];
+			if(t.place.IsNearWater(cargo) && srcPlace.IsNearWater(cargo)) {
+				vehicleTypes.push(AIVehicle.VT_WATER);
+			}
+			local maxEstimate = null;
+			local distanceIndex = min(9,t.distance/20);
+			local vehicleType = null;
+			foreach(vt in vehicleTypes) {
+				if(typeDistanceEstimate.rawin(vt)) {
+					local estimate = typeDistanceEstimate[vt][distanceIndex];
+					if(maxEstimate == null || maxEstimate.value < estimate.value) {
+						vehicleType = vt;
+						maxEstimate = estimate;
+					}
+				}
+			}
+			t.estimate <- maxEstimate;
+			t.score <- maxEstimate != null ? maxEstimate.value : 0;
+			t.vehicleType <- vehicleType;
 			return t;
 		}).Filter(function(t):(fromTile) {
-			return t.distance > 0 && t.cost < 300 && !Place.IsNgPathFindPair(t.place,fromTile) && t.place.IsAccepting();
+			return t.vehicleType != null && t.distance > 0 && !Place.IsNgPathFindPair(t.place,fromTile) && t.place.IsAccepting();
 		}).Map(function(t) {
 			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
 			return t;
@@ -650,6 +676,33 @@ class Place {
 	
 	function IsAcceptingAndProducing(cargo) {
 		return GetAccepting().IsTreatCargo(cargo) && GetProducing().IsTreatCargo(cargo);
+	}
+	
+	function IsNearWater(cargo) {
+		local placeDictionary = PlaceDictionary.Get();
+		local id = Id()+":"+cargo;
+		local result;
+		if(!placeDictionary.nearWaters.rawin(id)) {
+			result = CheckNearWater(cargo);
+			placeDictionary.nearWaters[id] <- result;
+			return result;
+		} else {
+			return placeDictionary.nearWaters[id];
+		}
+	}
+	
+	function CheckNearWater(cargo) {		
+		HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
+
+		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
+		local tile;
+		local gen = GetTiles(dockRadius,cargo)
+		while((tile = resume gen) != null) {
+			if(AITile.IsCoastTile (tile)) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	/*
@@ -792,7 +845,12 @@ class HgIndustry extends Place {
 		return AIIndustry.GetStockpiledCargo(industry, cargo);
 	}
 	
-	
+	function CheckNearWater(cargo) {
+		if(AIIndustry.IsBuiltOnWater(industry)) {
+			return true;
+		}
+		return Place.CheckNearWater(cargo);
+	}
 }
 
 class TownCargo extends Place {
@@ -844,7 +902,7 @@ class TownCargo extends Place {
 	
 	function GetTiles(coverageRadius,cargo) {
 		if(cargo != this.cargo) {
-			HgLog.Info("Cargo not match. expect:"+AICargo.GetName(this.cargo)+" but:"+AICargo.GetName(cargo));
+			HgLog.Warning("Cargo not match. expect:"+AICargo.GetName(this.cargo)+" but:"+AICargo.GetName(cargo));
 			return null;
 		}
 		

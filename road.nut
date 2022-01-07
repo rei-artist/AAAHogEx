@@ -3,8 +3,8 @@ class MyRoadPF extends Road {
 	_goals = null;
 }
 
-function MyRoadPF::InitializePath(sources, goals) {
-	::Road.InitializePath(sources, goals);
+function MyRoadPF::InitializePath(sources, goals, ignoreTiles) {
+	::Road.InitializePath(sources, goals, ignoreTiles);
 	_goals = AIList();
 	for (local i = 0; i < goals.len(); i++) {
 		_goals.AddItem(goals[i], 0);
@@ -858,6 +858,11 @@ class RoadBuilder {
 	path = null;
 	cargo = null;
 	engine = null;
+	ignoreTiles = null;
+	
+	constructor() {
+		ignoreTiles = [];
+	}
 
 	function BuildRoad(starts ,goals, suppressInterval=false) {
 		local pathfinder = MyRoadPF();
@@ -883,7 +888,7 @@ class RoadBuilder {
 			pathFindLimit = 400;
 		}
 		
-		pathfinder.InitializePath(starts, goals);
+		pathfinder.InitializePath(starts, goals, ignoreTiles);
 		
 		
 		HgLog.Info("RoadRoute Pathfinding...limit:"+pathFindLimit+" distance:"+distance);
@@ -949,7 +954,15 @@ class RoadBuilder {
 	
 	function RetryBuildRoad(curPath, goals) {
 		HgLog.Warning("RetryBuildRoad");
-		return BuildRoad(curPath.GetTiles(), goals);
+		if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 高すぎて失敗した可能性があるため、繰り返さないようにする
+			ignoreTiles.push(curPath.GetTile());
+		}
+		local startPath = this.path.SubPathEnd(curPath.GetTile());
+		if(startPath == null) {
+			HgLog.Warning("No start tiles("+curPath.GetTile()+")");
+			return false;
+		}
+		return BuildRoad(startPath.GetTiles(), goals);
 	}
 	
 	function IsConsiderSlope() {

@@ -9,6 +9,7 @@ require("route.nut");
 require("trainroute.nut");
 require("railbuilder.nut");
 require("road.nut");
+require("water.nut");
 require("airport.nut");
 
 
@@ -21,9 +22,12 @@ class HogeAI extends AIController {
 	pendings = null;
 	stockpiled = null;
 	
+	avoidClearWater = null;
+	
 	maxStationSpread = null;
 	maxTrains = null;
 	maxRoadVehicle = null;
+	maxShips = null;
 	maxAircraft = null;
 	isUseAirportNoise = null;
 
@@ -136,7 +140,7 @@ class HogeAI extends AIController {
 	static function GetTileDistancePathFromPlace(place, path) {
 		return path.GetNearestTileDistance(place.GetLocation());
 	}
-
+	
 	
 	static function Get() {
 		return HogeAI.container.instance;
@@ -145,6 +149,7 @@ class HogeAI extends AIController {
 	constructor() {
 		HogeAI.container.instance = this;
 		stockpiled = false;
+		avoidClearWater = false;
 		pendings = [];
 		DelayCommandExecuter();
 		AirportTypeState();
@@ -156,7 +161,10 @@ class HogeAI extends AIController {
 		
 		
 		DoLoad();
-		
+		avoidClearWater = BuildUtils.IsTooExpensiveClearWaterCost();
+		if(avoidClearWater) {
+			HgLog.Info("avoidClearWater");
+		}
 		
 		
 		//Rectangle.Test();
@@ -212,6 +220,7 @@ class HogeAI extends AIController {
 		maxStationSpread = maxStationSpread == -1 ? 12 : maxStationSpread;
 		maxTrains = AIGameSettings.GetValue("vehicle.max_trains");
 		maxRoadVehicle = AIGameSettings.GetValue("vehicle.max_roadveh");
+		maxShips = AIGameSettings.GetValue("vehicle.max_ships");
 		maxAircraft = AIGameSettings.GetValue("vehicle.max_aircraft");
 		isUseAirportNoise = AIGameSettings.GetValue("economy.station_noise_level")==1 ? true : false;
 
@@ -287,15 +296,17 @@ class HogeAI extends AIController {
 					if(roadRouteBuilder.ExistsSameRoute()) {
 						continue;
 					}
-					HgLog.Info("Try build RoadRoute: +"+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" roi:"+t.roi+")");
+					HgLog.Info("Try build RoadRoute: +"+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
 					if(roadRouteBuilder.Build() != null) {
 						return isTry;
 					}
 				} else if(t.vehicleType == AIVehicle.VT_RAIL) {
-					HgLog.Info("Try build TrainRoute: +"+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" roi:"+t.roi+")");
+					HgLog.Info("Try build TrainRoute: +"+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
 					if(BuildRouteAndAdditional(t.destPlace, t.place, t.cargo)) {
 						return isTry;
 					}
+				} else if(t.vehicleType == AIVehicle.VT_WATER) {
+					HgLog.Warning("Try build WaterRoute: "+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
 				}
 			}
 			if(candidate == null) {
@@ -344,36 +355,31 @@ class HogeAI extends AIController {
 		}
 	}
 	function GetRouteCandidatesGen() {
-		local pathFindCostBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 400000;
 		local considerSlope = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
 		local maxDistance = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000 ? 200 : 200;
-		local roiBase = AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000;
 		foreach(i, src in GetMaxCargoPlaces()) {
-			src.production = Place.AdjustProduction(src.place, src.production);
-			local destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
-/*			local destPlaceScores;
-			if(src.bestDistance != 0) {
-				destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place.GetLocation(), src.bestDistance);
-			} else {
-				destPlaceScores = Place.SearchAcceptingPlaces(src.cargo, src.place.GetLocation());
-			}*/
-			foreach(e in destPlaceScores) {
-				if(e.distance > maxDistance) {
+			//src.production = Place.AdjustProduction(src.place, src.production);
+			local destPlaceScores = Place.SearchAcceptingPlacesBestDistance(src.cargo, src.place, src.typeDistanceEstimate);
+			foreach(dest in destPlaceScores) {
+				if(dest.distance > maxDistance) {
 					continue;
 				}
 				local route = clone src;
-				local distanceType = route.distanceTypes[min(9,e.distance/20)];
-				//route.score *= AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 0/*500000*/ ? 1 : distanceType.roi;
+				/*
+				local distanceType = route.distanceTypes[min(9,dest.distance/20)];
 				if(distanceType==null) {
 					continue;
 				}
 				route.vehicleType <- distanceType.vehicleType;
+				*/
 				
+				route.distance <- dest.distance;
+				route.destPlace <- dest.place;
+				route.vehicleType <- dest.vehicleType;
+				route.estimate <- dest.estimate;
 				if(route.vehicleType == AIVehicle.VT_RAIL && route.cargo != HogeAI.GetPassengerCargo() && route.place.IsIncreasableProcessingOrRaw() == false) {
 					continue;
 				}
-				route.distance <- e.distance;
-				route.destPlace <- e.place;
 				if(route.cargo == HogeAI.GetPassengerCargo()) {
 					if(route.place instanceof TownCargo && !CanUseTownBus(route.place)) {
 						continue;
@@ -386,10 +392,11 @@ class HogeAI extends AIController {
 					route.production += route.destPlace.GetProducing().GetLastMonthProduction(route.cargo);
 					route.production /= 2;
 				}
-				route.score = (roiBase ? distanceType.roi : distanceType.income) * route.production; //(route.vehicleType==AIVehicle.VT_ROAD ? min(50,src.production) : src.production);
-				if (considerSlope) {
+				route.score = route.estimate.value * min(route.estimate.capacity * 5, route.production);
+				if (considerSlope && route.vehicleType != AIVehicle.VT_WATER) {
 					route.score = route.score * 3 / (3 + max( AITile.GetMaxHeight(route.destPlace.GetLocation()) - AITile.GetMaxHeight(route.place.GetLocation()) , 0 ));
 				}
+				//HgLog.Info("score:"+route.score+" "+route.destPlace.GetName()+"<-"+route.place.GetName()+"["+route.distance+"]"+AICargo.GetName(route.cargo));
 				
 				yield route;
 			}
@@ -778,50 +785,53 @@ class HogeAI extends AIController {
 		
 		foreach(cargo ,dummy in AICargoList()) {
 			
-			local distanceTypes = array(15);
+			local typeDistanceEstimate = {};
+			local maxValue = 0;
 			
-			local bestDistance = 0;
-			local maxROI = 0;
-			local maxIncome = 0;
-			if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD) > maxRoadVehicle * 0.8) {
-				HgLog.Warning("road vehicle too many");
-			} else {
-				for(local distance = 0; distance < 200; distance += 20) {
-					local roadEngine = RoadRoute.ChooseEngineCargo(cargo, distance + 10);
-					if(roadEngine != null) {
-						local roadIncome = HogeAI.GetCargoIncome(distance + 10, cargo, AIEngine.GetMaxSpeed(roadEngine), 2)
-							* AIEngine.GetCapacity(roadEngine)
-							* (AIEngine.GetReliability(roadEngine)+100)/200
-								- AIEngine.GetRunningCost(roadEngine);
-						local roi  = roadIncome * 100 / AIEngine.GetPrice(roadEngine);
-						maxROI = max(maxROI,roi);
-						maxIncome = max(maxIncome, roadIncome);
-						if(roiBase) {
-							if(roi == maxROI) {
-								bestDistance = distance;
-							}
-						} else {
-							if(roadIncome == maxIncome) {
-								bestDistance = distance;
-							}
-						}					
-						local t = {};
-						t.roi <- roi;
-						t.income <- roadIncome;
-						t.vehicleType <- AIVehicle.VT_ROAD;
-						distanceTypes[distance/20] = t;
-						HgLog.Info("distance:"+distance+" roadROI:"+roi+" income:"+roadIncome);
+			foreach(t in [{
+						engineSelector = RoadRoute,
+						vehicleType = AIVehicle.VT_ROAD,
+						maxVehicle = maxRoadVehicle * 0.8,
+						label = "road"
+					},{
+						engineSelector = WaterRoute,
+						vehicleType = AIVehicle.VT_WATER,
+						maxVehicle = maxShips * 0.8,
+						label = "water" }]) {
+				if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, t.vehicleType) > t.maxVehicle) {
+					HgLog.Warning("Too many vehicles."+t.label);
+				} else {
+					local distanceEstimate = array(10);
+					typeDistanceEstimate[t.vehicleType] <- distanceEstimate;
+					for(local distance = 0; distance < 200; distance += 20) {
+						local engine = t.engineSelector.ChooseEngineCargo(cargo, distance + 10);
+						if(engine != null) {
+							local capacity = AIEngine.GetCapacity(engine);
+							local income = HogeAI.GetCargoIncome(distance + 10, cargo, AIEngine.GetMaxSpeed(engine), 2)
+								* capacity
+								* (AIEngine.GetReliability(engine)+100)/200
+									- AIEngine.GetRunningCost(engine);
+							local roi  = income * 100 / AIEngine.GetPrice(engine);
+							local value = roiBase ? roi : income;
+							maxValue = max(value, maxValue);
+							distanceEstimate[distance/20] = {
+								roi = roi,
+								income = income,
+								value = value,
+								capacity = capacity
+							};
+							HgLog.Info(t.label+" distance:"+distance+" roi:"+roi+" income:"+income);
+						}
 					}
 				}
 			}
 			
 			
-			local trainROI = 0;
-			local bestTrainDistance = 0;
-//				wagonNum = max(1, wagonNum);
 			if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_RAIL) > maxTrains * 0.9) {
 				HgLog.Warning("train vehicle too many");
 			} else {
+				local distanceEstimate = array(10);
+				typeDistanceEstimate[AIVehicle.VT_RAIL] <- distanceEstimate;
 				for(local distance = 0; distance <200; distance += 20) {
 					local trainPlanner = TrainPlanner();
 					trainPlanner.cargo = cargo;
@@ -833,42 +843,55 @@ class HogeAI extends AIController {
 					local engineSets = trainPlanner.GetEngineSetsOrder();
 					if(engineSets.len() >= 1) {
 						local engineSet = engineSets[0];
-						local roi = engineSet.roi;
-						local trainIncome = engineSet.income;
-						maxROI = max(maxROI, roi);
-						maxIncome = max(maxIncome, trainIncome);
-						local t = distanceTypes[distance/20];
-						local useRail = false;
-						if(!roiBase || (quarterlyIncome > 100000 && roi > 50 && (t==null || t.roi > 50))) {
-							if((t == null || t.income <= trainIncome) && roi > 0) {
-								useRail = true;
-							}
-							if(trainIncome == maxIncome) {
-								bestDistance = distance;
-							}
-						} else {
-							if(t == null || t.roi < roi) {
-								useRail = true;
-							}
-							if(roi == maxROI) {
-								bestDistance = distance;
-							}
-						}
-						if(useRail) {
-							distanceTypes[distance/20] = {
-								roi = roi
-								income = trainIncome
-								vehicleType = AIVehicle.VT_RAIL
-							}
-						}
-						HgLog.Info("distance:"+distance+" trainROI:"+roi+" income:"+trainIncome+" useRail:"+useRail+" capacity:"+engineSet.capacity
+						local value = roiBase ? engineSet.roi : engineSet.income;
+						maxValue = max(value, maxValue);
+						distanceEstimate[distance/20] = {
+							roi = engineSet.roi,
+							income = engineSet.income,
+							value = value,
+							capacity = engineSet.capacity
+						};
+						HgLog.Info("train distance:"+distance+" roi:"+engineSet.roi+" income:"+engineSet.income+" capacity:"+engineSet.capacity
 							+" engine:"+AIEngine.GetName(engineSet.trainEngine)+(engineSet.wagonEngine==null?"":" wagon:"+AIEngine.GetName(engineSet.wagonEngine)+"x"+engineSet.numWagon));
 					}
 				}
 			}
 			
-			HgLog.Info("cargo:"+AICargo.GetName(cargo)+" maxROI:"+maxROI+" maxIncome:"+maxIncome+" bestDistance:"+bestDistance);
-			if(maxROI >= 1) {
+			local distanceTypes = array(10);
+			for(local distance = 0; distance < 200; distance += 20) {
+				local usedVehicleType = null;
+				local usedCapacity = 0;
+				local maxRoi = 0;
+				local maxIncome = 0;
+				foreach(vehicleType, distanceEstimate in typeDistanceEstimate) {
+					local t = distanceEstimate[distance/20];
+					if(t==null) {
+						continue;
+					}
+					if(roiBase) {
+						if(maxRoi < t.roi) {
+							usedVehicleType = vehicleType;
+							usedCapacity = t.capacity;
+							maxRoi = t.roi;
+						}
+					} else {
+						if(maxIncome < t.income) {
+							usedVehicleType = vehicleType;
+							usedCapacity = t.capacity;
+							maxIncome = t.income;
+						}
+					}
+				}
+				local value = roiBase ? maxRoi : maxIncome;
+				distanceTypes[distance/20] = {
+					vehicleType = usedVehicleType,
+					capacity = usedCapacity,
+					maxValue = value
+				};
+			}
+			
+			HgLog.Info("cargo:"+AICargo.GetName(cargo)+" maxValue:"+maxValue);
+			if(maxValue >= 1) {
 				foreach(place in Place.GetNotUsedProducingPlaces(cargo,false).array) {
 					local canSteal = true;
 					foreach(route in PlaceDictionary.Get().GetRoutesBySource(place)) {
@@ -876,6 +899,7 @@ class HogeAI extends AIController {
 							continue;
 						}*/
 						canSteal = route.IsOverflowPlace(place); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
+						HgLog.Info("place is used."+place.GetName()+" "+route+" canSteal:"+canSteal);
 					}
 					if(!canSteal) {
 						continue;
@@ -891,15 +915,14 @@ class HogeAI extends AIController {
 							}
 						}
 					
-						local t = {};
-						t.cargo <- cargo;
-						t.place <- place;
-						t.production <- production;
-						t.roi <- maxROI;
-						t.bestDistance <- bestDistance;
-						t.score <- production * (roiBase ? maxROI : maxIncome);
-						t.distanceTypes <- distanceTypes;
-						result.push(t);
+						result.push({
+							cargo = cargo,
+							place = place,
+							production = production,
+							maxValue = maxValue,
+							score = production * maxValue,
+							typeDistanceEstimate = typeDistanceEstimate
+						});
 					}
 				}
 			}
@@ -1260,7 +1283,7 @@ class HogeAI extends AIController {
 			}), transferStation, route.cargo, 150, this, null, false);
 			railBuilderTransferToPath.isReverse = true;
 			if(!railBuilderTransferToPath.BuildTails()) {
-				HgLog.Warning("cannot build railBuilderTransferToPath");
+				HgLog.Error("cannot build railBuilderTransferToPath");
 				Rollback(needRollbacks);
 				return false;
 			}
@@ -1271,7 +1294,7 @@ class HogeAI extends AIController {
 				Rollback(needRollbacks);
 				return false;
 			}*/
-			needRollbacks.push(railBuilderTransferToPath.buildedPath);
+			needRollbacks.push(railBuilderTransferToPath.buildedPath); // TODO Rollback時に元の線路も一緒に消える事がある。limit date:300の時に消えている
 			
 			local pointTile = railBuilderTransferToPath.buildedPath.path.GetFirstTile();
 			railBuilderPathToTransfer = TailedRailBuilder.PathToStation(GetterFunction( function():(route, pointTile) {
@@ -1279,10 +1302,11 @@ class HogeAI extends AIController {
 			}), transferStation, route.cargo, 150, this);
 			
 			if(!railBuilderPathToTransfer.BuildTails()) {
-				HgLog.Warning("cannot build railBuilderPathToTransfer");
+				HgLog.Error("cannot build railBuilderPathToTransfer");
 				Rollback(needRollbacks);
 				return false;
 			}
+			
 			needRollbacks.push(railBuilderPathToTransfer.buildedPath);
 			
 			/*
@@ -1366,7 +1390,7 @@ class HogeAI extends AIController {
 			local returnDestStation = TerminalStationFactory(2).CreateBest(destPlace, route.cargo, transferStation.platformTile, false);
 				// station groupを使うと同一路線の他のreturnと競合して列車が迷子になる事がある
 			if(returnDestStation == null) {
-				HgLog.Info("cannot build returnDestStation");
+				HgLog.Warning("cannot build returnDestStation");
 				Rollback(needRollbacks);
 				return false;
 			}
@@ -1381,31 +1405,54 @@ class HogeAI extends AIController {
 			}
 			needRollbacks.push(returnDestStation);
 			
-			local pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
 			
-			local pathForTransferDeparutre = pathForReturnDest;//.SubPathEnd(railBuilderReturnDestArrival.pathSrcToDest.GetLastTile());
-			local railBuilderReturnDestDeparture = RailToStationRailBuilder(pathForTransferDeparutre,returnDestStation,true,pathFindLimit,this);
-			if(!railBuilderReturnDestDeparture.Build()) {
-				HgLog.Warning("cannot build railBuilderReturnDestDeparture");
+			
+			local railBuilderReturnDestDeparture = TailedRailBuilder.PathToStation(GetterFunction( function():(route, railBuilderTransferToPath) {
+				return route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile()).Reverse();
+			}), returnDestStation, route.cargo, 150, this, null, false);
+			railBuilderReturnDestDeparture.isReverse = true;
+			if(!railBuilderReturnDestDeparture.BuildTails()) {
+				HgLog.Error("cannot build railBuilderReturnDestDeparture");
 				Rollback(needRollbacks);
 				return false;
 			}
 			needRollbacks.push(railBuilderReturnDestDeparture.buildedPath);
 			
-			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
-			local pathForReturnDestArrival = pathForReturnDest.SubPathStart(railBuilderReturnDestDeparture.buildedPath.path.GetFirstTile()/*pathForReturnDest.GetTileAt(5)*/);
-			local railBuilderReturnDestArrival = RailToStationRailBuilder(pathForReturnDestArrival,returnDestStation,false,pathFindLimit,this,railBuilderReturnDestDeparture.buildedPath.path);
-			if(!railBuilderReturnDestArrival.Build()) {
-				HgLog.Warning("cannot build railBuilderReturnDestArrival");
+			/*
+			local pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
+			
+			local pathForTransferDeparutre = pathForReturnDest;//.SubPathEnd(railBuilderReturnDestArrival.pathSrcToDest.GetLastTile());
+			local railBuilderReturnDestDeparture = RailToStationRailBuilder(pathForTransferDeparutre,returnDestStation,true,pathFindLimit,this);
+			if(!railBuilderReturnDestDeparture.Build()) {
+				HgLog.Error("cannot build railBuilderReturnDestDeparture");
 				Rollback(needRollbacks);
 				return false;
 			}
-			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
-/*			local depotPath = pathForReturnDest.SubPathStart(railBuilderReturnDestArrival.buildedPath.path.GetLastTile());
-			route.AddDepot(depotPath.BuildDepot());
-			route.AddDepots(depotPath.BuildDoubleDepot());*/
+			needRollbacks.push(railBuilderReturnDestDeparture.buildedPath);*/
 			
-			//TODO: returnSrc側にもdepot
+			local pointTile = railBuilderTransferToPath.buildedPath.path.GetFirstTile();
+			local railBuilderReturnDestArrival = TailedRailBuilder.PathToStation(GetterFunction( function():(route, pointTile, railBuilderReturnDestDeparture) {
+				local pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(pointTile);
+				return pathForReturnDest.SubPathStart(railBuilderReturnDestDeparture.buildedPath.path.GetFirstTile());
+			}), returnDestStation, route.cargo, 150, this);
+			
+			if(!railBuilderReturnDestArrival.BuildTails()) {
+				HgLog.Error("cannot build railBuilderReturnDestArrival");
+				Rollback(needRollbacks);
+				return false;
+			}
+			
+			needRollbacks.push(railBuilderReturnDestArrival.buildedPath);
+			/*
+			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
+			local pathForReturnDestArrival = pathForReturnDest.SubPathStart(railBuilderReturnDestDeparture.buildedPath.path.GetFirstTile());
+			local railBuilderReturnDestArrival = RailToStationRailBuilder(pathForReturnDestArrival,returnDestStation,false,pathFindLimit,this,railBuilderReturnDestDeparture.buildedPath.path);
+			if(!railBuilderReturnDestArrival.Build()) {
+				HgLog.Error("cannot build railBuilderReturnDestArrival");
+				Rollback(needRollbacks);
+				return false;
+			}
+			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());*/
 			
 			local aiExecMode = AIExecMode();
 
@@ -1951,5 +1998,10 @@ class HogeAI extends AIController {
 	function GetUsableMoney() {
 		return AICompany.GetBankBalance(AICompany.COMPANY_SELF) + (AICompany.GetMaxLoanAmount() - AICompany.GetLoanAmount());
 	}
+
+	function IsTooExpensive(cost) {
+		return AICompany.GetQuarterlyIncome (AICompany.COMPANY_SELF, AICompany.CURRENT_QUARTER + 1) < cost && GetUsableMoney() < cost;
+	}
+
 }
  

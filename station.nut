@@ -164,8 +164,8 @@ class StationFactory {
 				station.score -= distance;
 			}
 			stations2.push(station);
+			HogeAI.DoInterval();
 		}
-		HogeAI.DoInterval();
 		stations2.sort(function(a,b) {
 			return b.score-a.score;
 		});
@@ -175,6 +175,7 @@ class StationFactory {
 		foreach(station in stations2) {
 			checked.AddItem(station.platformTile,0);
 			if(station.Build(levelTiles)) {
+				HgLog.Info("station build succeeded(TestMode)");
 				station.levelTiles = levelTiles;
 				return [[station,0]]; // この先は重いのでカット
 			
@@ -1195,11 +1196,11 @@ class TransferStation extends RailStation {
 	
 	function GetMustBuildableAndFlatTiles() {
 		for(local x=0; x<2; x++) {
-			for(local y=-2; y<platformLength+1; y++) {
+			for(local y=-2; y<platformLength+2; y++) {
 				yield [x,y];
 			}
 		}
-		yield [1,platformLength+2];
+		yield [1,platformLength+3];
 		yield [1,-3];
 
 		yield [-1,platformLength];

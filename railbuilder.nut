@@ -88,12 +88,35 @@ class HgRailPathFinder extends Rail {
 		}
 		if(path != null) {
 			path = Path.FromPath(path);
-			if(useInitializePath2) {
-				HgLog.Info("useInitializePath2");
-				path = path.SubPathEnd(path.GetLastTile());
+			if(!isFoundPath) {
+				while(path != null && AITile.HasTransportType(path.GetTile(), AITile.TRANSPORT_RAIL)) {
+					HgLog.Info("tail tile is on rail:"+path.GetTile());
+					path = path.GetParent();
+				}
 			}
+			path = RemoveConnectedHead(path);
+			path = RemoveConnectedHead(path.Reverse()).Reverse();
 		}
 		return path;
+	}
+
+	function RemoveConnectedHead(path) {
+		local prev = null;
+		local prevprev = null;
+		local lastPath = path;
+		while(path != null) {
+			if(prev != null && prevprev != null) {
+				if(AIRail.AreTilesConnected (prevprev.GetTile(),prev.GetTile(),path.GetTile())) {
+					lastPath = prev;
+				} else {
+					break;
+				}
+			}
+			prevprev = prev;
+			prev = path;
+			path = path.GetParent();
+		}
+		return lastPath;
 	}
 		
 	function IsFoundGoal() {
@@ -727,7 +750,7 @@ class BuildedPath {
 		if(forkPath.GetParent() != null) {
 			if(origPath.GetIndexOf(forkPath.GetParent().tile) != null) {
 				forkPath = forkPath.GetParent();
-				HgLog.Warning("origPath.GetIndexOf("+HgTile(forkPath.tile)+")!=null at BuildedPath.CombineByFork(railbuilder.nut)");
+				HgLog.Info("origPath.GetIndexOf("+HgTile(forkPath.tile)+")!=null at BuildedPath.CombineByFork(railbuilder.nut)");
 			}
 		}
 		local pointTile = forkPath.tile;
@@ -886,7 +909,7 @@ class RailBuilder {
 						AITile.DemolishTile(prev);
 					}
 					local isGoalOrStart = (prevprevprev == null && AITile.HasTransportType(prevprev,AITile.TRANSPORT_RAIL)) 
-						|| (path.GetParent()==null && AITile.HasTransportType(path.GetTile(),AITile.TRANSPORT_RAIL));
+						|| (path.GetParent()==null && AITile.HasTransportType(path.GetTile(),AITile.TRANSPORT_RAIL)); //HasTransportTypeの判定は多分必要ないが害もなさそうなので残す
 						/*|| path.GetParent().GetParent()==null  必要なChangeBridgeがされない事があった。isReverseで判定必要かも？ */;
 					if(!HgTile.IsDiagonalTrack(AIRail.GetRailTracks(prev))) {
 						if(!isGoalOrStart && AITile.HasTransportType(prev, AITile.TRANSPORT_RAIL) && BuildedPath.Contains(prev)) {		
@@ -900,7 +923,7 @@ class RailBuilder {
 					if(!(isGoalOrStart && AIRail.AreTilesConnected(prevprev, prev, path.GetTile())) 
 							&& !RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
 						local succeeded = false;
-						HgLog.Warning("BuildRail failed:"+HgTile(prev)+" "+AIError.GetLastErrorString()+" "+isGoalOrStart);
+						HgLog.Error("BuildRail failed:"+HgTile(prevprev)+" "+HgTile(prev)+" "+HgTile(path.GetTile())+" "+AIError.GetLastErrorString()+" isGoalOrStart:"+isGoalOrStart);
 						if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR && !BuildedPath.Contains(prev)) {
 							HgLog.Warning("DemolishTile:"+HgTile(prev)+" for BuildRail");
 							AITile.DemolishTile(prev);
@@ -913,13 +936,11 @@ class RailBuilder {
 								RailBuilder.RemoveSignalUntilFree(prev,prev+dir);
 							}
 							if(RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
+								HgLog.Warning("BuildRail succeeded after remove signal.");
 								succeeded = true;
 							}
 						}
 						if(!succeeded) {
-							if(AIError.GetLastError() == AITunnel.ERR_TUNNEL_CANNOT_BUILD_ON_WATER) {
-								AIController.Break("");
-							}
 							return RetryToBuild(path,prev);
 						}
 					}
@@ -997,7 +1018,7 @@ class RailBuilder {
 			local newPath = railBuilder.pathSrcToDest.Reverse();
 			local origPath = startPath.SubPathEnd(newPath.GetFirstTile());
 			
-			startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-2).RemoveRails();
+			startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-1).RemoveRails();
 			pathSrcToDest = origPath.Combine(newPath);
 			BuildDone();
 			HgLog.Warning("retry to build succeeded");
@@ -1476,7 +1497,7 @@ class TailedRailBuilder {
 			return false;
 		}
 		pathFinder1.InitializePath(starts, goals, ignoreTiles, reversePath);
-		local path1 = pathFinder1.FindPathDay(150, eventPoller);
+		local path1 = pathFinder1.FindPathDay(limitCount, eventPoller);
 		if(path1==null) {
 			HgLog.Warning("No path found(pathFinder1)");
 			return false;
@@ -1500,7 +1521,7 @@ class TailedRailBuilder {
 		}
 		local pathFinder2 = HgRailPathFinder(cargo);
 		pathFinder2.InitializePath(destTilesGetter.Get(), goals, ignoreTiles, reversePath);
-		local path2 = pathFinder2.FindPathDay(300, eventPoller);
+		local path2 = pathFinder2.FindPathDay(limitCount*2, eventPoller);
 		if(path2==null) {
 			HgLog.Warning("No path found(pathFinder2)");
 			buildedPath1.Remove();
@@ -1737,9 +1758,10 @@ class RailToAnyRailBuilder extends RailBuilder {
 		if(!RailBuilder.Build()) {
 			return false;
 		}
+		/*
 		if(!BuildRailloadPoints()) {
 			return false;
-		}
+		}*/
 		return true;
 	}
 

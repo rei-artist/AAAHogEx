@@ -150,6 +150,9 @@ class BuildUtils {
 				return true;
 			}
 			if(AIError.GetLastError() == AIError.ERR_VEHICLE_IN_THE_WAY) {
+				if(i==0) {
+					HgLog.Warning("RetryUntilFree(ERR_VEHICLE_IN_THE_WAY) limit:"+limit);
+				}
 				AIController.Sleep(3);
 				continue;
 			}
@@ -166,6 +169,20 @@ class BuildUtils {
 	
 	
 	static function WaitForMoney(func) {
+		local cost;
+		{
+			local testMode = AITestMode();
+			local accounting = AIAccounting();
+			func();
+			cost = accounting.GetCosts();
+		}
+		if(HogeAI.Get().IsTooExpensive(cost)) {
+			HgLog.Warning("cost too expensive:" + cost);
+			return false;
+		}
+		HogeAI.WaitForMoney(cost);
+		return func();
+	/*
 		local w = 1000;
 		while(true) {
 			if(func()) {
@@ -178,8 +195,19 @@ class BuildUtils {
 			}
 			break;
 		}
-		return false;
-	}	
+		return false;*/
+	}
+	
+	static function IsTooExpensiveClearWaterCost() {
+		local testMode = AITestMode();
+		local accounting = AIAccounting();
+		local tile = AIMap.GetTileIndex(1,1);
+		if(AITile.IsWaterTile(tile)) {
+			AITile.RaiseTile (tile, AITile.SLOPE_S);
+			return HogeAI.Get().IsTooExpensive(accounting.GetCosts());
+		}
+		return false; //TODO 他のタイルも調べる
+	}
 }
 
 class RailUtils {
@@ -355,7 +383,7 @@ class VehicleUtils {
 	}	
 
 	static function GetSlopeForce(weight, slope, totalWeight) {
-		return slope * weight * AIGameSettings.GetValue("vehicle.train_slope_steepness") + totalWeight * 10;
+		return slope * weight * AIGameSettings.GetValue("vehicle.train_slope_steepness") * 100 + totalWeight * 10;
 	}
 	
 	static function GetForce(maxTractiveEffort, power, requestSpeed) {

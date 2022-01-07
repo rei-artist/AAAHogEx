@@ -139,6 +139,10 @@ class HgTile {
 
 
 	function GetNotBuildables(hgTile,isCheckSea) {
+		if(HogeAI.Get().avoidClearWater) {
+			isCheckSea = true;
+		}
+	
 		local d = Distance(hgTile);
 		local dx = (hgTile.X().tofloat()-X()) / d;
 		local dy = (hgTile.Y().tofloat()-Y()) / d;
