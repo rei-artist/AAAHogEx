@@ -923,11 +923,12 @@ class RailBuilder {
 					if(!(isGoalOrStart && AIRail.AreTilesConnected(prevprev, prev, path.GetTile())) 
 							&& !RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
 						local succeeded = false;
-						HgLog.Error("BuildRail failed:"+HgTile(prevprev)+" "+HgTile(prev)+" "+HgTile(path.GetTile())+" "+AIError.GetLastErrorString()+" isGoalOrStart:"+isGoalOrStart);
+						HgLog.Warning("BuildRail failed:"+HgTile(prevprev)+" "+HgTile(prev)+" "+HgTile(path.GetTile())+" "+AIError.GetLastErrorString()+" isGoalOrStart:"+isGoalOrStart);
 						if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR && !BuildedPath.Contains(prev)) {
 							HgLog.Warning("DemolishTile:"+HgTile(prev)+" for BuildRail");
 							AITile.DemolishTile(prev);
 							if(RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
+								HgLog.Warning("BuildRail succeeded after DemolishTile.");
 								succeeded = true;
 							}
 						}

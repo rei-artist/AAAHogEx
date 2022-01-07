@@ -1134,37 +1134,12 @@ class HogeAI extends AIController {
 			additionalHgStation.Remove();
 			return null;
 		}
-		/*
-
-		local railBuilder2 = RailToStationRailBuilder(route.pathDestToSrc.path.SubPathLastIndex(5),additionalHgStation,false,pathFindLimit,this);
-		if(!railBuilder2.Build()) {
-			HgLog.Error("cannot build rail pathDestToSrc");
-			additionalHgStation.Remove();
-			return null;
-		}
-		local railBuilder1 = RailToStationRailBuilder(route.pathSrcToDest.path.SubPathIndex(5),additionalHgStation,true,pathFindLimit,this, railBuilder2.buildedPath.path);
-		if(!railBuilder1.Build()) {
-			HgLog.Error("cannot build rail pathSrcToDest");
-			additionalHgStation.Remove();
-			railBuilder2.buildedPath.Remove();
-			if(depot != null) {
-				AITile.DemolishTile(depot);
-			}
-			if(doubleDepots != null) {
-				AITile.DemolishTile(doubleDepots[0]);
-				AITile.DemolishTile(doubleDepots[1]);
-			}
-			return null;
-		}*/
-
 		local depotPath = route.pathDestToSrc.path.SubPathStart(railBuilder.buildedPath1.path.GetLastTile());
 		local depot = depotPath.BuildDepot();
 		local doubleDepots = depotPath.BuildDoubleDepot();
 		
 		route.AddDepot(depot);
 		route.AddDepots(doubleDepots);
-//		local additionalRoute = TrainRoute(TrainRoute.RT_ADDITIONAL, route.cargo, additionalHgStation, route.destHgStation,
-//			railBuilder1.buildedPath, railBuilder2.buildedPath);
 		local additionalRoute = TrainRoute(TrainRoute.RT_ADDITIONAL, route.cargo, additionalHgStation, route.destHgStation,
 			railBuilder.buildedPath2, railBuilder.buildedPath1);
 
@@ -1283,17 +1258,11 @@ class HogeAI extends AIController {
 			}), transferStation, route.cargo, 150, this, null, false);
 			railBuilderTransferToPath.isReverse = true;
 			if(!railBuilderTransferToPath.BuildTails()) {
-				HgLog.Error("cannot build railBuilderTransferToPath");
-				Rollback(needRollbacks);
-				return false;
-			}
-			/*			
-			railBuilderTransferToPath = RailToStationRailBuilder(returnPath.SubPathEnd(returnPath.GetLastTileAt(4)),transferStation,true,pathFindLimit,this);
-			if(!railBuilderTransferToPath.Build()) {
 				HgLog.Warning("cannot build railBuilderTransferToPath");
 				Rollback(needRollbacks);
 				return false;
-			}*/
+			}
+			
 			needRollbacks.push(railBuilderTransferToPath.buildedPath); // TODO Rollback時に元の線路も一緒に消える事がある。limit date:300の時に消えている
 			
 			local pointTile = railBuilderTransferToPath.buildedPath.path.GetFirstTile();
@@ -1302,89 +1271,15 @@ class HogeAI extends AIController {
 			}), transferStation, route.cargo, 150, this);
 			
 			if(!railBuilderPathToTransfer.BuildTails()) {
-				HgLog.Error("cannot build railBuilderPathToTransfer");
+				HgLog.Warning("cannot build railBuilderPathToTransfer");
 				Rollback(needRollbacks);
 				return false;
 			}
 			
 			needRollbacks.push(railBuilderPathToTransfer.buildedPath);
 			
-			/*
-			returnPath = route.GetPathAllDestToSrc(); //書き換えられている可能性があるので改めて取得
-			local pathForTransferArrival = returnPath.SubPathStart(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
-			railBuilderPathToTransfer = RailToStationRailBuilder(pathForTransferArrival,transferStation,false,pathFindLimit,this);
-			if(!railBuilderPathToTransfer.Build()) {
-				HgLog.Warning("cannot build railBuilderPathToTransfer");
-				Rollback(needRollbacks);
-				return false;
-			}
-			needRollbacks.push(railBuilderPathToTransfer.buildedPath);*/
 		}
 
-/*
-		local srcRouteTrainLength = 7;
-		local srcRouteDistance = AIMap.DistanceManhattan(transferStation.platformTile, srcPlace.GetLocation());
-		if(srcRouteDistance < 50) {
-			srcRouteTrainLength = srcRouteDistance / 10 + 2
-		}
-
-		local destStationFactory = TerminalStationFactory(2);//DestRailStationFactory(2);//
-		destStationFactory.platformLength = srcRouteTrainLength;
-		destStationFactory.nearestFor = transferStation.stationGroup.hgStations[0].platformTile;
-		local transferSrcStation = destStationFactory.SelectBestHgStation( transferStation.stationGroup.GetStationCandidatesInSpread(maxStationSpread, destStationFactory),
-			transferStation.platformTile, srcPlace.GetLocation(), "transfer");
-		if(transferSrcStation == null) {
-			//TODO: GetBuildableStatoinByPathの次候補で成功する可能性
-			HgLog.Info("cannot build transfer src station");
-			Rollback(needRollbacks);
-			return false;
-		}
-		
-		local list = HgArray(transferSrcStation.GetTiles()).GetAIList();
-		HogeAI.notBuildableList.AddList(list);
-		local srcStationFactory = SrcRailStationFactory();
-		srcStationFactory.platformLength = srcRouteTrainLength;
-		local srcStation = srcStationFactory.CreateBest(srcPlace, route.cargo, transferSrcStation.platformTile);
-		HogeAI.notBuildableList.RemoveList(list);
-		
-		if(srcStation == null) {
-			HgLog.Info("cannot build srcStation");
-			Rollback(needRollbacks);
-			return false;
-		}
-		
-		local srcRouteRailBuilder;
-		{
-			local aiExecMode = AIExecMode();
-			
-			transferSrcStation.cargo = route.cargo;
-			transferSrcStation.isSourceStation = false;
-			if(!transferSrcStation.BuildExec()) {
-				HgLog.Warning("cannot build transfer src station");
-				Rollback(needRollbacks);
-				return false;
-			}
-			needRollbacks.push(transferSrcStation);
-			
-			srcStation.cargo = route.cargo;
-			srcStation.isSourceStation = true;
-			if(!srcStation.BuildExec()) {
-				HgLog.Warning("cannot build transfer srcStation");
-				Rollback(needRollbacks);
-				return false;
-			}
-			needRollbacks.push(srcStation);
-			
-			srcRouteRailBuilder = TwoWayStationRailBuilder(srcStation, transferSrcStation, pathFindLimit, this);
-			if(!srcRouteRailBuilder.Build()) {
-				HgLog.Warning("srcRouteRailBuilder.Build failed.");
-				Rollback(needRollbacks);
-				return null;
-			}
-			needRollbacks.push(srcRouteRailBuilder.buildedPath1);
-			needRollbacks.push(srcRouteRailBuilder.buildedPath2);
-		}*/
-		
 		
 		{
 			local returnDestStation = TerminalStationFactory(2).CreateBest(destPlace, route.cargo, transferStation.platformTile, false);
@@ -1412,23 +1307,12 @@ class HogeAI extends AIController {
 			}), returnDestStation, route.cargo, 150, this, null, false);
 			railBuilderReturnDestDeparture.isReverse = true;
 			if(!railBuilderReturnDestDeparture.BuildTails()) {
-				HgLog.Error("cannot build railBuilderReturnDestDeparture");
+				HgLog.Warning("cannot build railBuilderReturnDestDeparture");
 				Rollback(needRollbacks);
 				return false;
 			}
 			needRollbacks.push(railBuilderReturnDestDeparture.buildedPath);
 			
-			/*
-			local pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
-			
-			local pathForTransferDeparutre = pathForReturnDest;//.SubPathEnd(railBuilderReturnDestArrival.pathSrcToDest.GetLastTile());
-			local railBuilderReturnDestDeparture = RailToStationRailBuilder(pathForTransferDeparutre,returnDestStation,true,pathFindLimit,this);
-			if(!railBuilderReturnDestDeparture.Build()) {
-				HgLog.Error("cannot build railBuilderReturnDestDeparture");
-				Rollback(needRollbacks);
-				return false;
-			}
-			needRollbacks.push(railBuilderReturnDestDeparture.buildedPath);*/
 			
 			local pointTile = railBuilderTransferToPath.buildedPath.path.GetFirstTile();
 			local railBuilderReturnDestArrival = TailedRailBuilder.PathToStation(GetterFunction( function():(route, pointTile, railBuilderReturnDestDeparture) {
@@ -1437,22 +1321,12 @@ class HogeAI extends AIController {
 			}), returnDestStation, route.cargo, 150, this);
 			
 			if(!railBuilderReturnDestArrival.BuildTails()) {
-				HgLog.Error("cannot build railBuilderReturnDestArrival");
+				HgLog.Warning("cannot build railBuilderReturnDestArrival");
 				Rollback(needRollbacks);
 				return false;
 			}
 			
 			needRollbacks.push(railBuilderReturnDestArrival.buildedPath);
-			/*
-			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());
-			local pathForReturnDestArrival = pathForReturnDest.SubPathStart(railBuilderReturnDestDeparture.buildedPath.path.GetFirstTile());
-			local railBuilderReturnDestArrival = RailToStationRailBuilder(pathForReturnDestArrival,returnDestStation,false,pathFindLimit,this,railBuilderReturnDestDeparture.buildedPath.path);
-			if(!railBuilderReturnDestArrival.Build()) {
-				HgLog.Error("cannot build railBuilderReturnDestArrival");
-				Rollback(needRollbacks);
-				return false;
-			}
-			pathForReturnDest = route.GetPathAllDestToSrc().SubPathEnd(railBuilderTransferToPath.buildedPath.path.GetFirstTile());*/
 			
 			local aiExecMode = AIExecMode();
 
@@ -1463,20 +1337,6 @@ class HogeAI extends AIController {
 			route.returnRoute = returnRoute;
 			returnRoute.originalRoute = route;
 			
-/*
-			local newRoute = TrainRoute(TrainRoute.RT_RETURN, lastRoute.cargo, srcStation, transferSrcStation,
-				srcRouteRailBuilder.buildedPath1, srcRouteRailBuilder.buildedPath2);
-			newRoute.trainLength = srcRouteTrainLength;
-			transferSrcStation.BuildAfter();
-			newRoute.destPlace = destPlace;
-			TrainRoute.instances.push(newRoute);
-			lastRoute.returnRoute = newRoute;
-			Place.SetUsedPlaceCargo(srcPlace,newRoute.cargo);
-
-			newRoute.BuildFirstTrain();
-			if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 100000) {
-				newRoute.CloneAndStartTrain();
-			}*/
 
 			route.AddReturnTransferOrder(transferStation, returnDestStation);
 			
@@ -1915,7 +1775,7 @@ class HogeAI extends AIController {
 				}
 			}
 		} else if(vehicleType == AIVehicle.VT_RAIL) {
-			HgLog.Error("ET_VEHICLE_LOST vehicleType == AIVehicle.VT_RAIL");
+			HgLog.Warning("ET_VEHICLE_LOST vehicleType == AIVehicle.VT_RAIL");
 		}
 	}
 	 
