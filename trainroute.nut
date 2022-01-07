@@ -37,9 +37,10 @@ class TrainInfoDictionary {
 	
 	function GetTrainInfo(engine) {
 		local engineName = AIEngine.GetName(engine);
-		if(engineName.find("Hankyu") != null) {
+		/*
+		if(engineName != null && engineName.find("Hankyu") != null) {
 			return null;
-		}
+		}*/
 		
 		if(dictionary.rawin(engine)) {
 			return dictionary[engine];

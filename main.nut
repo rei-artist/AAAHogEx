@@ -292,12 +292,21 @@ class HogeAI extends AIController {
 				
 				isTry = true;
 				if(t.vehicleType == AIVehicle.VT_ROAD) {
-					local roadRouteBuilder = RoadRouteBuilder(t.destPlace, t.place, t.cargo);
-					if(roadRouteBuilder.ExistsSameRoute()) {
+					local routeBuilder = RoadRouteBuilder(t.destPlace, t.place, t.cargo);
+					if(routeBuilder.ExistsSameRoute()) {
 						continue;
 					}
 					HgLog.Info("Try build RoadRoute: +"+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
-					if(roadRouteBuilder.Build() != null) {
+					if(routeBuilder.Build() != null) {
+						return isTry;
+					}
+				} else if(t.vehicleType == AIVehicle.VT_WATER) {
+					local routeBuilder = WaterRouteBuilder(t.destPlace, t.place, t.cargo);
+					if(routeBuilder.ExistsSameRoute()) {
+						continue;
+					}
+					HgLog.Warning("Try build WaterRoute: "+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
+					if(routeBuilder.Build() != null) {
 						return isTry;
 					}
 				} else if(t.vehicleType == AIVehicle.VT_RAIL) {
@@ -305,8 +314,6 @@ class HogeAI extends AIController {
 					if(BuildRouteAndAdditional(t.destPlace, t.place, t.cargo)) {
 						return isTry;
 					}
-				} else if(t.vehicleType == AIVehicle.VT_WATER) {
-					HgLog.Warning("Try build WaterRoute: "+t.destPlace.GetName() + "<-" + t.place.GetName()+" production:"+t.production+"("+AICargo.GetName(t.cargo)+" maxValue:"+t.maxValue+")");
 				}
 			}
 			if(candidate == null) {
@@ -675,7 +682,7 @@ class HogeAI extends AIController {
 		if(originalRoute != null) {
 			routes = [originalRoute];
 		} else {
-			routes = RouteUtils.GetAllRoutes();
+			routes = Route.GetAllRoutes();
 		}
 		local tooManyRoadVehicles = AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD) > HogeAI.Get().maxRoadVehicle * 0.9;
 		
@@ -789,12 +796,10 @@ class HogeAI extends AIController {
 			local maxValue = 0;
 			
 			foreach(t in [{
-						engineSelector = RoadRoute,
 						vehicleType = AIVehicle.VT_ROAD,
 						maxVehicle = maxRoadVehicle * 0.8,
 						label = "road"
 					},{
-						engineSelector = WaterRoute,
 						vehicleType = AIVehicle.VT_WATER,
 						maxVehicle = maxShips * 0.8,
 						label = "water" }]) {
@@ -804,7 +809,7 @@ class HogeAI extends AIController {
 					local distanceEstimate = array(10);
 					typeDistanceEstimate[t.vehicleType] <- distanceEstimate;
 					for(local distance = 0; distance < 200; distance += 20) {
-						local engine = t.engineSelector.ChooseEngineCargo(cargo, distance + 10);
+						local engine = CommonRoute.ChooseEngineCargo(cargo, distance + 10, t.vehicleType);
 						if(engine != null) {
 							local capacity = AIEngine.GetCapacity(engine);
 							local income = HogeAI.GetCargoIncome(distance + 10, cargo, AIEngine.GetMaxSpeed(engine), 2)
@@ -1570,6 +1575,14 @@ class HogeAI extends AIController {
 		//PerformanceCounter.Print();
 	}
 	
+	function CheckWaterRoute() {
+		foreach(route in WaterRoute.instances) {
+			route.CheckBuildVehicle();
+		}
+		foreach(route in WaterRoute.instances) {
+			route.CheckRenewal();
+		}
+	}
 
 	 
 	function OnPathFindingInterval() {
@@ -1663,7 +1676,7 @@ class HogeAI extends AIController {
 		DoPending();
 		supressInterrupt = false;
 	}
-	 
+
 	static function DoInterval() {
 		HogeAI.Get()._DoInterval();
 	}
@@ -1701,15 +1714,18 @@ class HogeAI extends AIController {
 
 		CheckBus();
 		times.push(AIDate.GetCurrentDate()); //5
-
-		AirportTypeState.Get().Check();
+		
+		CheckWaterRoute();
 		times.push(AIDate.GetCurrentDate()); //6
 
-		DelayCommandExecuter.Get().Check();
+		AirportTypeState.Get().Check();
 		times.push(AIDate.GetCurrentDate()); //7
+
+		DelayCommandExecuter.Get().Check();
+		times.push(AIDate.GetCurrentDate()); //8
 		
 		DoInterrupt();
-		times.push(AIDate.GetCurrentDate()); //8
+		times.push(AIDate.GetCurrentDate()); //9
 		
 		local s = "";
 		local pre = lastIntervalDate;

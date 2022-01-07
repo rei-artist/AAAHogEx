@@ -560,7 +560,7 @@ class Place {
 			foreach(vt in vehicleTypes) {
 				if(typeDistanceEstimate.rawin(vt)) {
 					local estimate = typeDistanceEstimate[vt][distanceIndex];
-					if(maxEstimate == null || maxEstimate.value < estimate.value) {
+					if(estimate!=null && (maxEstimate == null || maxEstimate.value < estimate.value)) {
 						vehicleType = vt;
 						maxEstimate = estimate;
 					}

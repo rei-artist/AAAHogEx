@@ -307,6 +307,20 @@ class Path {
 		}
 	}
 	
+	function GetTotalDistance() {
+		local path = this;
+		local result = 0;
+		local prev = null;
+		while(path != null) {
+			if(prev != null) {
+				result += AIMap.DistanceManhattan(prev, path.GetTile());
+			}
+			prev = path.GetTile();
+			path = path.GetParent();
+		}
+		return result;
+	}
+	
 	function RemoveRails(isTest=false) {
 		local path = this;
 		local prev = null;
@@ -524,8 +538,8 @@ class Path {
 		return RailBuilder.BuildRailUntilFree(a,b,c);
 	}
 	
-	function BuildDepot(isRoad=false) {
-		if(!isRoad) {
+	function BuildDepot(vehicleType = AIVehicle.VT_RAIL) {
+		if(vehicleType == AIVehicle.VT_RAIL) {
 			return BuildDepotForRail();
 		} else {
 			local prev = null;
@@ -538,7 +552,7 @@ class Path {
 					} else {
 						local curHgTile = HgTile(prev);
 						foreach(hgTile in curHgTile.GetDir4()) {
-							if(curHgTile.BuildRoadDepot(hgTile.tile, prev)) {
+							if(curHgTile.BuildCommonDepot(hgTile.tile, prev, vehicleType)) {
 								return hgTile.GetTileIndex();
 							}
 						}

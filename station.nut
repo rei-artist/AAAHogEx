@@ -174,7 +174,7 @@ class StationFactory {
 		local candidates = [];
 		foreach(station in stations2) {
 			checked.AddItem(station.platformTile,0);
-			if(station.Build(levelTiles)) {
+			if(station.Build(levelTiles, true)) {
 				HgLog.Info("station build succeeded(TestMode)");
 				station.levelTiles = levelTiles;
 				return [[station,0]]; // この先は重いのでカット
@@ -207,7 +207,7 @@ class StationFactory {
 			local pieceStation = PieceStation(tile);
 			pieceStation.place = place;
 			pieceStation.cargo = cargo;
-			if(pieceStation.Build()) {
+			if(pieceStation.Build(false, true)) {
 				local virtualStationGroup = StationGroup();
 				virtualStationGroup.isVirtual = true;
 				pieceStation.stationGroup = virtualStationGroup;
@@ -561,6 +561,9 @@ class HgStation {
 					break;
 				case "RoadStation":
 					station = RoadStation(t.platformTile, t.stationDirection, t.stationType);
+					break;
+				case "WaterStation":
+					station = WaterStation(t.platformTile);
 					break;
 			}
 			station.id = t.id;
@@ -1109,8 +1112,8 @@ class PieceStation extends HgStation {
 	
 	function GetEntrances() {
 		local result = [];
-		result.push(platfomTile,AIRoad.GetRoadStationFrontTile(platfomTile));
-		result.push(platfomTile,AIRoad.GetDriveThroughBackTile(platfomTile));
+		result.push([platformTile,AIRoad.GetRoadStationFrontTile(platformTile)]);
+		result.push([platformTile,AIRoad.GetDriveThroughBackTile(platformTile)]);
 		return result;
 	}
 	

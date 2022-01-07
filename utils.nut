@@ -223,15 +223,6 @@ class RailUtils {
 	}
 }
 
-class RouteUtils {
-	static function GetAllRoutes() {
-		local routes = [];
-		routes.extend(TrainRoute.GetAll());
-		routes.extend(RoadRoute.instances);
-		return routes;
-	}
-}
-
 class HgTable {
 	static function Extend(table1, table2) {
 		foreach(k,v in table2) {

@@ -7,8 +7,19 @@ class HgTile {
 	static DIR_INVALID = 4;
 	
 			
-	static DIR4Index =[AIMap.GetTileIndex(-1, 0), AIMap.GetTileIndex(0, -1),
+	static DIR4Index = [AIMap.GetTileIndex(-1, 0), AIMap.GetTileIndex(0, -1),
 	                 AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
+
+	static DIR8Index = [
+		AIMap.GetTileIndex(-1, -1),
+	    AIMap.GetTileIndex(-1, 0),
+	    AIMap.GetTileIndex(-1, 1),
+		AIMap.GetTileIndex(0, -1),
+	    AIMap.GetTileIndex(0, 1),
+		AIMap.GetTileIndex(1, -1),
+	    AIMap.GetTileIndex(1, 0),
+		AIMap.GetTileIndex(1, 1)];
+
 	static TrackDirs = [
 		[AIRail.RAILTRACK_NE_SW,[0,3]],
 		[AIRail.RAILTRACK_NW_SE,[1,2]],
@@ -267,6 +278,17 @@ class HgTile {
 		return false;
 	}
 	
+	function BuildCommonDepot(depotTile,front,vehicleType) {
+		switch(vehicleType) {
+		case AIVehicle.VT_ROAD:
+			return BuildRoadDepot(depotTile, front);
+		case AIVehicle.VT_WATER:
+			return BuildWaterDepot(depotTile, front);
+		default:
+			HgLog.Error("BuildCommonDepot failed.vehicleType="+vehicleType);
+			return false;
+		}
+	}
 	
 	function BuildRoadDepot(depotTile,front) {
 		local aiTest = AITestMode();
@@ -282,6 +304,19 @@ class HgTile {
 			return true;
 		}
 		return false;
+	}
+	
+	function BuildWaterDepot(depotTile,front) {
+		local aiExec = AIExecMode();
+		foreach(tile in [depotTile, front]) {
+			foreach(d in HgTile.DIR8Index) {
+				if(!AITile.IsWaterTile(tile + d)) {
+					return false;
+				}
+			}
+		}
+		HogeAI.WaitForMoney(10000);
+		return AIMarine.BuildWaterDepot (depotTile, front);
 	}
 
 	function _tostring() {
