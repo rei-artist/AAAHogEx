@@ -280,6 +280,10 @@ class StationFactory {
 		local testMode = AITestMode();
 		local result = null;
 		
+		if(place.HasStation(GetVehicleType())) {
+			result = PlaceStation(place.GetStationLocation(GetVehicleType()));
+		}
+
 		if(result == null && place.IsProducing() && useStationGroup) {
 			result = SelectBestByStationGroup(place,cargo,toTile,true);
 		}
@@ -407,6 +411,10 @@ class RailStationFactory extends StationFactory {
 	function GetStationType() {
 		return AIStation.STATION_TRAIN;
 	}
+	
+	function GetVehicleType() {
+		return AIVehicle.VT_RAIL;
+	}
 }
 
 class RoadStationFactory extends StationFactory {
@@ -422,6 +430,10 @@ class RoadStationFactory extends StationFactory {
 		return stationType;
 	}
 	
+	function GetVehicleType() {
+		return AIVehicle.VT_ROAD;
+	}
+
 	function GetPlatformNum() {
 		return 1;
 	}
@@ -543,6 +555,9 @@ class HgStation {
 			switch(t.name) {
 				case "PieceStation":
 					station = PieceStation(t.platformTile);
+					break;
+				case "PlaceStation":
+					station = PlaceStation(t.platformTile);
 					break;
 				case "SmartStation":
 					station = SmartStation(t.platformTile, t.platformNum, t.platformLength, t.stationDirection);
@@ -708,7 +723,6 @@ class HgStation {
 		if(!builded) {
 			HogeAI.WaitForMoney(40000);
 			if(!Build(levelTiles,false)) {
-				local r = GetPlatformRectangle();
 				return false;
 			}
 		}
@@ -860,6 +874,7 @@ class HgStation {
 		return [];
 	}
 }
+
 
 class RailStation extends HgStation {
 	function BuildStation(joinStation) {
@@ -1036,6 +1051,46 @@ class RoadStation extends HgStation {
 			}
 		}
 		return result * 2;*/
+	}
+}
+
+class PlaceStation extends HgStation {
+	constructor(platfomTile) {
+		HgStation.constructor(platfomTile,0);
+		this.platformNum = 0;
+		this.platformLength = 0;
+	}
+
+	function GetTypeName() {
+		return "PlaceStation";
+	}
+	
+	function Build(levelTiles=false,isTestMode=false) {
+		return true;
+	}
+
+	function Remove() {
+		return true;
+	}
+
+	function IsAcceptingCargo(cargo) {
+		return place.GetAccepting().IsTreatCargo(cargo);
+	}
+
+	function IsProducingCargo(cargo) {
+		return place.GetProducing().IsTreatCargo(cargo);
+	}
+
+	function GetStationType() {
+		return null;
+	}
+	
+	function GetTiles() {
+		return [];
+	}
+	
+	function GetEntrances() {
+		return [GetLocation()-1]; //それ自体は通行できないので少しずらす
 	}
 }
 

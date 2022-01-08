@@ -103,6 +103,10 @@ class WaterStationFactory extends StationFactory {
 		return AIStation.STATION_DOCK;
 	}
 	
+	function GetVehicleType() {
+		return AIVehicle.VT_WATER;
+	}
+
 	function GetPlatformNum() {
 		return 1;
 	}

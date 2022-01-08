@@ -190,10 +190,19 @@ class HogeAI extends AIController {
 		}*/
 		
 		foreach(industryType,v in AIIndustryTypeList()) {
-			HgLog.Info("name:"+AIIndustryType.GetName(industryType)+
-				" IsRawIndustry:"+AIIndustryType.IsRawIndustry(industryType)+
+			local s = "";
+			foreach(cargo,v in AIIndustryType.GetProducedCargo(industryType)) {
+				s += AICargo.GetCargoLabel(cargo)+",";
+			}
+			s += "/";
+			foreach(cargo,v in AIIndustryType.GetAcceptedCargo(industryType)) {
+				s += AICargo.GetCargoLabel(cargo)+",";
+			}
+			HgLog.Info(
+				"IsRawIndustry:"+AIIndustryType.IsRawIndustry(industryType)+
 				" IsProcessingIndustry:"+AIIndustryType.IsProcessingIndustry(industryType)+
-				" ProductionCanIncrease:"+AIIndustryType.ProductionCanIncrease (industryType));
+				" ProductionCanIncrease:"+AIIndustryType.ProductionCanIncrease (industryType)+
+				" "+s+" name:"+AIIndustryType.GetName(industryType));
 		}
 		
 		foreach(cargo,v in AICargoList()) {
@@ -387,15 +396,19 @@ class HogeAI extends AIController {
 				if(route.vehicleType == AIVehicle.VT_RAIL && route.cargo != HogeAI.GetPassengerCargo() && route.place.IsIncreasableProcessingOrRaw() == false) {
 					continue;
 				}
-				if(route.cargo == HogeAI.GetPassengerCargo()) {
+				if(route.destPlace.IsAcceptingAndProducing(route.cargo) && !route.destPlace.GetProducing().CanUseNewRoute(route.cargo)) {
+					continue;
+				}
+				
+/*				if(route.cargo == HogeAI.GetPassengerCargo()) {
 					if(route.place instanceof TownCargo && !CanUseTownBus(route.place)) {
 						continue;
 					}
 					if(route.destPlace instanceof TownCargo && !CanUseTownBus(route.destPlace)) {
 						continue;
 					}
-				}
-				if(IsBidirectionalCargo(route.cargo)) {
+				}*/
+				if(route.destPlace.IsAcceptingAndProducing(route.cargo)) {
 					route.production += route.destPlace.GetProducing().GetLastMonthProduction(route.cargo);
 					route.production /= 2;
 				}
@@ -898,15 +911,7 @@ class HogeAI extends AIController {
 			HgLog.Info("cargo:"+AICargo.GetName(cargo)+" maxValue:"+maxValue);
 			if(maxValue >= 1) {
 				foreach(place in Place.GetNotUsedProducingPlaces(cargo,false).array) {
-					local canSteal = true;
-					foreach(route in PlaceDictionary.Get().GetRoutesBySource(place)) {
-						/*if(route instanceof RoadRoute && route.GetDestRoute() == false) {
-							continue;
-						}*/
-						canSteal = route.IsOverflowPlace(place); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
-						HgLog.Info("place is used."+place.GetName()+" "+route+" canSteal:"+canSteal);
-					}
-					if(!canSteal) {
+					if(!place.CanUseNewRoute(cargo)) {
 						continue;
 					}
 					local production = place.GetLastMonthProduction(cargo);

@@ -678,6 +678,24 @@ class Place {
 		return GetAccepting().IsTreatCargo(cargo) && GetProducing().IsTreatCargo(cargo);
 	}
 	
+	function CanUseNewRoute(cargo) {
+		local result = true;
+		foreach(route in PlaceDictionary.Get().GetRoutesBySource(this)) {
+			if(route.cargo != cargo) {
+				continue;
+			}
+			result = route.IsOverflowPlace(this); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
+			HgLog.Info("CanUseNewRoute "+this+" used:"+route+" isOverflow:"+result);
+			if(!result) {
+				break;
+			}
+		}
+		if(result) {
+			HgLog.Info("CanUseNewRoute "+this+" result:"+result);
+		}
+		return result;
+	}
+	
 	function IsNearWater(cargo) {
 		local placeDictionary = PlaceDictionary.Get();
 		local id = Id()+":"+cargo;
@@ -693,6 +711,9 @@ class Place {
 	
 	function CheckNearWater(cargo) {		
 		HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
+		if(IsBuiltOnWater()) {
+			return true;
+		}
 
 		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
 		local tile;
@@ -705,12 +726,6 @@ class Place {
 		return false;
 	}
 	
-	/*
-	function IsSuplied(cargo) {
-		foreach(station in GetHgStations()) {
-			station.GetUsingRoutesAsDest();
-		}
-	}*/
 
 	function _tostring() {
 		return GetName();
@@ -820,6 +835,10 @@ class HgIndustry extends Place {
 	}
 	
 	function IsIncreasable() {
+		local traits = GetIndustryTraits();
+		if(traits=="PASS,/FOOD,BEER,PASS,") { //FIRSのHOTELは生産量は増えない
+			return false;
+		}
 		local industryType = AIIndustry.GetIndustryType(industry);
 		return AIIndustryType.ProductionCanIncrease(industryType);
 
@@ -844,12 +863,33 @@ class HgIndustry extends Place {
 	function GetStockpiledCargo(cargo) {
 		return AIIndustry.GetStockpiledCargo(industry, cargo);
 	}
+		
+	function IsBuiltOnWater() {
+		return AIIndustry.IsBuiltOnWater(industry);
+	}
 	
-	function CheckNearWater(cargo) {
-		if(AIIndustry.IsBuiltOnWater(industry)) {
-			return true;
+	function HasStation(vehicleType) {
+		return vehicleType == AIVehicle.VT_WATER && AIIndustry.HasDock(industry);
+	}
+
+	function GetStationLocation(vehicleType) {
+		if(vehicleType == AIVehicle.VT_WATER) {
+			return AIIndustry.GetDockLocation (industry);
 		}
-		return Place.CheckNearWater(cargo);
+		return null;
+	}
+	
+	function GetIndustryTraits() {
+		local industryType = AIIndustry.GetIndustryType(industry);
+		local s = "";
+		foreach(cargo,v in AIIndustryType.GetProducedCargo(industryType)) {
+			s += AICargo.GetCargoLabel(cargo)+",";
+		}
+		s += "/";
+		foreach(cargo,v in AIIndustryType.GetAcceptedCargo(industryType)) {
+			s += AICargo.GetCargoLabel(cargo)+",";
+		}
+		return s;
 	}
 }
 
@@ -992,4 +1032,15 @@ class TownCargo extends Place {
 		return 0;
 	}
 	
+	function IsBuiltOnWater() {
+		return false;
+	}
+
+	function HasStation(vehicleType) {
+		return false;
+	}
+
+	function GetStationLocation(vehicleType) {
+		return null;
+	}
 }
