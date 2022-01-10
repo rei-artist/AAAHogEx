@@ -606,6 +606,33 @@ class HgStation {
 		}
 	}
 	
+	static function SearchStation(placeOrGroup, stationType, cargo, isAccepting) {
+		local place = null;
+		local stationGroup = null;
+		if(placeOrGroup instanceof Place) {
+			place = placeOrGroup;
+		} else {
+			stationGroup = placeOrGroup;
+		}
+	
+		foreach(hgStation in HgStation.worldInstances) {
+			if(hgStation.GetStationType() == stationType) {
+				if((place != null && hgStation.place != null && hgStation.place.IsSamePlace(place)) 
+						|| (stationGroup != null && hgStation.stationGroup == stationGroup)) {
+					if(isAccepting) {
+						if(hgStation.stationGroup.IsAcceptingCargo(cargo)) {
+							return hgStation;
+						}
+					} else {
+						if(hgStation.stationGroup.IsProducingCargo(cargo)) {
+							return hgStation;
+						}
+					}
+				}
+			}
+		}
+		return null;
+	}
 	
 	id = null;
 	platformTile = null;
@@ -642,7 +669,7 @@ class HgStation {
 		return platformTile;
 	}
 	
-	function BuildPlatform(isTestMode) {
+	function BuildPlatform(isTestMode, supressWarning = false) {
 		//isTestMode = false;
 		local joinStation = AIBaseStation.STATION_NEW
 		if(stationGroup != null && stationGroup.hgStations.len() >= 1 && !stationGroup.isVirtual) {
@@ -662,7 +689,7 @@ class HgStation {
 			}
 			break;
 		}
-		if(!isTestMode && !(this instanceof PieceStation)) {
+		if(!isTestMode && !supressWarning) {
 			HgLog.Warning("BuildStation failed. "+AIError.GetLastErrorString()+" "+GetPlatformRectangle()+" joinStation:"+joinStation+" "+GetTypeName());
 		}
 		return false;
@@ -746,7 +773,9 @@ class HgStation {
 						success = true;
 						break;
 					} else {
-						//HgLog.Warning("pieceStation.BuildExec failed:"+HgTile(tile)+" "+AIError.GetLastErrorString());
+						if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
+							break;
+						}
 					}
 				}
 			}
@@ -959,7 +988,7 @@ class RoadStation extends HgStation {
 		if(levelTiles) {
 			if(isTestMode) {
 				foreach(tile in GetTiles()) {
-					if(!HogeAI.IsBuildable(tile)) {
+					if(!HogeAI.IsBuildable(tile) && (!AIRoad.IsRoadTile(tile) || AIRoad.IsDriveThroughRoadStationTile(tile))) {
 						return false;
 					}
 				}
@@ -971,7 +1000,9 @@ class RoadStation extends HgStation {
 				return false;
 			}
 			if(isTestMode) {
-				if(!BuildPlatform(isTestMode) && AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
+				if(!BuildPlatform(isTestMode) 
+						&& (AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR 
+								|| AIError.GetLastError() == AIRoad.ERR_ROAD_DRIVE_THROUGH_WRONG_DIRECTION)) {
 					return false;
 				}
 				return true;
@@ -988,9 +1019,9 @@ class RoadStation extends HgStation {
 		local prev = null;
 		foreach(road in roads) {
 			if(prev != null) {
-				if(!AIRoad.BuildRoad(At(prev[0],prev[1]), At(road[0],road[1]))){ 
+				if(!AIRoad.BuildRoad(At(prev[0],prev[1]), At(road[0],road[1])) && AIError.GetLastError() != AIError.ERR_ALREADY_BUILT){ 
 					if(!isTestMode) {
-						HgLog.Warning("BuildRoad failed");
+						HgLog.Warning("BuildRoad failed "+HgTile(At(prev[0],prev[1]))+"-"+HgTile(At(road[0],road[1])) + " " + AIError.GetLastErrorString());
 					}
 					return false;
 				}
@@ -1014,7 +1045,7 @@ class RoadStation extends HgStation {
 	}
 
 	function Remove() {
-		//TODO:
+		AIRoad.RemoveRoadStation(platformTile);
 		RemoveWorld();
 		return true;
 	}
@@ -1117,7 +1148,7 @@ class PieceStation extends HgStation {
 		if(!AIRoad.IsRoadTile(platformTile)) {
 			return false;
 		}
-		return BuildPlatform(isTestMode);
+		return BuildPlatform(isTestMode, true);
 		/*
 		if(BuildUtils.RetryUntilFree(function():(platformTile) {
 			return AIRoad.BuildDriveThroughRoadStation (platformTile, platformTile + HgTile.DIR4Index[0], 
@@ -1166,10 +1197,7 @@ class PieceStation extends HgStation {
 	}
 	
 	function GetEntrances() {
-		local result = [];
-		result.push([platformTile,AIRoad.GetRoadStationFrontTile(platformTile)]);
-		result.push([platformTile,AIRoad.GetDriveThroughBackTile(platformTile)]);
-		return result;
+		return [platformTile];
 	}
 	
 	function GetStationType() {

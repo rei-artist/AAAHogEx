@@ -542,6 +542,7 @@ class Path {
 		if(vehicleType == AIVehicle.VT_RAIL) {
 			return BuildDepotForRail();
 		} else {
+			local prevprev = null;
 			local prev = null;
 			local path = this;
 			while(path != null) {
@@ -552,12 +553,16 @@ class Path {
 					} else {
 						local curHgTile = HgTile(prev);
 						foreach(hgTile in curHgTile.GetDir4()) {
+							if(hgTile.tile == path.GetTile() || hgTile.tile == prevprev) {
+								continue;
+							}
 							if(curHgTile.BuildCommonDepot(hgTile.tile, prev, vehicleType)) {
 								return hgTile.GetTileIndex();
 							}
 						}
 					}
 				}
+				prevprev = prev;
 				prev = path.GetTile();
 				path = path.GetParent();
 			}
@@ -1123,7 +1128,7 @@ class RailBuilder {
 				if(t1 - t0 != dir) {
 					notStraight = true;
 				}
-				if(notSea || notStraight || i==3) {
+				if(notSea || notStraight || i==5) {
 					break;
 				}
 				i++;
@@ -1169,7 +1174,7 @@ class RailBuilder {
 				} else {
 					cur = prevcur;
 				}
-			} else if(i==3) {
+			} else if(i>=3) {
 				if(notStraight) {
 					cur = prevprevcur;
 					t1 = t0;
@@ -1194,7 +1199,7 @@ class RailBuilder {
 				if(TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[1]))) {
 					success = true;
 				}
-				if(TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]))) {
+				if(!success && TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]))) {
 					success = true;
 				}
 				return success;

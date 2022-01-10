@@ -49,6 +49,13 @@ class HgTile {
 		AIRail.RAILTRACK_NE_SE
 	];
 	
+	static Corners = [
+		AITile.CORNER_W,
+		AITile.CORNER_S,
+		AITile.CORNER_E,
+		AITile.CORNER_N
+	];
+	
 	tile = null;
 	
 	constructor(tile) {
@@ -114,13 +121,16 @@ class HgTile {
 		}
 	}
 	
+	function GetConnectionCorners(hgTile) {
+		return HgTile.GetCorners(this.GetDirection(hgTile));
+	}
 	
 	function GetMaxHeight() {
 		return AITile.GetMaxHeight(tile);
 	}
 	
 	function GetMaxHeightCount() {
-		local corners = [AITile.CORNER_W,AITile.CORNER_S,AITile.CORNER_E,AITile.CORNER_N];
+		local corners = HgTile.Corners;
 		local heights = array(corners.len());
 		foreach(i,c in corners) {
 			heights[i] = AITile.GetCornerHeight(tile,c);
@@ -131,7 +141,7 @@ class HgTile {
 			if(h == maxHeight) {
 				maxHeightCount ++;
 			}
-		}		
+		}
 		return maxHeightCount;
 	}
 	
@@ -167,7 +177,7 @@ class HgTile {
 				if(isCheckSea) {
 					continuity = min(20,continuity+1);
 					if(continuity >= 9) {
-						result += continuity * 3;
+						result += continuity * 30;
 					}
 				}
 			} else if(!AITile.IsBuildable(cur.tile)) {
@@ -308,15 +318,33 @@ class HgTile {
 	
 	function BuildWaterDepot(depotTile,front) {
 		local aiExec = AIExecMode();
-		foreach(tile in [depotTile, front]) {
+		local d2;
+		if(depotTile < front) {
+			d2 = depotTile;
+			depotTile -= (front - depotTile);
+		} else {
+			d2 = depotTile + (depotTile - front);
+		}
+		if(WaterRoute.usedTiles.rawin(depotTile)) {
+			return false;
+		}
+		if(WaterRoute.usedTiles.rawin(d2)) {
+			return false;
+		}
+		/*
+		foreach(tile in [depotTile,d2]) {
 			foreach(d in HgTile.DIR8Index) {
 				if(!AITile.IsWaterTile(tile + d)) {
 					return false;
 				}
 			}
-		}
+		}*/
 		HogeAI.WaitForMoney(10000);
-		return AIMarine.BuildWaterDepot (depotTile, front);
+		if(!AIMarine.BuildWaterDepot (depotTile, front)) {
+			return false;
+		}
+		AIMarine.BuildBuoy (front);
+		return true;
 	}
 
 	function _tostring() {
@@ -576,9 +604,17 @@ class TileListUtil {
 			average = 1;
 		}
 		
+		local around = [AIMap.GetTileIndex(-1,-1),AIMap.GetTileIndex(-1,0),AIMap.GetTileIndex(0,-1),0];
 		foreach(tile,level in tileList) {
-			if(!landfill && level <= 0) {
-				return false;
+			if(level <= 0) {
+				if(!landfill) {
+					return false;
+				}
+				foreach(d in around) {
+					if(WaterRoute.usedTiles.rawin(tile + d)) {
+						return false;
+					}
+				}
 			}
 			if(abs(average - level) >= 2) { //TODO: TestModeで動かないからはじいている
 //				HgLog.Warning("failed LevelTiles average:"+average+" level:"+level);

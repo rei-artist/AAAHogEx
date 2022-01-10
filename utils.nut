@@ -144,7 +144,7 @@ class HgLog {
 }
 
 class BuildUtils {
-	static function RetryUntilFree(func, limit=1000) {
+	static function RetryUntilFree(func, limit=100) {
 		for(local i=0;i<limit;i++) {
 			if(func()) {
 				return true;

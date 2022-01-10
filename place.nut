@@ -260,7 +260,7 @@ class PlaceDictionary {
 class Place {
 
 	static removedDestPlaceDate = [];
-	static ngPathFindPairs = [];
+	static ngPathFindPairs = {};
 	static productionHistory = [];
 	static needUsedPlaceCargo = [];
 	
@@ -310,7 +310,9 @@ class Place {
 		}
 		
 		Place.ngPathFindPairs.clear();
-		Place.ngPathFindPairs.extend(data.ngPathFindPairs);
+		foreach(k,v in data.ngPathFindPairs) {
+			Place.ngPathFindPairs.rawset(k,v);
+		}
 
 		HgIndustry.closedIndustries.clear();
 		foreach(industry in data.closedIndustries){
@@ -360,29 +362,20 @@ class Place {
 		return false;
 	}
 	
-	static function AddNgPathFindPair(from, to) {
+	static function AddNgPathFindPair(from, to, vehicleType) {
 		if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
 			return;
 		}
 		local fromTile = typeof from == "integer" ? from : from.GetLocation();
 		local toTile = typeof to == "integer" ? to : to.GetLocation();
 		
-		Place.ngPathFindPairs.push([fromTile,toTile]);
+		Place.ngPathFindPairs.rawset(fromTile+"-"+toTile+"-"+vehicleType,true);
 	}
 	
-	static function IsNgPathFindPair(from, to) {
+	static function IsNgPathFindPair(from, to, vehicleType) {
 		local fromTile = typeof from == "integer" ? from : from.GetLocation();
 		local toTile = typeof to == "integer" ? to : to.GetLocation();
-		foreach(p in Place.ngPathFindPairs) {
-			if((p[0] == fromTile && p[1] == toTile) || (p[0] == toTile && p[1]==fromTile)) {
-				return true;
-			}
-		}
-		return false;
-	}
-	
-	static function ClearNgPathFindPair() {
-		Place.ngPathFindPairs.clear();
+		return Place.ngPathFindPairs.rawin(fromTile+"-"+toTile+"-"+vehicleType);
 	}
 	
 	static function AddNeedUsed(place, cargo) {
@@ -400,7 +393,7 @@ class Place {
 		if(Place.IsProducedByTown(cargo)) {
 			local townList = AITownList();
 			townList.Valuate(AITown.GetPopulation);
-			townList.KeepAboveValue(1000);
+			townList.KeepAboveValue(600);
 			foreach(town, v in townList) {
 				result.push(TownCargo(town,cargo,true));
 			}
@@ -451,30 +444,33 @@ class Place {
 	}
 	
 
-	static function SearchSrcAdditionalPlaces(src, destTile, cargo, minDistance=20, maxDistance=200, minProduction=60, maxCost=100, minScore=200, notAllowLandFill=false, isIncreasableProcessingOrRaw = true) {
+	static function SearchSrcAdditionalPlaces(src, destTile, cargo, minDistance=20, maxDistance=200, minProduction=60, maxCost=100, minScore=200, vehicleType=AIVehicle.VT_RAIL) {
 		local middleTile = (typeof src == "integer") ? src : src.GetLocation();
 		local existingDistance = destTile == null ? 0 : AIMap.DistanceManhattan(destTile, middleTile);
-		return Place.GetProducingPlaceDistance(cargo, middleTile, isIncreasableProcessingOrRaw, maxDistance).Map(function(placeDistance):(cargo, destTile) {
+		return Place.GetProducingPlaceDistance(cargo, middleTile, vehicleType == AIVehicle.VT_RAIL, maxDistance).Map(function(placeDistance):(cargo, destTile) {
 			local t = {};
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
 			t.totalDistance <- destTile == null ? t.distance : AIMap.DistanceManhattan(destTile, t.place.GetLocation());
 			t.production <- t.place.GetLastMonthProduction(cargo);
 			return t;
-		}).Filter(function(t):(middleTile, minDistance, minDistance, minProduction, existingDistance){
+		}).Filter(function(t):(middleTile, minDistance, minDistance, minProduction, existingDistance, vehicleType){
 			return minDistance <= t.distance 
 				&& (existingDistance==0 || t.totalDistance - t.distance > existingDistance / 2)
 				&& minProduction <= t.production 
 				&& t.place.GetLocation() != middleTile 
-				&& !Place.IsNgPathFindPair(t.place, middleTile);
-		}).Map(function(t):(middleTile,notAllowLandFill){
-			t.cost <- HgTile(middleTile).GetPathFindCost(HgTile(t.place.GetLocation()),notAllowLandFill);
-			t.score <- t.totalDistance * 100 / t.cost;
+				&& !Place.IsNgPathFindPair(t.place, middleTile, vehicleType);
+		}).Map(function(t):(middleTile,vehicleType,cargo){
+			t.cost <- vehicleType == AIVehicle.VT_WATER ? 1 : HgTile(middleTile).GetPathFindCost(HgTile(t.place.GetLocation()),vehicleType != AIVehicle.VT_RAIL);
+			t.score <- t.totalDistance * 100 / t.cost; //TODO GetMaxCargoPlacesの結果を使う
+			if(vehicleType == AIVehicle.VT_WATER && !t.place.IsNearWater(cargo)) {
+				t.score = -1;
+			}
 			t.production = Place.AdjustProduction(t.place, t.production);
 			return t;
 		}).Filter(function(t):(maxCost, minScore) {
 //			HgLog.Info("place:"+t.place.GetName()+" cost:"+t.cost+" dist:"+t.distance+" score:"+t.score);
-			return t.cost <= maxCost && minScore <= t.score 
+			return t.cost <= maxCost// && minScore <= t.score 
 		}).Sort(function(a,b) {
 			return b.score * b.production - a.score * a.production;
 		}).array;
@@ -521,7 +517,7 @@ class Place {
 		return score;
 	}
 
-	static function SearchAcceptingPlaces(cargo,fromTile) {
+	static function SearchAcceptingPlaces(cargo,fromTile,vehicleType) {
 		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance) : (cargo,fromTile)  {
 			local t = {};
 			t.cargo <- cargo;
@@ -530,8 +526,8 @@ class Place {
 			t.cost <- HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
 			t.score <- t.distance * 10000 / t.cost;
 			return t;
-		}).Filter(function(t):(fromTile) {
-			return 60 <= t.distance && t.cost < 300 && !Place.IsNgPathFindPair(t.place,fromTile) && t.place.IsAccepting();
+		}).Filter(function(t):(fromTile,vehicleType) {
+			return 60 <= t.distance && t.cost < 300 && !Place.IsNgPathFindPair(t.place,fromTile,vehicleType) && t.place.IsAccepting();
 		}).Map(function(t) {
 			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
 			return t;
@@ -542,14 +538,15 @@ class Place {
 		}).array;*/
 	}
 	
-	static function SearchAcceptingPlacesBestDistance(cargo,srcPlace,typeDistanceEstimate) {
+	static function SearchAcceptingPlacesBestDistance(cargo,srcPlace,typeDistanceEstimate,waterOnly=false) {
 		local fromTile = srcPlace.GetLocation();
-		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance) : (cargo,fromTile,srcPlace,typeDistanceEstimate)  {
+		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance)
+				: (cargo,fromTile,srcPlace,typeDistanceEstimate,waterOnly)  {
 			local t = {};
 			t.cargo <- cargo;
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
-			local cost = HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
+			local cost = waterOnly ? 100000 : HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
 			local vehicleTypes = cost >= 300 ? [] : [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD];
 			if(t.place.IsNearWater(cargo) && srcPlace.IsNearWater(cargo)) {
 				vehicleTypes.push(AIVehicle.VT_WATER);
@@ -571,7 +568,7 @@ class Place {
 			t.vehicleType <- vehicleType;
 			return t;
 		}).Filter(function(t):(fromTile) {
-			return t.vehicleType != null && t.distance > 0 && !Place.IsNgPathFindPair(t.place,fromTile) && t.place.IsAccepting();
+			return t.vehicleType != null && t.distance > 0 && !Place.IsNgPathFindPair(t.place,fromTile,t.vehicleType) && t.place.IsAccepting();
 		}).Map(function(t) {
 			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
 			return t;
@@ -602,7 +599,7 @@ class Place {
 			t.score <- score;
 			return t;
 		}).Filter(function(t):(lastAcceptingTile) {
-			return 40 <= t.distance && t.cost < 200 && 10000 <= t.score && !Place.IsNgPathFindPair(t.place,lastAcceptingTile) && t.place.IsAccepting();
+			return 40 <= t.distance && t.cost < 200 && 10000 <= t.score && !Place.IsNgPathFindPair(t.place,lastAcceptingTile,AIVehicle.VT_RAIL) && t.place.IsAccepting();
 		}).Map(function(t) {
 			return [t.place,Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo)];
 		});
@@ -685,15 +682,23 @@ class Place {
 				continue;
 			}
 			result = route.IsOverflowPlace(this); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
-			HgLog.Info("CanUseNewRoute "+this+" used:"+route+" isOverflow:"+result);
+			//HgLog.Info("CanUseNewRoute "+this+" used:"+route+" isOverflow:"+result);
 			if(!result) {
 				break;
 			}
 		}
 		if(result) {
-			HgLog.Info("CanUseNewRoute "+this+" result:"+result);
+			//HgLog.Info("CanUseNewRoute "+this+" result:"+result);
 		}
 		return result;
+	}
+	
+	function CanUseTrainSource() {
+		if(this instanceof TownCargo) {
+			return true;
+		} else {
+			return IsIncreasable();
+		}
 	}
 	
 	function IsNearWater(cargo) {
@@ -710,7 +715,7 @@ class Place {
 	}
 	
 	function CheckNearWater(cargo) {		
-		HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
+		//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
 		if(IsBuiltOnWater()) {
 			return true;
 		}
@@ -881,6 +886,9 @@ class HgIndustry extends Place {
 	
 	function GetIndustryTraits() {
 		local industryType = AIIndustry.GetIndustryType(industry);
+		if(!AIIndustryType.IsValidIndustryType(industryType)) {
+			return ""; // たぶんcloseしてる
+		}
 		local s = "";
 		foreach(cargo,v in AIIndustryType.GetProducedCargo(industryType)) {
 			s += AICargo.GetCargoLabel(cargo)+",";
@@ -946,7 +954,7 @@ class TownCargo extends Place {
 			return null;
 		}
 		
-		local maxRadius = (sqrt(AITown.GetPopulation(town))/5).tointeger();
+		local maxRadius = (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
 		local tiles = Rectangle.Center(HgTile(GetLocation()),maxRadius).GetTilesOrderByOutside();
 		if(IsProducing()) {
 			tiles.reverse();

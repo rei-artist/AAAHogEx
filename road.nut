@@ -80,6 +80,10 @@ class RoadRoute extends CommonRoute {
 		return "Road";
 	}
 
+	function GetBuilderClass() {
+		return RoadRouteBuilder;
+	}
+	
 	function OnVehicleLost(vehicle) {
 		HgLog.Warning("RoadRoute OnVehicleLost  "+this); //TODO 連続で来るのを抑制
 		local execMode = AIExecMode();
@@ -181,12 +185,14 @@ class RoadBuilder {
 			if (par != null) {
 				local last_node = path.GetTile();
 				if (AIMap.DistanceManhattan(path.GetTile(), par.GetTile()) == 1 ) {
-					HogeAI.WaitForMoney(1000);
-					if (!RoadRouteBuilder.BuildRoadUntilFree(path.GetTile(), par.GetTile())) {
-						local error = AIError.GetLastError();
-						if(error != AIError.ERR_ALREADY_BUILT) {
-							HgLog.Warning("BuildRoad failed."+HgTile(path.GetTile())+" "+HgTile(par.GetTile())+" "+AIError.GetLastErrorString());
-							return RetryBuildRoad(path, starts);
+					if(!AIBridge.IsBridgeTile(path.GetTile()) && !AITunnel.IsTunnelTile(path.GetTile())) {
+						HogeAI.WaitForMoney(1000);
+						if (!RoadRouteBuilder.BuildRoadUntilFree(path.GetTile(), par.GetTile())) {
+							local error = AIError.GetLastError();
+							if(error != AIError.ERR_ALREADY_BUILT) {
+								HgLog.Warning("BuildRoad failed."+HgTile(path.GetTile())+" "+HgTile(par.GetTile())+" "+AIError.GetLastErrorString());
+								return RetryBuildRoad(path starts);
+							}
 						}
 					}
 				} else {
@@ -364,27 +370,10 @@ class TownBus {
 	}
 
 	function ChooseBusEngine() {
-		return CommonRoute.ChooseEngineCargo(HogeAI.GetPassengerCargo(), AIMap.DistanceManhattan(stations[0],stations[1]), AIVehicle.VT_ROAD);
-	/*
-		local enginelist = AIEngineList(AIVehicle.VT_ROAD);
-		enginelist.Valuate(AIEngine.HasPowerOnRoad, AIRoad.GetCurrentRoadType());
-		enginelist.KeepValue(1);
-		enginelist.Valuate(AIEngine.CanRefitCargo, HogeAI.GetPassengerCargo());
-		enginelist.KeepValue(1);
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) <= 600000) {
-			enginelist.Valuate(function(e){
-				return AIEngine.GetPrice(e)+AIEngine.GetRunningCost(e) * 3;
-			});
-		} else {
-			enginelist.Valuate(function(e){
-				return AIEngine.GetRunningCost(e);
-			});
-		}
-		enginelist.Sort(AIList.SORT_BY_VALUE, AIList.SORT_ASCENDING );
-		if (enginelist.Count() == 0) {
-			return null;
-		}
-		return enginelist.Begin();*/
+		local cargo = HogeAI.GetPassengerCargo();
+		return CommonRoute.ChooseEngineCargo(
+			cargo, AIMap.DistanceManhattan(stations[0],stations[1]), AIVehicle.VT_ROAD, GetPlace().GetLastMonthProduction(cargo) / 2);
+
 	}
 	
 	function BuildBusStops() {
