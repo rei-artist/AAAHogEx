@@ -33,6 +33,7 @@ class WaterRoute extends CommonRoute {
 	buoys = null;
 	
 	constructor() {
+		CommonRoute.constructor();
 		buoys = [];
 	}
 	
@@ -54,8 +55,15 @@ class WaterRoute extends CommonRoute {
 	function GetMaxTotalVehicles() {
 		return HogeAI.Get().maxShips;
 	}
-
 	
+	function GetThresholdVehicleNumRateForNewRoute() {
+		return 0.8;
+	}
+
+	function GetThresholdVehicleNumRateForSupportRoute() {
+		return 0.9;
+	}
+
 	function GetLabel() {
 		return "Water";
 	}
@@ -70,8 +78,9 @@ class WaterRoute extends CommonRoute {
 		while(path != null) {
 			WaterRoute.usedTiles.rawset(path.GetTile(),true);
 			if(count % 16 == 15) {
-				if(AIMarine.BuildBuoy (path.GetTile())) {
-					buoys.push(path.GetTile());
+				local tile = path.GetTile();
+				if(AIMarine.IsBuoyTile(tile) || AIMarine.BuildBuoy(tile)) {
+					buoys.push(tile);
 				}
 			}
 			count ++;
@@ -96,9 +105,6 @@ class WaterRoute extends CommonRoute {
 
 class WaterRouteBuilder extends CommonRouteBuilder {
 	
-	function GetRouteClass() {
-		return WaterRoute;
-	}
 	
 	function GetRouteClass() {
 		return WaterRoute;
@@ -120,6 +126,10 @@ class WaterStationFactory extends StationFactory {
 		this.ignoreDirScore = true;
 	}
 	
+	function GetSpreadMargin() {
+		return 1; // Buildされるまで向きが確定しないのでSPREAD_OUTしないようにするために1だけ余裕を見る
+	}
+
 	function GetStationType() {
 		return AIStation.STATION_DOCK;
 	}
@@ -129,11 +139,11 @@ class WaterStationFactory extends StationFactory {
 	}
 
 	function GetPlatformNum() {
-		return 2; // Buildされるまで向きが確定しないのでSPREAD_OUTしないように大き目に設定
+		return 1;
 	}
 	
 	function GetPlatformLength() {
-		return 2;
+		return 1;
 	}
 	
 	function Create(platformTile,stationDirection) {
@@ -146,8 +156,8 @@ class WaterStation extends HgStation {
 	constructor(platformTile) {
 		HgStation.constructor(platformTile, 0);
 		this.originTile = platformTile;
-		this.platformNum = 2; 
-		this.platformLength = 2;
+		this.platformNum = 1; 
+		this.platformLength = 1;
 	}
 	
 	function GetTypeName() {

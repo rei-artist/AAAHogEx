@@ -39,6 +39,7 @@ class HgArray {
 		return HgArray(result);
 	}
 	
+	
 	function Filter(func) {
 		local result = [];
 		foreach(a in array) {
@@ -47,6 +48,22 @@ class HgArray {
 			}
 		}
 		return HgArray(result);
+	}
+	
+	static function _Flatten(a) {
+		if(typeof a != "array") {
+			return [a];
+		} else {
+			local result = [];
+			foreach(x in a) {
+				result.extend(HgArray._Flatten(x));
+			}
+			return result;
+		}
+	}
+	
+	function Flatten() {
+		return HgArray(_Flatten(array));
 	}
 	
 	function Sort(func) {
@@ -373,8 +390,8 @@ class VehicleUtils {
 		return result;
 	}	
 
-	static function GetSlopeForce(weight, slope, totalWeight) {
-		return slope * weight * AIGameSettings.GetValue("vehicle.train_slope_steepness") * 100 + totalWeight * 10;
+	static function GetSlopeForce(slopedWeight, totalWeight) {
+		return slopedWeight * AIGameSettings.GetValue("vehicle.train_slope_steepness") * 100 + totalWeight * 10;
 	}
 	
 	static function GetForce(maxTractiveEffort, power, requestSpeed) {

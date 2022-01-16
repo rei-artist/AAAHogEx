@@ -318,6 +318,12 @@ class HgTile {
 	
 	function BuildWaterDepot(depotTile,front) {
 		local aiExec = AIExecMode();
+		
+		local back = front - (front - depotTile) * 3;
+		if(!WaterPathFinder.CanThroughShipTile(back)) {
+			return false;
+		}
+		
 		local d2;
 		if(depotTile < front) {
 			d2 = depotTile;
@@ -343,6 +349,7 @@ class HgTile {
 		if(!AIMarine.BuildWaterDepot (depotTile, front)) {
 			return false;
 		}
+		AIMarine.BuildBuoy (back);
 		AIMarine.BuildBuoy (front);
 		return true;
 	}

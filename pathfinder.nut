@@ -34,15 +34,14 @@ class Rail
 	_running = null;
 	_goals = null;
 	_count = null;
-	_guideTileList = null;
-	_reverseTileList = null;
+	_reverseNears = null;
 	useInitializePath2 = false;
-
+	
 	constructor()
 	{
 		this._max_cost = 10000000;
 		this._cost_tile = 100;
-		this._cost_guide = -50;
+		this._cost_guide = 20;
 		this._cost_diagonal_tile = 70;
 		this._cost_diagonal_sea = 150;
 		this._cost_turn = 50;
@@ -63,8 +62,8 @@ class Rail
 		this.cost = this.Cost(this);
 		this._running = false;
 		this._count = idCounter.Get() * 1000;
-		this._guideTileList = AIList();
-		this._reverseTileList = AIList();
+		this._reverseNears = null;
+		
 		this.useInitializePath2 = false;
 	}
 
@@ -110,21 +109,37 @@ class Rail
 	}
 	
 	function SetReversePath(reversePath) {
-		if(reversePath!=null) {
-			cost.bridge_per_tile = 100;
-			cost.tunnel_per_tile = 100;
-			
-//			_estimate_rate = 1;
+		if(reversePath == null) {
+			return;
 		}
+	
+		cost.bridge_per_tile = 100;
+		cost.tunnel_per_tile = 100;
+		//_estimate_rate = 3;
+		
+		local nears = {};
+		_reverseNears = {};
+		
 		local path = reversePath;
 		while(path != null) {
 			local tile = path.GetTile();
-			_reverseTileList.AddItem(tile,0);
-			foreach(d in HgTile.DIR4Index) {
-				_guideTileList.AddItem(tile + d,0);
-			}
+			nears.rawset(tile,0);
+			_reverseNears.rawset(tile,0)
 			path = path.GetParent();
 		}
+		for(local i=1; i<10; i++) {
+			local next = {}
+			foreach(tile,level in nears) {
+				foreach(d in HgTile.DIR4Index) {
+					if(!_reverseNears.rawin(tile+d)) {
+						next.rawset(tile+d ,i)
+						_reverseNears.rawset(tile+d ,i)
+					}
+				}
+			}
+			nears = next;
+		}
+
 	}
 
 	/**
@@ -200,13 +215,6 @@ function Rail::FindPath(iterations)
 				return this._pathfinder.Path(ret, goal[1], 0, this._Cost, this);
 			}
 		}
-	} else {
-/*		if(_count % 1000  == 0) {
-			local execMode = AIExecMode();
-			local path = _pathfinder._open.Peek();
-			AISign.BuildSign (path.GetTile(), _count+":"+path._cost);
-		}
-		_count ++;*/
 	}
 	return ret;
 }
@@ -273,93 +281,53 @@ function Rail::_Cost(path, new_tile, new_direction, self)
 		if(par != null && par.GetParent() != null && AIMap.DistanceManhattan(par.GetTile(), par.GetParent().GetTile())>1) {
 			prevTunnelOrBridge = true;
 		}
-/*
-		local isBridge = false;
-		local bridge_list = AIBridgeList_Length(distance + 1);
-		if (!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), prev_tile, new_tile)) {
-			isBridge = true;
-		}
-		if(isBridge) {
-			cost += distance * (self._cost_tile + self._cost_bridge_per_tile);
-			if(prevTunnelOrBridge || distance!=3) {
-				cost += (max(distance,4) - 3) * self._cost_bridge_per_tile_ex;
-			}
-		} else {
-			cost += distance * (self._cost_tile + self._cost_tunnel_per_tile);
-			if(prevTunnelOrBridge || distance>5) {
-				cost += (distance-3) * self._cost_tunnel_per_tile_ex;
-			}
-		}
-*/
-		cost += distance * (self._cost_tile + self._cost_bridge_per_tile) - self._cost_tile;
+		cost += distance * (self._cost_tile + self._cost_bridge_per_tile) + self._cost_tile;
 		if(prevTunnelOrBridge || distance!=3) {
 			cost += distance * self._cost_bridge_per_tile_ex;
 		}
-		/*
+		
+	} else {
+		cost += self._cost_tile;
+		if (par != null && AIMap.DistanceManhattan(par.GetTile(), prev_tile) == 1 && par.GetTile() - prev_tile != prev_tile - new_tile) {
+			if(AITile.IsSeaTile(new_tile)) {
+				cost = self._cost_diagonal_sea;
+			} else {
+				cost = self._cost_diagonal_tile;
+			}
+		}
+		
 		if (par != null && par.GetParent() != null &&
-				par.GetParent().GetTile() - par.GetTile() != max(AIMap.GetTileX(prev_tile) - AIMap.GetTileX(new_tile), AIMap.GetTileY(prev_tile) - AIMap.GetTileY(new_tile)) / distance) {
+				AIMap.DistanceManhattan(new_tile, par.GetParent().GetTile()) == 3 &&
+				par.GetParent().GetTile() - par.GetTile() != prev_tile - new_tile) {
 			cost += self._cost_turn;
-		}*/
-		
-		if(self._guideTileList.HasItem(new_tile)) {
-			cost += self._cost_guide;
 		}
-		
-		return path.GetCost() + cost;
-	}
 
-	/* Check for a turn. We do this by substracting the TileID of the current
-	 *  node from the TileID of the previous node and comparing that to the
-	 *  difference between the tile before the previous node and the node before
-	 *  that. */
-	cost += self._cost_tile;
-	if (par != null && AIMap.DistanceManhattan(par.GetTile(), prev_tile) == 1 && par.GetTile() - prev_tile != prev_tile - new_tile) {
-		if(AITile.IsSeaTile(new_tile)) {
-			cost = self._cost_diagonal_sea;
-		} else {
-			cost = self._cost_diagonal_tile;
+		if (AITile.IsCoastTile(new_tile)) {
+			cost += self._cost_coast;
 		}
-	}
-	
-	if (par != null && par.GetParent() != null &&
-			AIMap.DistanceManhattan(new_tile, par.GetParent().GetTile()) == 3 &&
-			par.GetParent().GetTile() - par.GetTile() != prev_tile - new_tile) {
-		cost += self._cost_turn;
-	}
-
-	/* Check if the new tile is a coast tile. */
-	if (AITile.IsCoastTile(new_tile)) {
-		cost += self._cost_coast;
-	}
-	if (AITile.IsSeaTile(new_tile)) {
-		cost += self._cost_water;
-	}
-	if(self._cost_slope > 0) {
-		if(par != null) {
-			local h1 = AITile.GetMaxHeight (par.GetTile())
-			local h2 = AITile.GetMaxHeight (new_tile);
-			if(h2 != h1) {
-				cost += self._cost_slope;
+		if (AITile.IsSeaTile(new_tile)) {
+			cost += self._cost_water;
+		}
+		if(self._cost_slope > 0) {
+			if(par != null) {
+				local h1 = AITile.GetMaxHeight (par.GetTile())
+				local h2 = AITile.GetMaxHeight (new_tile);
+				if(h2 != h1) {
+					cost += self._cost_slope;
+				}
 			}
 		}
 	}
-	
-/*
-	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_RAIL)) {
-		cost += self._cost_crossing_rail;
+	/*
+	if(self._reverseNears != null) {
+		if(self._reverseNears.rawin(new_tile)) {
+			local level = self._reverseNears[new_tile];
+			cost += self._cost_guide * level;
+		} else {
+			cost += self._cost_guide * 10;
+		}
 	}*/
 
-	/* We don't use already existing rail, so the following code is unused. It
-	 *  assigns if no rail exists along the route. */
-	/*
-	if (path.GetParent() != null && !AIRail.AreTilesConnected(path.GetParent().GetTile(), prev_tile, new_tile)) {
-		cost += self._cost_no_existing_rail;
-	}
-	*/
-
-	if(self._guideTileList.HasItem(new_tile)) {
-		cost += self._cost_guide;
-	}
 	return path.GetCost() + cost;
 }
 
@@ -373,7 +341,18 @@ function Rail::_Estimate(cur_tile, cur_direction, goal_tiles, self)
 		local dy = abs(AIMap.GetTileY(cur_tile) - AIMap.GetTileY(tile[0]));
 		min_cost = min(min_cost, min(dx, dy) * self._cost_diagonal_tile * 2 + (max(dx, dy) - min(dx, dy)) * self._cost_tile);
 	}
-	return min_cost * self._estimate_rate;
+	
+	local guide = 0;
+	if(self._reverseNears != null) {
+		if(self._reverseNears.rawin(cur_tile)) {
+			local level = self._reverseNears[cur_tile];
+			guide = self._cost_guide * level;
+		} else {
+			guide = self._cost_guide * 10;
+		}
+	}	
+	
+	return min_cost * self._estimate_rate + guide;
 }
 
 
@@ -509,7 +488,7 @@ function Rail::_Neighbours(path, cur_node, self)
 				//HgLog.Info("_CanChangeBridge:"+HgTile(cur_node));
 				underBridge = true;
 			} else {
-				if(AICompany.IsMine(AITile.GetOwner(cur_node)) && self._reverseTileList.HasItem(cur_node)) {
+				if(self._reverseNears != null && AICompany.IsMine(AITile.GetOwner(cur_node)) && self._reverseNears.rawin(cur_node) && self._reverseNears[cur_node]==0) {
 					offsets = self._PermitedDiagonalOffset(AIRail.GetRailTracks(cur_node));
 					if(offsets==null) {
 						return [];
@@ -721,27 +700,6 @@ function Rail::_GetTunnelsBridges(par, last_node, cur_node)
 			}
 		}
 	}
-/*
-	if(AITile.IsBuildable(next)) {
-		if(AITile.IsBuildable(nextnext)) {
-			return [];
-		}
-		
-		for (local i = 0; i < this._max_tunnel_length; i++) {
-			local target = cur_node + i * dir;
-			if (AITile.GetSlope(target))
-				break;
-			if (i > 2 && AITile.IsBuildable(target)) {
-				local targetnext = target + dir;
-				if (AITile.GetSlope(targetnext)){
-					break;
-				}
-				if (AITile.IsBuildable(targetnext)) {
-					tiles.push([targetnext, bridge_dir]);
-				}
-			}
-		}
-	}*/
 	
 	if(!AITile.IsBuildable(next)) {
 		for (local i = 2; i < this._max_bridge_length; i++) {

@@ -12,7 +12,7 @@ class HgRailPathFinder extends Rail {
 		_cost_tunnel_per_tile_ex  = 130;
 		_cost_diagonal_tile = 67;
 		_cost_diagonal_sea = 200;
-		_cost_guide = -200;
+		_cost_guide = 200; //20;
 		_cost_under_bridge = 50;
 		
 		cost.tile = 100;
@@ -1346,6 +1346,25 @@ class TailedRailBuilder {
 			Container(destStation.GetArrivalsTiles()),
 			ignoreTiles, cargo, limitCount, eventPoller, reversePath);
 	}
+	static function StationToStationReverse(srcStation, destStation, cargo, limitCount, eventPoller, reversePath = null) {
+		local ignoreTiles = [];
+		ignoreTiles.extend(srcStation.GetIgnoreTiles());
+		ignoreTiles.extend(destStation.GetIgnoreTiles());
+		local result = TailedRailBuilder(
+			Container(srcStation.GetArrivalsTiles()), 
+			Container(destStation.GetDeparturesTiles()),
+			ignoreTiles, cargo, limitCount, eventPoller, reversePath);
+		result.isReverse = true;
+		return result;
+	}
+	static function ReverseArrayTiles(a) {
+		local result = [];
+		foreach(n in a) {
+			HgLog.Info("ReverseArrayTiles:"+HgTile(n[1])+","+HgTile(n[0]));
+			result.push([n[1],n[0]]);
+		}
+		return result;
+	}
 	
 	static function PathToStation(srcPathGetter, destStation, cargo, limitCount, eventPoller, reversePath = null, isArrival = true) {
 		local ignoreTiles = [];
@@ -1710,7 +1729,7 @@ class TwoWayStationRailBuilder {
 		}
 		buildedPath2 = b2.buildedPath;
 	
-		local b1 = TailedRailBuilder.StationToStation(srcHgStation, destHgStation, cargo, limitCount, eventPoller, buildedPath2.path);
+		local b1 = TailedRailBuilder.StationToStationReverse(destHgStation, srcHgStation, cargo, limitCount, eventPoller, buildedPath2.path);
 		if(!b1.BuildTails()) {
 			b2.Remove();
 			return false;

@@ -160,12 +160,12 @@ class Airport {
 /*		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 1000000) {
 			return;
 		}*/
-		if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_AIR ) > HogeAI.Get().maxAircraft - 20) {
+		if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_AIR ) >= HogeAI.Get().maxAircraft * 0.9) {
 			return;
 		}
 		
 		asManyAsPossible = true;
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 1000000) {
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > HogeAI.Get().GetInflatedMoney(1000000)) {
 			asManyAsPossible = true;
 		}
 		
@@ -202,7 +202,7 @@ class Airport {
 					break;
 				}
 			}
-			if(startDate + 365 < AIDate.GetCurrentDate() || AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 100000) {
+			if(startDate + 365 < AIDate.GetCurrentDate() || AICompany.GetBankBalance(AICompany.COMPANY_SELF) < HogeAI.Get().GetInflatedMoney(1000000)) {
 				break;
 			}
 		}
@@ -421,9 +421,17 @@ class Airport {
 			}
 			distance = min(400,distance);
 			//TODO 故障率の考慮
-			local predict = AIEngine.GetCapacity(e) * HogeAI.GetCargoIncome(distance, HogeAI.GetPassengerCargo(), AIEngine.GetMaxSpeed(e)/2) - AIEngine.GetRunningCost (e); 
+			local income = AIEngine.GetCapacity(e)
+				* HogeAI.GetCargoIncome(distance, HogeAI.GetPassengerCargo(), AIEngine.GetMaxSpeed(e), AIEngine.GetCapacity(e) * 30 / 200 )
+				- AIEngine.GetRunningCost (e); 
 			//HgLog.Info("aircraft predict:"+predict+" price:"+AIEngine.GetPrice(e));
-			return orderDistance==0 ? (AIEngine.GetPrice(e) < predict * 5 ? 1 : 0) : (predict * 100 / AIEngine.GetPrice(e));
+			local roi = income * 100 / AIEngine.GetPrice(e);
+			if(HogeAI().Get().roiBase) {
+				local roi = income * 100 / AIEngine.GetPrice(e);
+				return roi < 100 ? 0 : roi;
+			} else {
+				return income * 20 < AIEngine.GetPrice(e) ? 0 : income;
+			}
 		});
 		engineList.KeepAboveValue(0);
 		engineList.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
@@ -486,8 +494,9 @@ class Airport {
 			return;
 		}
 		
-		if(AIStation.GetCargoWaiting (GetAIStation(), HogeAI.GetPassengerCargo()) > 100 
-				&& AIGroup.GetNumVehicles (vehicleGroup, AIVehicle.VT_AIR) < Airport.GetAirportInfomation(GetType())[3]) {
+		local numVehicles = AIGroup.GetNumVehicles (vehicleGroup, AIVehicle.VT_AIR);
+		if(numVehicles == 0 || (AIStation.GetCargoWaiting (GetAIStation(), HogeAI.GetPassengerCargo()) > 100 
+				&& numVehicles < Airport.GetAirportInfomation(GetType())[3])) {
 					
 			if(AIStation.GetCargoWaiting (GetDestAIStation(), HogeAI.GetPassengerCargo()) < 100) {
 				BuildVehicle(false);

@@ -6,6 +6,8 @@ class StationGroup {
 	hgStations = null;
 	isVirtual = null;
 	
+	isNearWater = null;
+	
 	constructor() {
 		id = idCounter.Get();
 		hgStations = [];
@@ -37,8 +39,8 @@ class StationGroup {
 		return hgStations[0].platfomTile;
 	}
 	
-	function GetStationCandidatesInSpread(stationSpread,stationFactory,checkedTile=null) {
-		local rectangle = GetBuildablePlatformRectangle(stationSpread);
+	function GetStationCandidatesInSpread(stationFactory,checkedTile=null) {
+		local rectangle = GetBuildablePlatformRectangle(HogeAI.Get().maxStationSpread - stationFactory.GetSpreadMargin());
 		local result = stationFactory.CreateInRectangle(rectangle,checkedTile);
 		foreach(s in result) {
 			s.stationGroup = this;
@@ -46,7 +48,21 @@ class StationGroup {
 		return result;
 	}
 	
-	function GetBuildablePlatformRectangle(stationSpread) {
+	function IsNearWater() {
+		if(isNearWater != null) {
+			return isNearWater;
+		}
+		local tileList = GetBuildablePlatformRectangle(HogeAI.Get().maxStationSpread - 1).GetTileList()
+		tileList.Valuate(AITile.IsCoastTile);
+		tileList.KeepValue(1);
+		isNearWater = tileList.Count() >= 1;
+		return isNearWater;
+	}
+	
+	function GetBuildablePlatformRectangle(stationSpread = null) {
+		if(stationSpread == null) {
+			stationSpread = HogeAI.Get().maxStationSpread;
+		}
 		local r1 = null;
 		foreach(hgStation in hgStations) {
 			local r2 = hgStation.GetPlatformRectangle()
@@ -87,8 +103,14 @@ class StationGroup {
 		}
 		return null;
 	}
-
-
+	
+	function CanJoin() {
+		foreach(station in hgStations) {
+			if(station.GetName().find("#") != null) { // TownBus stop
+				return false;
+			}
+		}
+	}
 	
 	function _tostring() {
 		return hgStations.len()>=1 ? hgStations[0].GetName() : "EmptyStationGroup";
@@ -106,6 +128,10 @@ class StationFactory {
 		levelTiles = true;
 		ignoreDirScore = false;
 		checked = AIList();
+	}
+	
+	function GetSpreadMargin() {
+		return 0;
 	}
 
 	function GetDirScore(stationDirection, fromTile, toTile) {
@@ -212,7 +238,7 @@ class StationFactory {
 				virtualStationGroup.isVirtual = true;
 				pieceStation.stationGroup = virtualStationGroup;
 				virtualStationGroup.AddHgStation(pieceStation);
-				stationCandidates.extend( virtualStationGroup.GetStationCandidatesInSpread(HogeAI.Get().maxStationSpread, this, checkedTile));
+				stationCandidates.extend( virtualStationGroup.GetStationCandidatesInSpread(this, checkedTile));
 				if(AIDate.GetCurrentDate() > limitDate) {
 					break;
 				}
@@ -258,6 +284,9 @@ class StationFactory {
 			HgTable.Extend(stationGroups, place.GetAccepting().GetStationGroups());
 		}
 		foreach(stationGroup,v in stationGroups) {
+			if(!stationGroup.CanJoin()) {
+				continue;
+			}
 			if(place.IsProducing() && !stationGroup.IsProducingCargo(cargo)) {
 				continue;
 			}
@@ -270,7 +299,7 @@ class StationFactory {
 				}
 			}
 			nearestFor = stationGroup.hgStations[0].platformTile;
-			local s = stationGroup.GetStationCandidatesInSpread(HogeAI.Get().maxStationSpread, this);
+			local s = stationGroup.GetStationCandidatesInSpread(this);
 			stations.extend(s);
 		}
 		return SelectBestHgStation(stations, place.GetLocation(), toTile, place.GetName());
@@ -338,11 +367,11 @@ class StationFactory {
 	function CreateOnTilesAllDirection(tiles) {
 		
 		local result = [];
-		foreach(platformTile in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
+		foreach(platformTile,v in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
 			result.push(Create(platformTile,HgStation.STATION_NW));
 			result.push(Create(platformTile,HgStation.STATION_SE));
 		}
-		foreach(platformTile in GetPlatformTiles(tiles,HgStation.STATION_NE)) {
+		foreach(platformTile,v in GetPlatformTiles(tiles,HgStation.STATION_NE)) {
 			result.push(Create(platformTile,HgStation.STATION_NE));
 			result.push(Create(platformTile,HgStation.STATION_SW));
 		}
@@ -383,12 +412,12 @@ class StationFactory {
 		local w = GetPlatformWidth(stationDirection);
 		local h = GetPlatformHeight(stationDirection);
 		local cornerDegrees = GetCornerDegrees(w,h);
-		local platformTiles = [];
+		local platformTiles = {};
 		
 		foreach(tile in tiles) {
 			foreach(i, degree in cornerDegrees) {
 				local lefttop = tile + AIMap.GetTileIndex(degree[0],degree[1]);
-				platformTiles.push(lefttop);
+				platformTiles.rawset(lefttop,0);
 			}
 		}
 		
@@ -524,27 +553,12 @@ class HgStation {
 	static STATION_SE = 3;
 	
 	static function SaveStatics(data) {
-		local array = [];
+		local a = array(HgStation.worldInstances.len());
+		local i=0;
 		foreach(station in HgStation.worldInstances) {
-			local t = {};
-			t.id <- station.id;
-			t.name <- station.GetTypeName();
-			t.platformTile <- station.platformTile;
-			t.stationDirection <- station.stationDirection;			
-			t.place <- station.place != null ? station.place.Save() : null;
-			t.cargo <- station.cargo;
-			t.platformNum <- station.platformNum;
-			t.platformLength <- station.platformLength;
-			t.buildedDate <- station.buildedDate;
-			if(station.stationGroup==null) {
-				HgLog.Error("station.stationGroup==null "+t.name+" "+station.GetName());
-			} else {
-				t.stationGroup <- station.stationGroup.id;
-			}
-			station.Save(t);
-			array.push(t);
+			a[i++] = station.savedData; // データが多すぎてSave()がタイムアウトするため事前にTableを準備しておく
 		}
-		data.stations <- array;
+		data.stations <- a;
 	}
 	
 	static function LoadStatics(data) {
@@ -599,6 +613,7 @@ class HgStation {
 			}
 			station.stationGroup = stationGroup;
 			station.Load(t);
+			station.savedData = t.rawin("savedData") ? t.savedData : station.Save();
 			stationGroup.hgStations.push(station);
 			HgStation.worldInstances[station.id] <- station;
 			
@@ -619,6 +634,9 @@ class HgStation {
 			if(hgStation.GetStationType() == stationType) {
 				if((place != null && hgStation.place != null && hgStation.place.IsSamePlace(place)) 
 						|| (stationGroup != null && hgStation.stationGroup == stationGroup)) {
+					if(stationGroup != null) {
+						return hgStation;
+					}
 					if(isAccepting) {
 						if(hgStation.stationGroup.IsAcceptingCargo(cargo)) {
 							return hgStation;
@@ -643,6 +661,8 @@ class HgStation {
 	platformLength = null;
 	buildedDate = null;
 	stationGroup = null;
+	
+	savedData = null;
 
 	originTile = null;
 	score = null;
@@ -659,7 +679,23 @@ class HgStation {
 		this.builded = false;
 	}
 	
-	function Save(t) {
+	function Save() {
+		local t = {};
+		t.id <- id;
+		t.name <- GetTypeName();
+		t.platformTile <- platformTile;
+		t.stationDirection <- stationDirection;			
+		t.place <- place != null ? place.Save() : null;
+		t.cargo <- cargo;
+		t.platformNum <- platformNum;
+		t.platformLength <- platformLength;
+		t.buildedDate <- buildedDate;
+		if(stationGroup==null) {
+			HgLog.Error("station.stationGroup==null "+t.name+" "+GetName());
+		} else {
+			t.stationGroup <- stationGroup.id;
+		}
+		return t;
 	}
 	
 	function Load(t) {
@@ -729,6 +765,8 @@ class HgStation {
 		stationGroup.AddHgStation(this);
 		worldInstances[this.id] <- this;
 		BuildedPath.AddTiles(GetTiles());
+		
+		savedData = Save();
 	}
 	
 	function RemoveWorld() {
@@ -758,8 +796,8 @@ class HgStation {
 		AddWorld();
 		buildedDate = AIDate.GetCurrentDate();
 
-		if(place != null && place instanceof TownCargo && place.IsProducing() && !(this instanceof PieceStation)) {
-			local tileList = stationGroup.GetBuildablePlatformRectangle(HogeAI.Get().maxStationSpread).GetTileList();
+		if(place != null && place instanceof TownCargo /*&& place.IsProducing()*/ && !(this instanceof PieceStation)) {
+			local tileList = stationGroup.GetBuildablePlatformRectangle().GetTileList();
 			local coverageRadius = AIStation.GetCoverageRadius(PieceStation.GetStationTypeCargo(cargo));
 			local success = false;
 			foreach(tile in place.GetTiles(coverageRadius, cargo)) {
@@ -960,8 +998,10 @@ class RoadStation extends HgStation {
 	}
 
 	
-	function Save(t) {
+	function Save() {
+		local t = HgStation.Save();
 		t.stationType <- stationType;
+		return t;
 	}
 	
 	function GetTypeName() {
@@ -1002,7 +1042,8 @@ class RoadStation extends HgStation {
 			if(isTestMode) {
 				if(!BuildPlatform(isTestMode) 
 						&& (AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR 
-								|| AIError.GetLastError() == AIRoad.ERR_ROAD_DRIVE_THROUGH_WRONG_DIRECTION)) {
+								|| AIError.GetLastError() == AIRoad.ERR_ROAD_DRIVE_THROUGH_WRONG_DIRECTION
+								|| AIError.GetLastError() == AIError.ERR_UNKNOWN/*道路状況によってはこれが返る*/)) {
 					return false;
 				}
 				return true;
@@ -1019,7 +1060,7 @@ class RoadStation extends HgStation {
 		local prev = null;
 		foreach(road in roads) {
 			if(prev != null) {
-				if(!AIRoad.BuildRoad(At(prev[0],prev[1]), At(road[0],road[1])) && AIError.GetLastError() != AIError.ERR_ALREADY_BUILT){ 
+				if(!RoadRouteBuilder.BuildRoadUntilFree(At(prev[0],prev[1]), At(road[0],road[1])) && AIError.GetLastError() != AIError.ERR_ALREADY_BUILT){ 
 					if(!isTestMode) {
 						HgLog.Warning("BuildRoad failed "+HgTile(At(prev[0],prev[1]))+"-"+HgTile(At(road[0],road[1])) + " " + AIError.GetLastErrorString());
 					}
@@ -1492,7 +1533,7 @@ class SmartStation extends RailStation {
 		
 		result.push([[0,-1],[0,0],[0,1]]);
 		result.push([[0,-1],[0,0],[-1,0]]);
-		result.push([[0,-1],[0,0],[1,0]]);
+		//result.push([[0,-1],[0,0],[1,0]]);
 		result.push([[1,0],[0,0],[0,1]]);
 
 		result.push([[0,0],[-1,0],[-1,1]]);
@@ -1761,8 +1802,10 @@ class DestRailStation extends RailStation {
 		return "DestRailStation";
 	}
 
-	function Save(t) {
+	function Save() {
+		local t = HgStation.Save();
 		t.depots <- depots;
+		return t;
 	}
 	
 	function Load(t) {
@@ -1885,6 +1928,7 @@ class DestRailStation extends RailStation {
 		if(AIRail.BuildRailDepot(p1,p2)) {
 			depots.push(p1);
 		}
+		savedData = Save();
 	}
 	
 	function RemoveDepots() {
@@ -1894,6 +1938,7 @@ class DestRailStation extends RailStation {
 			}
 		}
 		depots = [];
+		savedData = Save();
 	}
 	
 	function BuildAfter() {
@@ -2296,209 +2341,6 @@ class TerminalStation extends DestRailStation {
 	}
 	
 }
-/*
-class TerminalStation extends DestRailStation {
-
-	function GetTypeName() {
-		return "TerminalStation";
-	}
-	
-	
-	function GetArrivalsTiles() {
-		local x = platformNum / 2;
-		return [[At(x,-1),At(x,0)]];
-	}
-	
-	function GetDeparturesTiles() {
-		return [[At(platformNum,-1),At(platformNum,0)]];
-//		return [[At(platformNum+1,platformLength+2),At(platformNum,platformLength+2)]];
-	}
-	
-	function GetRails() {
-		local result = [];
-		
-		if(platformNum==2) {
-			result.push([[0,1],[0,0],[1,0]]);
-			result.push([[platformNum-1,-1],[platformNum-1,0],[platformNum-1,1]]);
-			result.push([[platformNum-2,0],[platformNum-1,0],[platformNum-1,-1]]);
-		} else if(platformNum >= 3) {
-			result.push([[0,-1],[0,0],[0,1]]);
-			result.push([[0,-1],[0,0],[1,0]]);
-			result.push([[0,1],[0,0],[1,0]]);
-			for(local x=1; x<platformNum-1; x++) {
-				result.push([[x-1,0],[x,0],[x,1]]);
-				result.push([[x,1],[x,0],[x+1,0]]);
-				result.push([[x+1,0],[x,0],[x,-1]]);
-				result.push([[x,-1],[x,0],[x-1,0]]);
-				result.push([[x-1,0],[x,0],[x+1,0]]);
-				result.push([[x,-1],[x,0],[x,1]]);
-			}
-			result.push([[platformNum-2,0],[platformNum-1,0],[platformNum-1,-1]]);
-			result.push([[platformNum-2,0],[platformNum-1,0],[platformNum-1,1]]);
-			result.push([[platformNum-1,-1],[platformNum-1,0],[platformNum-1,1]]);
-		}
-
-		local y = platformLength+1;
-		for(local x=0; x<platformNum-1; x++) {
-			result.push([[x,y-1],[x,y],[x,y+1]]);
-			result.push([[x,y],[x,y+1],[x+1,y+1]]);
-			if(x!=0) {
-				result.push([[x-1,y+1],[x,y+1],[x+1,y+1]]);
-			}
-		}
-		result.push([[platformNum-2,y+1],[platformNum-1,y+1],[platformNum,y+1]]);
-		result.push([[platformNum-1,y+1],[platformNum,y+1],[platformNum,y]]);
-		for(y=platformLength+1; y>=0; y--) {
-			result.push([[platformNum,y+1],[platformNum,y],[platformNum,y-1]]);
-		}
-		result.push([[platformNum-1,1],[platformNum-1,0],[platformNum,0]]);
-		result.push([[platformNum-1,0],[platformNum,0],[platformNum,-1]]);
-		
-		return result;
-	}
-	
-	function GetIgnoreTiles() {
-		local result = [];
-		local arrivalX = platformNum / 2;
-		for(local x=0; x<platformNum; x++) {
-			if(x != arrivalX) {
-				result.push(At(x,-1));
-			}
-		}
-		if(platformNum != 2) { //destを見つけやすくする処置のためtransfer用は除外
-			result.push(At(platformNum-1,-2));
-		}
-		
-		
-		return result;
-	}
-	
-	function GetMustBuildableAndFlatTiles() {
-		for(local x=0; x<platformNum+1; x++) {
-			for(local y=-1; y<platformLength+3; y++) {
-				yield [x,y];
-			}
-		}
-		return null;
-	}
-	
-	function GetHopeBuildableAndFlatTiles() {
-		local result = [];
-		for(local x=0; x<platformNum+1; x++) {
-			for(local y=-3; y<=-2; y++) {
-				result.push([x,y]);
-			}
-		}
-		return result;
-	}
-	
-	function Build(levelTiles=true, isTestMode=true) {
-		local tilesGen = GetMustBuildableAndFlatTiles();
-		local tiles = [];
-		local xy;
-		while((xy = resume tilesGen) != null) {
-			if(!HogeAI.IsBuildable(At(xy[0],xy[1]))) {
-				if(!isTestMode) {
-					HgLog.Warning("not IsBuildable "+HgTile(At(xy[0],xy[1])));
-				}
-				return false;
-			}
-			tiles.push(xy);
-		}
-		if(levelTiles) {
-			local tileList = AIList();
-			local d1 = HgTile.XY(1,0).tile;
-			local d2 = HgTile.XY(0,1).tile;
-			local d3 = HgTile.XY(1,1).tile;
-			foreach(xy in tiles) {
-				local tile = At(xy[0],xy[1]);
-				tileList.AddItem(tile,0);
-				tileList.AddItem(tile + d1,0);
-				tileList.AddItem(tile + d2,0);
-				tileList.AddItem(tile + d3,0);
-			}
-			if(!TileListUtil.LevelAverage(tileList)) {
-				if(!isTestMode) {
-					HgLog.Warning("LevelTiles Failed "+AIError.GetLastErrorString());
-				}
-				return false;
-			}
-			if(isTestMode) {
-				return true;
-			}
-		}
-		
-		
-		if(!BuildPlatform(isTestMode)) {
-			HgLog.Warning("BuildPlatform failed."+AIError.GetLastErrorString());
-			return false;
-		}
-		
-		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
-				At(rail[0][0],rail[0][1]),
-				At(rail[1][0],rail[1][1]),
-				At(rail[2][0],rail[2][1]))) {
-				HgLog.Warning("BuildRail Failed."+AIError.GetLastErrorString());
-				return false;
-			}
-		}
-		
-		BuildSignal();
-		
-		return true;
-	}
-	
-	function Remove() {
-		local result = true;
-		RemoveSignal();
-		
-		local r = GetPlatformRectangle();
-		if(!AIRail.RemoveRailStationTileRectangle (r.lefttop.GetTileIndex(), r.rightbottom.GetTileIndex(), false)) {
-			HgLog.Warning("RemoveRailStationTileRectangle failed " + r + " "+AIError.GetLastErrorString());
-			result = false;
-		}
-		
-		foreach(rail in GetRails()) {
-			if(!AIRail.RemoveRail(
-					At(rail[0][0],rail[0][1]),
-					At(rail[1][0],rail[1][1]),
-					At(rail[2][0],rail[2][1]))) {
-				HgLog.Warning("RemoveRail failed. "+HgTile(At(rail[1][0],rail[1][1]))+" "+AIError.GetLastErrorString());
-				result = false;
-			}
-		}
-		RemoveDepots();
-		RemoveWorld();
-		return result;
-	}
-	
-	function GetTiles() {
-		local result = [];
-		
-		local r = GetPlatformRectangle();
-		result.extend(HgArray.AIListKey(r.GetTileList()).array);
-		foreach(rail in GetRails()) {
-			result.push(At(rail[1][0],rail[1][1]));
-		}
-		result.extend(depots);
-		return result;
-	}
-	
-	function GetBuildableScore() {
-		local result = 0;
-		foreach(xy in GetHopeBuildableAndFlatTiles()) {
-			if(AITile.IsBuildable(At(xy[0],xy[1]))) {
-				result ++;
-				if(IsFlat(At(xy[0],xy[1]))) {
-					result ++;
-				}
-			}
-		}
-		return result;
-	}
-
-}*/
 
 class SrcRailStation extends RailStation {
 

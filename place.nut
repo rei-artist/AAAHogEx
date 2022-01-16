@@ -445,7 +445,12 @@ class Place {
 	
 
 	static function SearchSrcAdditionalPlaces(src, destTile, cargo, minDistance=20, maxDistance=200, minProduction=60, maxCost=100, minScore=200, vehicleType=AIVehicle.VT_RAIL) {
-		local middleTile = (typeof src == "integer") ? src : src.GetLocation();
+		local middleTile;
+		if(src instanceof HgStation && src.place != null) {
+			middleTile = src.place.GetLocation(); // srcとdestが同じになるのを防ぐため
+		} else {
+			middleTile = src.GetLocation();
+		}
 		local existingDistance = destTile == null ? 0 : AIMap.DistanceManhattan(destTile, middleTile);
 		return Place.GetProducingPlaceDistance(cargo, middleTile, vehicleType == AIVehicle.VT_RAIL, maxDistance).Map(function(placeDistance):(cargo, destTile) {
 			local t = {};
@@ -483,20 +488,22 @@ class Place {
 			result = HgArray.AIListKey(AITownList()).Map(function(town) : (cargo) {
 				return TownCargo(town,cargo,false);
 			}).Filter(function(place) {
-				return AITown.GetPopulation (place.town) >= 1000;
+				return AITown.GetPopulation (place.town) >= 600;
 			});
 		}
 		result.array.extend(HgArray.AIListKey(AIIndustryList_CargoAccepting(cargo)).Map(function(a) {
 			return HgIndustry(a,false);
+		}).Filter(function(place):(cargo) {
+			return place.IsCargoAccepted(cargo); //CAS_TEMP_REFUSEDを除外する
 		}).array);
 		return result;
 	}
 	
-	static function GetAcceptingPlaceDistance(cargo, fromTile) {
+	static function GetAcceptingPlaceDistance(cargo, fromTile, maxDistance=350) {
 		return Place.GetCargoAccepting(cargo).Map(function(place):(fromTile) {
-			return [place,place.DistanceManhattan(fromTile)];
-		}).Filter(function(placeDistance) {
-			return placeDistance[1] < 350;
+			return [place, place.DistanceManhattan(fromTile)];
+		}).Filter(function(placeDistance):(maxDistance) {
+			return placeDistance[1] < maxDistance;
 		})
 	}
 
@@ -527,6 +534,9 @@ class Place {
 			t.score <- t.distance * 10000 / t.cost;
 			return t;
 		}).Filter(function(t):(fromTile,vehicleType) {
+			if(vehicleType == AIVehicle.VT_RAIL && t.place.IsRaw()) {
+				return false;
+			}
 			return 60 <= t.distance && t.cost < 300 && !Place.IsNgPathFindPair(t.place,fromTile,vehicleType) && t.place.IsAccepting();
 		}).Map(function(t) {
 			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
@@ -537,48 +547,7 @@ class Place {
 			return b.score - a.score;
 		}).array;*/
 	}
-	
-	static function SearchAcceptingPlacesBestDistance(cargo,srcPlace,typeDistanceEstimate,waterOnly=false) {
-		local fromTile = srcPlace.GetLocation();
-		local hgArray = Place.GetAcceptingPlaceDistance(cargo,fromTile).Map(function(placeDistance)
-				: (cargo,fromTile,srcPlace,typeDistanceEstimate,waterOnly)  {
-			local t = {};
-			t.cargo <- cargo;
-			t.place <- placeDistance[0];
-			t.distance <- placeDistance[1];
-			local cost = waterOnly ? 100000 : HgTile(fromTile).GetPathFindCost(HgTile(t.place.GetLocation()));
-			local vehicleTypes = cost >= 300 ? [] : [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD];
-			if(t.place.IsNearWater(cargo) && srcPlace.IsNearWater(cargo)) {
-				vehicleTypes.push(AIVehicle.VT_WATER);
-			}
-			local maxEstimate = null;
-			local distanceIndex = min(9,t.distance/20);
-			local vehicleType = null;
-			foreach(vt in vehicleTypes) {
-				if(typeDistanceEstimate.rawin(vt)) {
-					local estimate = typeDistanceEstimate[vt][distanceIndex];
-					if(estimate!=null && (maxEstimate == null || maxEstimate.value < estimate.value)) {
-						vehicleType = vt;
-						maxEstimate = estimate;
-					}
-				}
-			}
-			t.estimate <- maxEstimate;
-			t.score <- maxEstimate != null ? maxEstimate.value : 0;
-			t.vehicleType <- vehicleType;
-			return t;
-		}).Filter(function(t):(fromTile) {
-			return t.vehicleType != null && t.distance > 0 && !Place.IsNgPathFindPair(t.place,fromTile,t.vehicleType) && t.place.IsAccepting();
-		}).Map(function(t) {
-			//t.score = Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo);
-			return t;
-		});
-		return hgArray.Sort(function(a,b) {
-			return b.score - a.score;
-		}).array;
-	}
-	
-	static function SearchAdditionalAcceptingPlaces(cargo, srcTiles ,lastAcceptingTile) {
+	static function SearchAdditionalAcceptingPlaces(cargo, srcTiles ,lastAcceptingTile, maxDistance) {
 		
 		local hgArray = null;
 		
@@ -586,7 +555,7 @@ class Place {
 		foreach(tile in srcTiles) {
 			srcTilesScores.push([tile, HgTile(lastAcceptingTile).DistanceManhattan( HgTile(tile))]);
 		}
-		hgArray = Place.GetAcceptingPlaceDistance(cargo,lastAcceptingTile).Map(function(placeDistance) : (cargo, lastAcceptingTile, srcTilesScores)  {
+		hgArray = Place.GetAcceptingPlaceDistance(cargo,lastAcceptingTile,maxDistance).Map(function(placeDistance) : (cargo, lastAcceptingTile, srcTilesScores)  {
 			local t = {};
 			t.cargo <- cargo;
 			t.place <- placeDistance[0];
@@ -731,6 +700,18 @@ class Place {
 		return false;
 	}
 	
+	function GetSuppliedRoutes(cargo) {
+		local result = [];
+		foreach(route in PlaceDictionary.Get().GetRoutesByDest(this)) {
+			if(route.IsRemoved()) {
+				continue;
+			}
+			if(route.cargo == cargo) {
+				result.push(route);
+			}
+		}
+		return result;
+	}
 
 	function _tostring() {
 		return GetName();
@@ -815,6 +796,10 @@ class HgIndustry extends Place {
 		}
 	}
 	
+	function IsCargoAccepted(cargo) {
+		return AIIndustry.IsCargoAccepted(industry, cargo) == AIIndustry.CAS_ACCEPTED;
+	}
+	
 	function IsAccepting() {
 		return !isProducing;
 	}
@@ -841,9 +826,13 @@ class HgIndustry extends Place {
 	
 	function IsIncreasable() {
 		local traits = GetIndustryTraits();
-		if(traits=="PASS,/FOOD,BEER,PASS,") { //FIRSのHOTELは生産量は増えない
+/*		if(traits=="PASS,/FOOD,BEER,PASS,") { 
 			return false;
+		}*/
+		if(HgArray(GetAccepting().GetCargos()).Contains(HogeAI.GetPassengerCargo()) && HgArray(GetProducing().GetCargos()).Contains(HogeAI.GetPassengerCargo())) {
+			return false;//FIRSのHOTELは生産量は増えない
 		}
+		
 		local industryType = AIIndustry.GetIndustryType(industry);
 		return AIIndustryType.ProductionCanIncrease(industryType);
 
@@ -981,7 +970,7 @@ class TownCargo extends Place {
 	}
 	
 	function GetLastMonthProduction(cargo) {
-		return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
+		return AITown.GetLastMonthProduction( town, cargo ) / 3;
 	}
 	
 	function IsAccepting() {
@@ -989,6 +978,10 @@ class TownCargo extends Place {
 /*		//TODO: STATION_TRUCK_STOP以外のケース
 		local gen = this.GetTiles(AIStation.GetCoverageRadius(AIStation.STATION_TRUCK_STOP),cargo);
 		return resume gen != null;*/
+	}
+	
+	function IsCargoAccepted(cargo) {
+		return this.cargo == cargo;
 	}
 	
 	function IsClosed() {
