@@ -1,47 +1,3 @@
-class MyRoadPF extends Road {
-	_cost_level_crossing = null;
-	_goals = null;
-}
-
-function MyRoadPF::InitializePath(sources, goals, ignoreTiles) {
-	::Road.InitializePath(sources, goals, ignoreTiles);
-	_goals = AIList();
-	for (local i = 0; i < goals.len(); i++) {
-		_goals.AddItem(goals[i], 0);
-	}
-}
-
-function MyRoadPF::_Cost(self, path, new_tile, new_direction) {
-	local cost = ::Road._Cost(self, path, new_tile, new_direction);
-	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_RAIL)) cost += self._cost_level_crossing;
-	return cost;
-}
-
-function MyRoadPF::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
-	local slope = AITile.GetSlope(cur_node);
-	if (slope == AITile.SLOPE_FLAT && AITile.IsBuildable(cur_node + (cur_node - last_node))) return [];
-	local tiles = [];
-	for (local i = 2; i < this._max_bridge_length; i++) {
-		local bridge_list = AIBridgeList_Length(i + 1);
-		local target = cur_node + i * (cur_node - last_node);
-		if (!bridge_list.IsEmpty() && !_goals.HasItem(target) &&
-				AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
-			tiles.push([target, bridge_dir]);
-		}
-	}
-
-	if (slope != AITile.SLOPE_SW && slope != AITile.SLOPE_NW && slope != AITile.SLOPE_SE && slope != AITile.SLOPE_NE) return tiles;
-	local other_tunnel_end = AITunnel.GetOtherTunnelEnd(cur_node);
-	if (!AIMap.IsValidTile(other_tunnel_end)) return tiles;
-
-	local tunnel_length = AIMap.DistanceManhattan(cur_node, other_tunnel_end);
-	local prev_tile = cur_node + (cur_node - other_tunnel_end) / tunnel_length;
-	if (AITunnel.GetOtherTunnelEnd(other_tunnel_end) == cur_node && tunnel_length >= 2 &&
-			prev_tile == last_node && tunnel_length < _max_tunnel_length && AITunnel.BuildTunnel(AIVehicle.VT_ROAD, cur_node)) {
-		tiles.push([other_tunnel_end, bridge_dir]);
-	}
-	return tiles;
-}
 
 class RoadRoute extends CommonRoute {
 	static instances = [];
@@ -195,9 +151,10 @@ class RoadBuilder {
 	}
 
 	function BuildPath(starts ,goals, suppressInterval=false) {
-		local pathfinder = MyRoadPF();
+		local pathfinder = RoadPathFinder();
 		local pathFindLimit = 100;
 		pathfinder._cost_level_crossing = 1000;
+		pathfinder._cost_drivethroughstation = 1000;
 		pathfinder._cost_coast = 50;
 		pathfinder._cost_slope = 0;
 		pathfinder._cost_bridge_per_tile = 100;

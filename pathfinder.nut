@@ -23,6 +23,7 @@ class Rail
 	_cost_under_bridge = null;
 	_cost_coast = null;            ///< The extra cost for a coast tile.
 	_cost_crossing_rail = null;
+	_cost_crossing_reverse = null;
 	_pathfinder = null;            ///< A reference to the used AyStar object.
 	_max_bridge_length = null;     ///< The maximum length of a bridge that will be build.
 	_max_tunnel_length = null;     ///< The maximum length of a tunnel that will be build.
@@ -52,6 +53,7 @@ class Rail
 		this._cost_under_bridge = 100;
 		this._cost_coast = 20;
 		this._cost_crossing_rail = 50;
+		this._cost_crossing_reverse = 100;
 		this._max_bridge_length = 6;
 		this._max_tunnel_length = 6;
 		this._can_build_water = false;
@@ -113,8 +115,8 @@ class Rail
 			return;
 		}
 	
-		cost.bridge_per_tile = 100;
-		cost.tunnel_per_tile = 100;
+		//cost.bridge_per_tile = 100;
+		//cost.tunnel_per_tile = 100;
 		//_estimate_rate = 3;
 		
 		local nears = {};
@@ -285,7 +287,16 @@ function Rail::_Cost(path, new_tile, new_direction, self)
 		if(prevTunnelOrBridge || distance!=3) {
 			cost += distance * self._cost_bridge_per_tile_ex;
 		}
-		
+		if(self._reverseNears != null) {
+			local d = (prev_tile - new_tile)/ distance;
+			for(local c = new_tile + d; c != prev_tile; c += d) {
+				if(self._reverseNears.rawin(c)) {
+					if(self._reverseNears[c] == 0) {
+						cost += self._cost_crossing_reverse;
+					}
+				}
+			}
+		}
 	} else {
 		cost += self._cost_tile;
 		if (par != null && AIMap.DistanceManhattan(par.GetTile(), prev_tile) == 1 && par.GetTile() - prev_tile != prev_tile - new_tile) {

@@ -10,7 +10,7 @@
  *  route. To use only existing roads, set cost.no_existing_road to
  *  cost.max_cost.
  */
-class Road
+class RoadPathFinder
 {
 	_aystar_class = import("graph.aystar", "", 6)
 	_max_cost = null;              ///< The maximum cost for a route.
@@ -21,6 +21,8 @@ class Road
 	_cost_bridge_per_tile = null;  ///< The cost per tile of a new bridge, this is added to _cost_tile.
 	_cost_tunnel_per_tile = null;  ///< The cost per tile of a new tunnel, this is added to _cost_tile.
 	_cost_coast = null;            ///< The extra cost for a coast tile.
+	_cost_drivethroughstation = null;
+	_cost_level_crossing = null;
 	_pathfinder = null;            ///< A reference to the used AyStar object.
 	_max_bridge_length = null;     ///< The maximum length of a bridge that will be build.
 	_max_tunnel_length = null;     ///< The maximum length of a tunnel that will be build.
@@ -28,6 +30,7 @@ class Road
 
 	cost = null;                   ///< Used to change the costs.
 	_running = null;
+	_goals = null;
 
 	constructor()
 	{
@@ -39,9 +42,12 @@ class Road
 		this._cost_bridge_per_tile = 150;
 		this._cost_tunnel_per_tile = 120;
 		this._cost_coast = 20;
+		this._cost_drivethroughstation = 1000;
+		this._cost_level_crossing = 1000;
 		this._max_bridge_length = 10;
 		this._max_tunnel_length = 20;
 		this._estimate_rate = 2;
+		this._goals = null;
 		this._pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
 
 		this.cost = this.Cost(this);
@@ -61,6 +67,11 @@ class Road
 			nsources.push([node, 0xFF]);
 		}
 		this._pathfinder.InitializePath(nsources, goals, ignoreTiles);
+		
+		_goals = AIList();
+		for (local i = 0; i < goals.len(); i++) {
+			_goals.AddItem(goals[i], 0);
+		}
 	}
 
 	/**
@@ -77,7 +88,7 @@ class Road
 	function FindPath(iterations);
 };
 
-class Road.Cost
+class RoadPathFinder.Cost
 {
 	_main = null;
 
@@ -125,7 +136,7 @@ class Road.Cost
 	}
 };
 
-function Road::FindPath(iterations)
+function RoadPathFinder::FindPath(iterations)
 {
 	local test_mode = AITestMode();
 	local ret = this._pathfinder.FindPath(iterations);
@@ -133,7 +144,7 @@ function Road::FindPath(iterations)
 	return ret;
 }
 
-function Road::_GetBridgeNumSlopes(end_a, end_b)
+function RoadPathFinder::_GetBridgeNumSlopes(end_a, end_b)
 {
 	local slopes = 0;
 	local direction = (end_b - end_a) / AIMap.DistanceManhattan(end_a, end_b);
@@ -154,7 +165,7 @@ function Road::_GetBridgeNumSlopes(end_a, end_b)
 	return slopes;
 }
 
-function Road::_Cost(self, path, new_tile, new_direction)
+function RoadPathFinder::_Cost(self, path, new_tile, new_direction)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
@@ -206,11 +217,18 @@ function Road::_Cost(self, path, new_tile, new_direction)
 	if (!AIRoad.AreRoadTilesConnected(prev_tile, new_tile)) {
 		cost += self._cost_no_existing_road;
 	}
+	
+	if (AIRoad.IsDriveThroughRoadStationTile(new_tile)) {
+		cost += self._cost_drivethroughstation;
+	}
 
+	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_RAIL)) {
+		cost += self._cost_level_crossing;
+	}
 	return path.GetCost() + cost;
 }
 
-function Road::_Estimate(self, cur_tile, cur_direction, goal_tiles)
+function RoadPathFinder::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 {
 	local min_cost = self._max_cost;
 	/* As estimate we multiply the lowest possible cost for a single tile with
@@ -221,7 +239,7 @@ function Road::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 	return min_cost * self._estimate_rate;
 }
 
-function Road::_Neighbours(self, path, cur_node)
+function RoadPathFinder::_Neighbours(self, path, cur_node)
 {
 	/* self._max_cost is the maximum path cost, if we go over it, the path isn't valid. */
 	if (path.GetCost() >= self._max_cost) return [];
@@ -273,7 +291,7 @@ function Road::_Neighbours(self, path, cur_node)
 	return tiles;
 }
 /*
-function Road::_BuildRoad(a,b) {
+function RoadPathFinder::_BuildRoad(a,b) {
 	local accounting = AIAccounting();
 	local result = AIRoad.BuildRoad(a,b);
 	if(_IsTooExpensive(accounting.GetCosts())) {
@@ -283,7 +301,7 @@ function Road::_BuildRoad(a,b) {
 }
 
 
-function Road::_BuildBridge(a,b,c,d) {
+function RoadPathFinder::_BuildBridge(a,b,c,d) {
 	local accounting = AIAccounting();
 	local result = AIRoad.BuildBridge(a,b,c,d);
 	if(_IsTooExpensive(accounting.GetCosts())) {
@@ -292,7 +310,7 @@ function Road::_BuildBridge(a,b,c,d) {
 	return result;
 }
 
-function Road::_BuildTunnel(a,b) {
+function RoadPathFinder::_BuildTunnel(a,b) {
 	local accounting = AIAccounting();
 	local result = AIRoad.BuildTunnel(a,b);
 	if(_IsTooExpensive(accounting.GetCosts())) {
@@ -301,17 +319,17 @@ function Road::_BuildTunnel(a,b) {
 	return result;
 }
 
-function Road::_IsTooExpensive(cost) {
+function RoadPathFinder::_IsTooExpensive(cost) {
 	return usableMoney < cost;
 }*/
 
 
-function Road::_CheckDirection(self, tile, existing_direction, new_direction)
+function RoadPathFinder::_CheckDirection(self, tile, existing_direction, new_direction)
 {
 	return false;
 }
 
-function Road::_GetDirection(from, to, is_bridge)
+function RoadPathFinder::_GetDirection(from, to, is_bridge)
 {
 	if (!is_bridge && AITile.GetSlope(to) == AITile.SLOPE_FLAT) return 0xFF;
 	if (from - to == 1) return 1;
@@ -326,16 +344,16 @@ function Road::_GetDirection(from, to, is_bridge)
  * for performance reasons. Tunnels will only be build if no terraforming
  * is needed on both ends.
  */
-function Road::_GetTunnelsBridges(last_node, cur_node, bridge_dir)
-{
+ 
+function RoadPathFinder::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
 	local slope = AITile.GetSlope(cur_node);
-	if (slope == AITile.SLOPE_FLAT) return [];
+	if (slope == AITile.SLOPE_FLAT && AITile.IsBuildable(cur_node + (cur_node - last_node))) return [];
 	local tiles = [];
-
 	for (local i = 2; i < this._max_bridge_length; i++) {
 		local bridge_list = AIBridgeList_Length(i + 1);
 		local target = cur_node + i * (cur_node - last_node);
-		if (!bridge_list.IsEmpty() && AIRoad.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
+		if (!bridge_list.IsEmpty() && !_goals.HasItem(target) &&
+				AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
 			tiles.push([target, bridge_dir]);
 		}
 	}
@@ -353,7 +371,7 @@ function Road::_GetTunnelsBridges(last_node, cur_node, bridge_dir)
 	return tiles;
 }
 
-function Road::_IsSlopedRoad(start, middle, end)
+function RoadPathFinder::_IsSlopedRoad(start, middle, end)
 {
 	local NW = 0; //Set to true if we want to build a road to / from the north-west
 	local NE = 0; //Set to true if we want to build a road to / from the north-east
@@ -382,7 +400,7 @@ function Road::_IsSlopedRoad(start, middle, end)
 	return false;
 }
 
-function Road::_CheckTunnelBridge(current_tile, new_tile)
+function RoadPathFinder::_CheckTunnelBridge(current_tile, new_tile)
 {
 	if (!AIBridge.IsBridgeTile(new_tile) && !AITunnel.IsTunnelTile(new_tile)) return false;
 	local dir = new_tile - current_tile;

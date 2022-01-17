@@ -8,6 +8,7 @@ class HgRailPathFinder extends Rail {
 		Rail.constructor();
 
 		_cost_level_crossing = 900;
+		_cost_crossing_reverse = 300;
 		_cost_bridge_per_tile_ex = 130;
 		_cost_tunnel_per_tile_ex  = 130;
 		_cost_diagonal_tile = 67;
@@ -879,17 +880,17 @@ class RailBuilder {
 						BuildSignal(prevprevprev, prevprev, prev);
 					}
 					if(!AITile.IsBuildable(prev)) {
-						HgLog.Warning("demolish tile for bridge or tunnel start:"+HgTile(prev)+"(end:"+HgTile(path.GetTile())+")");
+						HgLog.Warning("Demolish tile for bridge or tunnel start:"+HgTile(prev)+"(end:"+HgTile(path.GetTile())+")");
 						AITile.DemolishTile(prev);
 					}
 					if(!AITile.IsBuildable(path.GetTile())) {
-						HgLog.Warning("demolish tile for bridge or tunnel end:"+HgTile(path.GetTile())+"(start:"+HgTile(prev)+")");
+						HgLog.Warning("Demolish tile for bridge or tunnel end:"+HgTile(path.GetTile())+"(start:"+HgTile(prev)+")");
 						AITile.DemolishTile(path.GetTile());
 					}
 					if (AITunnel.GetOtherTunnelEnd(prev) == path.GetTile()) {
 						HogeAI.WaitForMoney(50000);
 						if(!AITunnel.BuildTunnel(AIVehicle.VT_RAIL, prev)) {
-							HgLog.Warning("BuildTunnel failed."+AIError.GetLastErrorString());
+							HgLog.Warning("BuildTunnel failed."+HgTile(prev)+" "+AIError.GetLastErrorString());
 							if(AIError.GetLastError() == AITunnel.ERR_TUNNEL_CANNOT_BUILD_ON_WATER) {
 //								AIController.Break("");
 							}
@@ -902,7 +903,11 @@ class RailBuilder {
 						HogeAI.WaitForMoney(20000);
 						if(!AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), prev, path.GetTile())) {
 							local bridgeLastError = AIError.GetLastErrorString();
-							if(prevprevprev != null && !BuildTunnel(path,prev,prevprev,prevprevprev)) {
+							if(prevprevprev == null) {
+								HgLog.Warning("BuildBridge failed("+HgTile(prev)+"-"+HgTile(path.GetTile())+":"+AIError.GetLastErrorString()+")."
+									+" And cannot try to build tunnel(prevprevprev==null)")
+								return RetryToBuild(path,prev);
+							} else if(!BuildTunnel(path,prev,prevprev,prevprevprev)) {
 								HgLog.Warning("BuildBridge and BuildTunnel failed."+HgTile(prev)+"-"+HgTile(path.GetTile())+" "+bridgeLastError+","+AIError.GetLastErrorString());
 								if(AIError.GetLastError() == AITunnel.ERR_TUNNEL_CANNOT_BUILD_ON_WATER) {
 //									AIController.Break("");
