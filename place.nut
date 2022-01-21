@@ -8,13 +8,13 @@ class PlaceProduction {
 		return PlaceProduction.instance.Get();
 	}
 	
-	
-	
 	lastCheckMonth = null;
 	history = null;
+	ngPlaces = null;
 	
 	constructor() {
 		history = {};
+		ngPlaces = {};
 	}
 	
 	static function Save(data) {
@@ -188,10 +188,11 @@ class PlaceDictionary {
 		return false;
 	}
 	
-	function GetUsedAsSourceCargoByTrain(place,cargo) {
+	function GetUsedAsSourceCargoByRailOrAir(place,cargo) {
 		local result = [];
 		foreach(route in GetRoutesBySource(place)) {
-			if(route instanceof TrainRoute && route.cargo == cargo) {
+			local vehicleType = route.GetVehicleType();
+			if((vehicleType == AIVehicle.VT_RAIL || vehicleType == AIVehicle.VT_AIR) && route.cargo == cargo) {
 				result.push(route);
 			}
 		}
@@ -234,17 +235,17 @@ class PlaceDictionary {
 			dictionary[id] <- [];
 		}
 		local routes = dictionary[id];
-		local closed = false;
+		local removed = false;
 		foreach(route in routes) {
-			if(route.IsClosed()) {
-				closed = true;
+			if(route.IsRemoved()) {
+				removed = true;
 				break;
 			}
 		}
-		if(closed) {
+		if(removed) {
 			local newRoutes = [];
 			foreach(route in routes) {
-				if(!route.IsClosed()) {
+				if(!route.IsRemoved()) {
 					newRoutes.push(route);
 				}
 			}
@@ -263,6 +264,7 @@ class Place {
 	static ngPathFindPairs = {};
 	static productionHistory = [];
 	static needUsedPlaceCargo = [];
+	static ngPlaces = {};
 	
 	static function SaveStatics(data) {
 		local array = [];
@@ -293,6 +295,7 @@ class Place {
 		PlaceProduction.Get().Save(data);
 
 		data.nearWaters <- PlaceDictionary.Get().nearWaters;
+		data.ngPlaces <- Place.ngPlaces;
 	}
 
 	
@@ -321,6 +324,9 @@ class Place {
 		PlaceProduction.Get().Load(data);
 		
 		PlaceDictionary.Get().nearWaters = data.nearWaters;
+		if(data.rawin("ngPlaces")) {
+			HgTable.Extend(Place.ngPlaces, data.ngPlaces);
+		}
 	}
 	
 	static function Load(t) {		
@@ -357,6 +363,24 @@ class Place {
 		foreach(placeDate in Place.removedDestPlaceDate) {
 			if(placeDate[0].IsSamePlace(place) && current < placeDate[1]+60) {
 				return true;
+			}
+		}
+		return false;
+	}
+	
+	static function AddNgPlace(facility, vehicleType) {
+		Place.ngPlaces.rawset(facility.GetLocation() + ":" + vehicleType, 
+			AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 1500);
+	}
+
+	static function IsNgPlace(facility, vehicleType) {
+		local key = facility.GetLocation() + ":" + vehicleType;
+		if(Place.ngPlaces.rawin(key)) {
+			local date = Place.ngPlaces[key];
+			if(date == -1) {
+				return true;
+			} else {
+				return AIDate.GetCurrentDate() < date;
 			}
 		}
 		return false;
@@ -499,7 +523,7 @@ class Place {
 		return result;
 	}
 	
-	static function GetAcceptingPlaceDistance(cargo, fromTile, maxDistance=350) {
+	static function GetAcceptingPlaceDistance(cargo, fromTile, maxDistance=1000 /*350*/) {
 		return Place.GetCargoAccepting(cargo).Map(function(place):(fromTile) {
 			return [place, place.DistanceManhattan(fromTile)];
 		}).Filter(function(placeDistance):(maxDistance) {
@@ -756,6 +780,10 @@ class HgIndustry extends Place {
 		return AIIndustry.GetLocation(industry);
 	}
 	
+	function GetRadius() {
+		return 3;
+	}
+	
 	function GetTiles(coverageRadius,cargo) {
 		local list = GetTileList(coverageRadius);
 		if(isProducing) {
@@ -873,6 +901,10 @@ class HgIndustry extends Place {
 		return null;
 	}
 	
+	function GetLastMonthTransportedPercentage(cargo) {
+		return AIIndustry.GetLastMonthTransportedPercentage(industry, cargo);
+	}
+	
 	function GetIndustryTraits() {
 		local industryType = AIIndustry.GetIndustryType(industry);
 		if(!AIIndustryType.IsValidIndustryType(industryType)) {
@@ -887,6 +919,10 @@ class HgIndustry extends Place {
 			s += AICargo.GetCargoLabel(cargo)+",";
 		}
 		return s;
+	}
+	function CanBuildAirport(airportType) {
+		local town = AIAirport.GetNearestTown(GetLocation(), airportType);
+		return AITown.GetAllowedNoise(town) >= AIAirport.GetNoiseLevelIncrease(GetLocation(),airportType);
 	}
 }
 
@@ -937,13 +973,17 @@ class TownCargo extends Place {
 		return [cargo];
 	}
 	
+	function GetRadius() {
+		return (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
+	}
+	
 	function GetTiles(coverageRadius,cargo) {
 		if(cargo != this.cargo) {
 			HgLog.Warning("Cargo not match. expect:"+AICargo.GetName(this.cargo)+" but:"+AICargo.GetName(cargo));
 			return null;
 		}
 		
-		local maxRadius = (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
+		local maxRadius = GetRadius();
 		local tiles = Rectangle.Center(HgTile(GetLocation()),maxRadius).GetTilesOrderByOutside();
 		if(IsProducing()) {
 			tiles.reverse();
@@ -970,7 +1010,11 @@ class TownCargo extends Place {
 	}
 	
 	function GetLastMonthProduction(cargo) {
-		return AITown.GetLastMonthProduction( town, cargo ) / 3;
+		return AITown.GetLastMonthProduction( town, cargo ); // / 2;
+	}
+	
+	function GetLastMonthTransportedPercentage(cargo) {
+		return AITown.GetLastMonthTransportedPercentage(town, cargo);
 	}
 	
 	function IsAccepting() {
@@ -1044,4 +1088,9 @@ class TownCargo extends Place {
 	function GetStationLocation(vehicleType) {
 		return null;
 	}
+	
+	function CanBuildAirport(airportType) {
+		return AITown.GetAllowedNoise(town) >= AIAirport.GetNoiseLevelIncrease(GetLocation() + GetRadius(), airportType);
+	}
+	
 }

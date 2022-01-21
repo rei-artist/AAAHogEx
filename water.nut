@@ -105,6 +105,10 @@ class WaterRoute extends CommonRoute {
 
 class WaterRouteBuilder extends CommonRouteBuilder {
 	
+	constructor(dest, srcPlace, cargo) {
+		CommonRouteBuilder.constructor(dest, srcPlace, cargo);
+		makeReverseRoute = true;
+	}
 	
 	function GetRouteClass() {
 		return WaterRoute;
@@ -114,8 +118,8 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 		return WaterStationFactory();
 	}
 	
-	function CreatePathBuilder() {
-		return WaterPathBuilder();
+	function CreatePathBuilder(engine, cargo) {
+		return WaterPathBuilder(engine, cargo);
 	}
 }
 
@@ -123,7 +127,8 @@ class WaterStationFactory extends StationFactory {
 	
 	constructor() {
 		StationFactory.constructor();
-		this.ignoreDirScore = true;
+		this.ignoreDirectionScore = true;
+		this.ignoreDirection = true;
 	}
 	
 	function GetSpreadMargin() {
@@ -266,6 +271,11 @@ class WaterPathBuilder {
 	path = null;
 	cargo = null;
 	engine = null;
+	
+	constructor(engine, cargo) {
+		this.engine = engine;
+		this.cargo = cargo;
+	}
 	
 	function BuildPath(starts ,goals, suppressInterval=false) {
 		local pathfinder = WaterPathFinder();

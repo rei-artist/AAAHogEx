@@ -1236,7 +1236,11 @@ class TrainRoute extends Route {
 
 		local oldPlace = this.destHgStation.place;
 		this.destHgStation = destHgStation;
-		PlaceDictionary.Get().ChangeDest(this, oldPlace);
+		if(oldPlace != null) {
+			PlaceDictionary.Get().ChangeDest(this, oldPlace);
+		} else {
+			PlaceDictionary.Get().AddRoute(this);
+		}
 
 		if(latestEngineVehicle != null) {
 			local orderFlags = AIOrder.OF_NON_STOP_INTERMEDIATE + (IsBiDirectional() ? 0 : AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD);
@@ -1459,12 +1463,12 @@ class TrainRoute extends Route {
 				AIVehicle.SellWagonChain(engineVehicle, 0);
 				engineVehicles.RemoveItem(engineVehicle);
 				if(engineVehicles.Count() == 0) {
-					HgLog.Info("Remove route: "+this);
-					srcHgStation.Remove();
+					HgLog.Info("Remove route(engineVehicles.Count() == 0): "+this);
+					/*srcHgStation.Remove(); TODO: destHgStationを再利用して新しいrouteを作りたい
 					destHgStation.Remove();
 					pathSrcToDest.Remove();
 					pathDestToSrc.Remove();
-					id = null;
+					id = null;*/
 				}
 			}
 		} else if(updateRailDepot != null) {
@@ -1525,6 +1529,12 @@ class TrainRoute extends Route {
 			}
 			
 		}
+		if(destHgStation.place != null) {
+			if(!destHgStation.place.IsClosed()) {
+				destHgStation.place = null;
+			}
+		}
+		
 		if(additionalRoute != null) {
 			additionalRoute.Close();
 		}
@@ -1960,8 +1970,9 @@ class TrainRoute extends Route {
 		local destPlace = destHgStations[destHgStations.len()-1].place;
 		if(destPlace != null) {
 			if(destPlace instanceof HgIndustry) {
-				destPlace = destPlace.GetProducing();
 				local stock = destPlace.GetStockpiledCargo(cargo) ;
+				destPlace = destPlace.GetProducing();
+				HgLog.Info("CheckStockpiled "+destPlace.GetName()+" "+AICargo.GetName(cargo)+" stock:"+stock+" lastDate:"+DateUtils.ToString(lastTreatStockpile)+" "+this);
 				if(stock > 0 && (lastTreatStockpile == null || lastTreatStockpile + 1500 < AIDate.GetCurrentDate())) {
 					lastTreatStockpile = AIDate.GetCurrentDate();
 					foreach(destCargo in destPlace.GetCargos()) {

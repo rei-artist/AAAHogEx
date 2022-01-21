@@ -142,8 +142,7 @@ class IdCounter {
 
 class HgLog {
 	static function GetDateString() {
-		local cur = AIDate.GetCurrentDate();
-		return AIDate.GetYear(cur)+"-"+AIDate.GetMonth(cur)+"-"+AIDate.GetDayOfMonth(cur);
+		return DateUtils.ToString(AIDate.GetCurrentDate());
 	}
 	
 	static function Info(s) {
@@ -157,6 +156,16 @@ class HgLog {
 	static function Error(s) {
 		AILog.Error(HgLog.GetDateString()+" "+s);
 		AIController.Break(s);
+	}
+}
+
+class DateUtils {
+	static function ToString(date) {
+		if(date == null) {
+			return "null";
+		} else {
+			return AIDate.GetYear(date)+"-"+AIDate.GetMonth(date)+"-"+AIDate.GetDayOfMonth(date);
+		}
 	}
 }
 
@@ -246,7 +255,14 @@ class HgTable {
 			table1.rawset(k,v);
 		}
 	}
-	
+
+	static function FromArray(a) {
+		local result = {};
+		foreach(e in a) {
+			result.rawset(e,0);
+		}
+		return result;
+	}
 }
 
 

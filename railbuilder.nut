@@ -13,7 +13,7 @@ class HgRailPathFinder extends Rail {
 		_cost_tunnel_per_tile_ex  = 130;
 		_cost_diagonal_tile = 67;
 		_cost_diagonal_sea = 200;
-		_cost_guide = 200; //20;
+		_cost_guide = 300; //20;
 		_cost_under_bridge = 50;
 		
 		cost.tile = 100;
