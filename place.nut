@@ -103,6 +103,30 @@ class PlaceDictionary {
 				AddRouteTo(dests, route.destHgStation.place, route);
 			}
 		}
+		route.srcHgStation.AddUsingRoute(route);
+		route.destHgStation.AddUsingRoute(route);
+	}
+
+	function RemoveRoute(route) {
+		if(route.srcHgStation.place != null) {
+			RemoveRouteFrom(sources, route.srcHgStation.place, route);
+		}
+		if(route.destHgStation.place != null) {
+			if(route.IsBiDirectional()) {
+				RemoveRouteFrom(sources, route.destHgStation.place.GetProducing(), route);
+			} else {
+				RemoveRouteFrom(dests, route.destHgStation.place, route);
+			}
+		}
+		route.srcHgStation.RemoveUsingRoute(route);
+		route.destHgStation.RemoveUsingRoute(route);
+	}
+	
+	function RemoveRouteFrom(dictionary, place, route) {
+		local id = place.Id();
+		if(dictionary.rawin(id)) {
+			ArrayUtils.Remove(dictionary[id], route);
+		}
 	}
 	
 	function AddRouteTo(dictionary, place, route) {
@@ -110,45 +134,7 @@ class PlaceDictionary {
 		if(!dictionary.rawin(id)) {
 			dictionary[id] <- [];
 		}
-		local routes = dictionary[id];
-		foreach(r in routes) {
-			if(r == route) {
-				return;
-			}
-		}
-		routes.push(route);
-	}
-	
-	function ChangeSource(route, oldPlace) {
-		local newRoutes = [];
-		foreach(r in GetRoutesBySource(oldPlace)) {
-			if(r != route) {
-				newRoutes.push(r);
-			}
-		}
-		sources[oldPlace.Id()] = newRoutes;
-		
-		if(route.destHgStation.place != null) {
-			GetRoutesBySource(route.destHgStation.place.GetProducing()).push(route);
-		}
-	}
-	
-	function ChangeDest(route, oldPlace) {
-		if(route.IsBiDirectional()) {
-			ChangeSource(route, oldPlace);
-		} else {
-			local newRoutes = [];
-			foreach(r in GetRoutesByDest(oldPlace)) {
-				if(r != route) {
-					newRoutes.push(r);
-				}
-			}
-			dests[oldPlace.Id()] = newRoutes;
-			
-			if(route.destHgStation.place != null) {
-				GetRoutesByDest(route.destHgStation.place).push(route);
-			}
-		}
+		ArrayUtils.Add(dictionary[id], route);
 	}
 	
 	function CanUseAsSource(place, cargo) {
@@ -227,33 +213,20 @@ class PlaceDictionary {
 	function GetRoutesByDest(place) {
 		return GetRoutes(dests,place);
 	}
-	
 
 	function GetRoutes(dictionary, place) {
 		local id = place.Id();
 		if(!dictionary.rawin(id)) {
 			dictionary[id] <- [];
 		}
-		local routes = dictionary[id];
-		local removed = false;
-		foreach(route in routes) {
-			if(route.IsRemoved()) {
-				removed = true;
-				break;
+		return dictionary[id];
+/*		local result = [];
+		foreach(route in dictionary[id]) {
+			if(!route.IsClosed()) {
+				result.push(route);
 			}
 		}
-		if(removed) {
-			local newRoutes = [];
-			foreach(route in routes) {
-				if(!route.IsRemoved()) {
-					newRoutes.push(route);
-				}
-			}
-			dictionary[id] = newRoutes;
-			return newRoutes;
-		} else {
-			return routes;
-		}
+		return result;*/
 	}
 }
 
@@ -417,7 +390,7 @@ class Place {
 		if(Place.IsProducedByTown(cargo)) {
 			local townList = AITownList();
 			townList.Valuate(AITown.GetPopulation);
-			townList.KeepAboveValue(600);
+			townList.KeepAboveValue( 600 );
 			foreach(town, v in townList) {
 				result.push(TownCargo(town,cargo,true));
 			}
@@ -508,11 +481,12 @@ class Place {
 
 	static function GetCargoAccepting(cargo) {
 		local result = HgArray([]);
+		local limitPopulation = AICargo.GetTownEffect(cargo) == AICargo.TE_GOODS ? 1000 : 600;
 		if(Place.IsAcceptedByTown(cargo)) {
 			result = HgArray.AIListKey(AITownList()).Map(function(town) : (cargo) {
 				return TownCargo(town,cargo,false);
-			}).Filter(function(place) {
-				return AITown.GetPopulation (place.town) >= 600;
+			}).Filter(function(place) : (limitPopulation) {
+				return AITown.GetPopulation (place.town) >= limitPopulation;
 			});
 		}
 		result.array.extend(HgArray.AIListKey(AIIndustryList_CargoAccepting(cargo)).Map(function(a) {
@@ -737,6 +711,18 @@ class Place {
 		return result;
 	}
 
+	function IsCargoNotAcceptedRecently(cargo) {
+		if(!IsCargoAccepted(cargo)) {
+			return false;
+		}
+		foreach(route in PlaceDictionary.Get().GetRoutesByDestCargo(this, cargo)) {
+			if(route.lastDestClosedDate != null && route.lastDestClosedDate > AIDate.GetCurrentDate() - 365) {
+				return;
+			}
+		}
+		return false;
+	}
+	
 	function _tostring() {
 		return GetName();
 	}
@@ -878,6 +864,10 @@ class HgIndustry extends Place {
 	}
 	
 	function IsProcessing() {
+		if(HogeAI.Get().ecs && GetIndustryTraits()=="WDPR,/WOOD,") {//ECSの製材所
+			return true;
+		}
+	
 		local industryType = AIIndustry.GetIndustryType(industry);
 		return AIIndustryType.IsProcessingIndustry(industryType);
 	}
@@ -891,12 +881,16 @@ class HgIndustry extends Place {
 	}
 	
 	function HasStation(vehicleType) {
-		return vehicleType == AIVehicle.VT_WATER && AIIndustry.HasDock(industry);
+		return vehicleType == AIVehicle.VT_WATER && (AIIndustry.HasDock(industry) || AIIndustry.IsBuiltOnWater(industry));
 	}
 
 	function GetStationLocation(vehicleType) {
 		if(vehicleType == AIVehicle.VT_WATER) {
-			return AIIndustry.GetDockLocation (industry);
+			if(AIIndustry.HasDock(industry)) {
+				return AIIndustry.GetDockLocation (industry);
+			} else {
+				return GetLocation();
+			}
 		}
 		return null;
 	}
@@ -1027,6 +1021,7 @@ class TownCargo extends Place {
 	function IsCargoAccepted(cargo) {
 		return this.cargo == cargo;
 	}
+	
 	
 	function IsClosed() {
 		return false;

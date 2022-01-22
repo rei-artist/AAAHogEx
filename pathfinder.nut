@@ -518,8 +518,10 @@ function Rail::_Neighbours(path, cur_node, self)
 		local other_end = par.GetTile();
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
 //		tiles.push([next_tile, 1]);
+		local isBuildableSea =  self._can_build_water && self._IsBuildableSea(cur_node, next_tile);
+		//HgLog.Info("DistanceManhattan > 1 isBuildableSea:" + isBuildableSea + " "+ HgTile(cur_node) + " next_tile:"+HgTile(next_tile));
 		foreach (offset in offsets) {
-			if (self._BuildRail(cur_node, next_tile, next_tile + offset)) {
+			if (self._BuildRail(cur_node, next_tile, next_tile + offset) || (isBuildableSea && cur_node != next_tile + offset)) {
 				tiles.push([next_tile, self._GetDirection(other_end, cur_node, next_tile, true)]);
 			}
 		}
@@ -533,7 +535,7 @@ function Rail::_Neighbours(path, cur_node, self)
 				local next_tile = cur_node + (cur_node - par_tile);
 				local bridge_list = AIBridgeList_Length(distance + 1);
 				if (!(!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), par_tile, parpar_tile)) 
-						&& AITunnel.GetOtherTunnelEnd(parpar_tile) != par_tile) {
+						&& AITunnel.GetOtherTunnelEnd(parpar_tile) != par_tile && !(AITile.IsSeaTile(par_tile) || AITile.IsSeaTile(parpar_tile))) {
 					//HgLog.Info("cur_node:"+HgTile(cur_node)+" par_tile:"+HgTile(par_tile)+" parpar_tile:"+HgTile(parpar_tile));
 					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
 					return tiles;
@@ -557,10 +559,7 @@ function Rail::_Neighbours(path, cur_node, self)
 					|| (goal2 == next_tile 
 						&& (AIRail.AreTilesConnected(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile))
 						&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node))
-					|| (self._can_build_water 
-						&& (AITile.IsSeaTile(cur_node) 
-							|| (AITile.IsCoastTile(cur_node) && AITile.IsBuildable(cur_node))) 
-						&& self._RaiseAtWater(cur_node,next_tile))) {
+					|| (self._can_build_water && self._IsBuildableSea(cur_node, next_tile))) {
 				if (par != null) {
 					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
 				} else {
@@ -582,6 +581,11 @@ function Rail::_Neighbours(path, cur_node, self)
 	}
 	HgLog.Info("tiles:" + HgTile(cur_node)+" next:"+s+" "+f);*/
 	return tiles;
+}
+
+function Rail::_IsBuildableSea(tile, next_tile) {
+	return ( AITile.IsSeaTile(tile) || (AITile.IsCoastTile(tile) && AITile.IsBuildable(tile)) )
+		&& _RaiseAtWater(tile,next_tile);
 }
 
 function Rail::_BuildRail(p1,p2,p3) {
@@ -615,7 +619,7 @@ function Rail::_RaiseAtWater(t0,t1) {
 	if(AIMap.DistanceFromEdge (t1) <= 2) {
 		return false;
 	}
-	if(HogeAI.Get().avoidClearWater) {
+	if(HogeAI.Get().IsAvoidRemovingWater()) {
 		return false;
 	}
 	local boundCorner = HgTile.GetCorners( HgTile(t0).GetDirection(HgTile(t1)) );
@@ -718,6 +722,23 @@ function Rail::_GetTunnelsBridges(par, last_node, cur_node)
 			local target = cur_node + i * dir;
 			if (!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), cur_node, target)) {
 				tiles.push([target, bridge_dir]);
+			}
+		}
+		if(_can_build_water && _IsBuildableSea(cur_node, cur_node + dir)) {
+			for (local i = 2; i < this._max_bridge_length; i++) {
+				local checkTile = cur_node + (i-1) * dir;
+				if(!((AITile.HasTransportType(checkTile, AITile.TRANSPORT_RAIL) || AITile.HasTransportType(checkTile, AITile.TRANSPORT_ROAD))
+						&& AITile.GetMaxHeight(checkTile) == 1 && !_IsUnderBridge(checkTile))) {
+					break;
+				}
+				local target = cur_node + i * dir;
+				if(_RaiseAtWater(checkTile, target) && _IsBuildableSea(target, target + dir)) {
+					local bridge_list = AIBridgeList_Length(i + 1);
+					if (!bridge_list.IsEmpty()) {
+						tiles.push([target, bridge_dir]);
+						//HgLog.Info("bridge.push cur_node:" + HgTile(cur_node) + " target:"+HgTile(target));
+					}
+				}
 			}
 		}
 	}

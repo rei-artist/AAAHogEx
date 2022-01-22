@@ -121,6 +121,40 @@ class HgArray {
 		return false;
 	}
 }
+class ArrayUtils {
+	function Find(array_, element) {
+		foreach(i,e in array_) {
+			if(e == element) {
+				return i;
+			}
+		}
+		return null;
+	}
+
+	function Remove(array_, element) {
+		local idx = ArrayUtils.Find(array_,element);
+		if(idx != null) {
+			array_.remove(idx);
+		}
+	}
+	
+	function Add(array_, element) {
+		if(ArrayUtils.Find(array_, element) != null) {
+			return;
+		}
+		array_.push(element);
+	}
+	
+	function Without(array_, element) {
+		local result = [];
+		foreach(e in array_) {
+			if(e != element) {
+				result.push(e);
+			}
+		}
+		return result;
+	}
+}
 
 class IdCounter {
 	counter = null;

@@ -159,8 +159,8 @@ class HgTile {
 	}
 
 
-	function GetNotBuildables(hgTile,isCheckSea) {
-		if(HogeAI.Get().avoidClearWater) {
+	function GetNotBuildables(hgTile,isCheckSea) {	
+		if(HogeAI.Get().IsAvoidRemovingWater()) {
 			isCheckSea = true;
 		}
 	

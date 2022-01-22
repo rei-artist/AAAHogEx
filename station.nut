@@ -30,13 +30,20 @@ class StationGroup {
 	
 	function GetUsingRoutesAsDest() {
 		local result = [];
-		local routes = Route.GetAllRoutes();
-		foreach(route in routes) {
+		foreach(route in GetUsingRoutes()) {
 			if(route.destHgStation.stationGroup == this) {
 				result.push(route);
 			}
 		}
 		return result;
+	}
+	
+	function GetUsingRoutes() {
+		local result = [];
+		foreach(hgStation in hgStations) {
+			result.extend(hgStation.usingRoutes);
+		}
+		return result; // 同じrouteが複数含まれる事も稀にありうる
 	}
 	
 	function IsAllPieceStation() {
@@ -739,12 +746,14 @@ class HgStation {
 	builded = null;
 	pieceStationTile = null;
 	platformRectangle = null;
+	usingRoutes = null;
 	
 	constructor(platformTile, stationDirection) {
 		this.platformTile = platformTile;
 		this.stationDirection = stationDirection;
 		this.levelTiles = true;
 		this.builded = false;
+		this.usingRoutes = [];
 	}
 	
 	function Save() {
@@ -1045,8 +1054,24 @@ class HgStation {
 		return true;
 	}
 	
-	function CanShareByMultiRoute() {
-		return true;
+	function CanShareByMultiRoute(routeBuilder) {
+		return true; // CommonRouteBuilderから呼ばれる
+	}
+	
+	function GetUsingRoutes() {
+		return usingRoutes;
+	}
+	
+	function GetUsingRoutesWithout(route) {
+		return usingRoutes;
+	}
+	
+	function AddUsingRoute(route) {
+		ArrayUtils.Add(usingRoutes, route);
+	}
+	
+	function RemoveUsingRoute(route) {
+		ArrayUtils.Remove(usingRoutes, route);
 	}
 	
 	function IsTownStop() {
@@ -1055,6 +1080,7 @@ class HgStation {
 		}
 		return false;
 	}
+	
 }
 
 

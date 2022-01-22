@@ -12,32 +12,32 @@ class Air {
 			airportType = AIAirport.AT_SMALL
 			supportBigPlane = false
 			population = 800
-			maxPlanes = 2
+			maxPlanes = 4
 		},{
 			airportType = AIAirport.AT_COMMUTER
 			supportBigPlane = false
 			population = 1000
-			maxPlanes = 2
+			maxPlanes = 6
 		},{
 			airportType = AIAirport.AT_LARGE
 			supportBigPlane = true
 			population = 2000
-			maxPlanes = 3
+			maxPlanes = 6
 		},{
 			airportType = AIAirport.AT_METROPOLITAN
 			supportBigPlane = true
 			population = 4000
-			maxPlanes = 4
+			maxPlanes = 10
 		},{
 			airportType = AIAirport.AT_INTERNATIONAL
 			supportBigPlane = true
 			population = 10000
-			maxPlanes = 5
+			maxPlanes = 12
 		},{
 			airportType = AIAirport.AT_INTERCON
 			supportBigPlane = true
 			population = 20000
-			maxPlanes = 6
+			maxPlanes = 20
 		}
 	];
 		
@@ -149,7 +149,11 @@ class AirRoute extends CommonRoute {
 	}
 		
 	function GetMaxVehicles() {
-		return Air.Get().GetAiportTraits(srcHgStation.airportType).maxPlanes * (IsBiDirectional() ? 1 : 2); //TODO 距離の考慮
+		local srcMax = Air.Get().GetAiportTraits(srcHgStation.airportType).maxPlanes;
+		srcMax = ceil(srcMax / (ArrayUtils.Without(srcHgStation.GetUsingRoutes(),this).len()+1)); // srcHgStation.GetUsingRoutesにまだthisが含まれていない事があるので
+		local destMax = Air.Get().GetAiportTraits(destHgStation.airportType).maxPlanes;
+		destMax = ceil(destMax / (ArrayUtils.Without(destHgStation.GetUsingRoutes(),this).len()+1));
+		return min(srcMax.tointeger(), destMax.tointeger()); //TODO 距離の考慮
 	}
 }
 
@@ -393,8 +397,13 @@ class AirStation extends HgStation {
 		return 0;
 	}
 	
-	function CanShareByMultiRoute() {
-		return false; // TODO 利用状況によって柔軟にする
+	function CanShareByMultiRoute(routeBuilder) {
+		foreach(route in GetUsingRoutes()) {
+			if(route.IsBiDirectional()) {
+				return false;
+			}
+		}
+		return true;
 	}
 }
 

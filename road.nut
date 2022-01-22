@@ -598,11 +598,12 @@ class TownBus {
 		}
 		local engine = ChooseBusEngine();
 		if(engine != AIVehicle.GetEngineType(bus) || AIVehicle.GetAgeLeft(bus) <= 600) {
-			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(bus, AIOrder.ORDER_CURRENT)) == 0) {
-				AIVehicle.SendVehicleToDepot (bus);
+			if(BuildBus()) {
+				if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(bus, AIOrder.ORDER_CURRENT)) == 0) {
+					AIVehicle.SendVehicleToDepot (bus);
+				}
+				removeBus = bus;
 			}
-			removeBus = bus;
-			BuildBus();
 		}
 	}
 	
