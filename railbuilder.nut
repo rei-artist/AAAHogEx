@@ -881,11 +881,11 @@ class RailBuilder {
 					}
 					if(!AITile.IsBuildable(prev)) {
 						HgLog.Warning("Demolish tile for bridge or tunnel start:"+HgTile(prev)+"(end:"+HgTile(path.GetTile())+")");
-						AITile.DemolishTile(prev);
+						DemolishTile(prev);
 					}
 					if(!AITile.IsBuildable(path.GetTile())) {
 						HgLog.Warning("Demolish tile for bridge or tunnel end:"+HgTile(path.GetTile())+"(start:"+HgTile(prev)+")");
-						AITile.DemolishTile(path.GetTile());
+						DemolishTile(path.GetTile());
 					}
 					if (AITunnel.GetOtherTunnelEnd(prev) == path.GetTile()) {
 						HogeAI.WaitForMoney(50000);
@@ -931,7 +931,7 @@ class RailBuilder {
 					
 					if(Rail.CanDemolishRail(prev)) {
 						HgLog.Warning("demolish tile for buildrail:"+HgTile(prev));
-						AITile.DemolishTile(prev);
+						DemolishTile(prev);
 					}
 					local isGoalOrStart = (prevprevprev == null && AITile.HasTransportType(prevprev,AITile.TRANSPORT_RAIL)) 
 						|| (path.GetParent()==null && AITile.HasTransportType(path.GetTile(),AITile.TRANSPORT_RAIL)); //HasTransportTypeの判定は多分必要ないが害もなさそうなので残す
@@ -951,7 +951,7 @@ class RailBuilder {
 						HgLog.Warning("BuildRail failed:"+HgTile(prevprev)+" "+HgTile(prev)+" "+HgTile(path.GetTile())+" "+AIError.GetLastErrorString()+" isGoalOrStart:"+isGoalOrStart);
 						if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR && !BuildedPath.Contains(prev)) {
 							HgLog.Warning("DemolishTile:"+HgTile(prev)+" for BuildRail");
-							AITile.DemolishTile(prev);
+							DemolishTile(prev);
 							if(RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
 								HgLog.Warning("BuildRail succeeded after DemolishTile.");
 								succeeded = true;
@@ -993,6 +993,14 @@ class RailBuilder {
 		
 		BuildDone();
 		return true;
+	}
+	
+	function DemolishTile( tile ) {
+		if(	AIRail.IsRailStationTile( tile ) ) {
+			AIRail.RemoveRailStationTileRectangle (tile, tile, false);// joinしてる他の駅も壊れるので一部だけ壊れるようにする
+		} else {
+			AITile.DemolishTile( tile );
+		}
 	}
 	
 	function RetryToBuild(path,tile) {
@@ -1157,9 +1165,17 @@ class RailBuilder {
 			if(AIMap.DistanceManhattan(t0,t1)==1) {
 				Raise(t0,t1);
 			} else {
-				Raise(t0, t0+dir);
-				Raise(t1-dir, t1);
-				Raise(t1, t1+dir);
+				local needsRaise = false;
+				{
+					local aiTest = AITestMode();
+					local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(t0,t1) + 1);
+					needsRaise = !AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), t0, t1);
+				}
+				if(needsRaise) {
+					Raise(t0, t0+dir);
+					Raise(t1-dir, t1);
+					Raise(t1, t1+dir);
+				}
 			}
 			return path;
 		} else {

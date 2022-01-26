@@ -624,7 +624,7 @@ function Rail::_RaiseAtWater(t0,t1) {
 	}
 	local boundCorner = HgTile.GetCorners( HgTile(t0).GetDirection(HgTile(t1)) );
 	if(AITile.GetCornerHeight(t0,boundCorner[0]) == 0 && AITile.GetCornerHeight(t0,boundCorner[1]) == 0) {
-		local result = AITile.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]));
+		local result = AITile.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0])) || AITile.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[1]));
 		return result;
 	}
 	return true;

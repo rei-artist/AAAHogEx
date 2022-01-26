@@ -36,6 +36,7 @@ class TrainInfoDictionary {
 	
 	
 	function GetTrainInfo(engine) {
+	
 		local engineName = AIEngine.GetName(engine);
 		/*
 		if(engineName != null && engineName.find("Hankyu") != null) {
@@ -45,6 +46,11 @@ class TrainInfoDictionary {
 		if(dictionary.rawin(engine)) {
 			return dictionary[engine];
 		}
+		
+		if(HogeAI.Get().maxTrains <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_RAIL)) {
+			return null;
+		}
+		
 		local trainInfo = CreateTrainInfo(GetDepot(engine), engine);
 		if(trainInfo == null) {
 			return null;
@@ -213,7 +219,7 @@ class TrainPlanner {
 			});
 		} else {
 			engineSets.sort(function(a,b) {
-				return b.income - a.income;
+				return b.routeIncome - a.routeIncome;
 			});
 		}
 		return engineSets;
@@ -221,6 +227,8 @@ class TrainPlanner {
 
 	function GetEngineSets() {
 		local result = [];
+
+		local buildingCost = TrainRoute.GetBuildingCost(distance)
 	
 		local railSpeed = 10000;
 		if(railType != null) {
@@ -229,6 +237,7 @@ class TrainPlanner {
 				railSpeed = 10000;
 			}
 		}
+		
 		local wagonEngines = AIEngineList(AIVehicle.VT_RAIL);
 		wagonEngines.Valuate(AIEngine.IsWagon);
 		wagonEngines.KeepValue(1);
@@ -390,17 +399,26 @@ class TrainPlanner {
 					if(firstRoute && price * 3 / 2 > HogeAI.GetUsableMoney()) {
 						break;
 					}
-					local roi = income * 6 * 100 / (HogeAI.GetInflatedMoney(150000) + price * 6);
+					local maxVehicles = distance / 14 + 2;
+					local days = distance * 664 / cruiseSpeed / 24 + 5; // TODO 積み込み時間の考慮
+					local vehiclesPerRoute = min( maxVehicles, production * 12 * days * 2 / ( 365 * capacity ) ); // TODO 速度と距離による限界数を考慮
+					local numVehicles = min( production * 12 / capacity, distance / 15 );
+					local routeIncome = income * vehiclesPerRoute;
+					local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
+					
 					//local roi = income * 100 / price;
 					//HgLog.Info("income:"+income+" roi:"+roi+" a:"+acceleration+" speed:"+cruiseSpeed+" "+AIEngine.GetName(trainEngine)+"-"+AIEngine.GetName(wagonEngine)+"x"+numWagon+" "+AICargo.GetName(cargo));
 					result.push({
+						engine = trainEngine
 						railType = trainRailType
 						wagonEngine = numWagon == 0 ? null : wagonEngine
 						trainEngine = trainEngine
 						numWagon = numWagon
 						capacity = capacity
+						price = price
 						roi = roi
 						income = income
+						routeIncome = routeIncome
 						lengthWeights = clone lengthWeights
 					});
 				}
@@ -721,7 +739,7 @@ class TrainRoute extends Route {
 		return false;
 	}
 	
-	function EstimateEngineSet(cargo, distance, production) {
+	function EstimateEngineSet(self, cargo, distance, production) {
 		local trainPlanner = TrainPlanner();
 		trainPlanner.cargo = cargo;
 		trainPlanner.production = max(50,production);
@@ -823,6 +841,10 @@ class TrainRoute extends Route {
 		return 0.9;
 	}
 
+	function GetBuildingCost(distance) {
+		return distance * HogeAI.Get().GetInflatedMoney(720);
+	}
+	
 	function GetFinalDestPlace() {
 		return GetFinalDestStation().place;
 	}

@@ -14,6 +14,10 @@ class StationGroup {
 		isVirtual = false;
 	}
 	
+	function GetGId() {
+		return "StationGroup:"+id;
+	}
+
 	function AddHgStation(hgStation) {
 		hgStations.push(hgStation);
 	}
@@ -115,7 +119,7 @@ class StationGroup {
 	
 	function IsAcceptingCargo(cargo) {
 		foreach(station in hgStations) {
-			if(station.IsAcceptingCargo(cargo)) {
+			if(station.IsAcceptingCargo(cargo)) { // TODO 両方合わせて受け入れ可の場合を逃している
 				return true;
 			}
 		}
@@ -617,6 +621,7 @@ class TerminalStationFactory extends RailStationFactory {
 class HgStation {
 	static worldInstances = {};
 	static idCounter = IdCounter();
+	static placeStationDictionary = {};
 	
 	static STATION_NW = 0;
 	static STATION_NE = 1;
@@ -690,40 +695,43 @@ class HgStation {
 			station.savedData = t.rawin("savedData") ? t.savedData : station.Save();
 			stationGroup.hgStations.push(station);
 			HgStation.worldInstances[station.id] <- station;
-			
+			if(station.place != null) {
+				station.place.AddStation(station);
+			}
 			BuildedPath.AddTiles(station.GetTiles());
 		}
 	}
 	
 	static function SearchStation(placeOrGroup, stationType, cargo, isAccepting) {
-		local place = null;
-		local stationGroup = null;
+		local result = [];
+		local stations;
+		local isStationGroup;
 		if(placeOrGroup instanceof Place) {
-			place = placeOrGroup;
+			stations = [];
+			stations.extend( placeOrGroup.GetAccepting().GetStations() );
+			stations.extend( placeOrGroup.GetProducing().GetStations() );
+			isStationGroup = false;
 		} else {
-			stationGroup = placeOrGroup;
+			stations = placeOrGroup.hgStations;
+			isStationGroup = true;
 		}
 	
-		foreach(hgStation in HgStation.worldInstances) {
+		foreach(hgStation in stations) {
 			if(hgStation.GetStationType() == stationType) {
-				if((place != null && hgStation.place != null && hgStation.place.IsSamePlace(place)) 
-						|| (stationGroup != null && hgStation.stationGroup == stationGroup)) {
-					if(stationGroup != null) {
-						return hgStation;
+				if(isStationGroup) {
+					result.push(hgStation);
+				} else if(isAccepting) {
+					if(hgStation.stationGroup.IsAcceptingCargo(cargo)) {
+						result.push(hgStation);
 					}
-					if(isAccepting) {
-						if(hgStation.stationGroup.IsAcceptingCargo(cargo)) {
-							return hgStation;
-						}
-					} else {
-						if(hgStation.stationGroup.IsProducingCargo(cargo)) {
-							return hgStation;
-						}
+				} else {
+					if(hgStation.stationGroup.IsProducingCargo(cargo)) {
+						result.push(hgStation);
 					}
 				}
 			}
 		}
-		return null;
+		return result; // 同じstationが複数返る事があり得る
 	}
 	
 	id = null;
@@ -788,23 +796,36 @@ class HgStation {
 		buildedDate = AIDate.GetCurrentDate();
 		stationGroup.AddHgStation(this);
 		worldInstances[this.id] <- this;
+
+		if(place != null) {
+			place.AddStation(this);
+		}
+
 		BuildedPath.AddTiles(GetTiles());
 		
 		savedData = Save();
 	}
 	
 	function RemoveWorld() {
+		HgLog.Info("HgStation.RemoveWorld."+this);
+
 		if(worldInstances.rawin(this.id)) {
 			delete worldInstances[this.id];
 		} else {
-			HgLog.Warning("Station is not in worldInstances.(at HgStation.RemoveWorld()) "+GetTypeName()+" "+GetName());
+			HgLog.Warning("Station is not in worldInstances.(at HgStation.RemoveWorld()) "+this);
 		}
 		if(stationGroup != null) {
 			stationGroup.RemoveHgStation(this);
 			stationGroup = null;
 		}
+		if(place != null) {
+			place.RemoveStation(this);
+		}
+
 		place = null;
 		id = null;
+		
+
 		//BuildedPath.RemoveTiles(GetTiles());
 	}
 	
@@ -919,11 +940,12 @@ class HgStation {
 				}
 			}
 			if(!success) {
-				HgLog.Warning("pieceStation.BuildExec failed:"+GetName()+" "+AIError.GetLastErrorString());
+				HgLog.Warning("pieceStation.BuildExec failed:"+this+" "+AIError.GetLastErrorString());
 				Remove();
 				return false;
 			}
 		}
+		HgLog.Info("HgStation.BuildExec succeeded."+this);
 
 		return true;
 	}
@@ -1054,7 +1076,7 @@ class HgStation {
 		return true;
 	}
 	
-	function CanShareByMultiRoute(routeBuilder) {
+	function CanShareByMultiRoute() {
 		return true; // CommonRouteBuilderから呼ばれる
 	}
 	
@@ -1081,6 +1103,11 @@ class HgStation {
 		return false;
 	}
 	
+	function _tostring() {
+		return GetTypeName()+":"+id+"["+GetName()+" at "+HgTile(GetLocation())+"]";
+	}
+
+
 }
 
 

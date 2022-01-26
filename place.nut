@@ -138,9 +138,12 @@ class PlaceDictionary {
 	}
 	
 	function CanUseAsSource(place, cargo) {
+		if(HogeAI.Get().stockpiled) { // Railでも受け入れきれないケースがあるので禁止しない
+			return true;
+		}
 		local routes = GetRoutesBySource(place);
 		foreach(route in routes) {
-			if(route.cargo == cargo && (route instanceof TrainRoute) && !route.IsOverflow()) {
+			if(route.cargo == cargo && (route instanceof TrainRoute) && !route.IsOverflow() && !route.IsClosed()) {
 				return false;
 			}
 		}
@@ -238,6 +241,7 @@ class Place {
 	static productionHistory = [];
 	static needUsedPlaceCargo = [];
 	static ngPlaces = {};
+	static placeStationDictionary = {};
 	
 	static function SaveStatics(data) {
 		local array = [];
@@ -341,13 +345,14 @@ class Place {
 		return false;
 	}
 	
-	static function AddNgPlace(facility, vehicleType) {
-		Place.ngPlaces.rawset(facility.GetLocation() + ":" + vehicleType, 
-			AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 1500);
+	static function AddNgPlace(facility, cargo, vehicleType) {
+		local limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 1500; 
+		Place.ngPlaces.rawset(facility.GetLocation() + ":" + cargo +":" + vehicleType, limit);
+		HgLog.Info("AddNgPlace:"+facility.GetName()+"["+AICargo.GetName(cargo)+"] vt:"+vehicleType+" limit:"+DateUtils.ToString(limit));
 	}
 
-	static function IsNgPlace(facility, vehicleType) {
-		local key = facility.GetLocation() + ":" + vehicleType;
+	static function IsNgPlace(facility, cargo, vehicleType) {
+		local key = facility.GetLocation() + ":" + cargo +":" + vehicleType;
 		if(Place.ngPlaces.rawin(key)) {
 			local date = Place.ngPlaces[key];
 			if(date == -1) {
@@ -379,13 +384,11 @@ class Place {
 		Place.needUsedPlaceCargo.push([place, cargo]);
 	}
 	
-	static function GetCargoProducing(cargo, isIncreasableProcessingOrRaw = true) {
+	static function GetCargoProducing( cargo ) {
 		local result = [];
 		foreach(industry,v in AIIndustryList_CargoProducing(cargo)) {
 			local hgIndustry = HgIndustry(industry,true);
-			if(!(isIncreasableProcessingOrRaw && !hgIndustry.IsIncreasableProcessingOrRaw())) {
-				result.push(hgIndustry);
-			}
+			result.push(hgIndustry);
 		}
 		if(Place.IsProducedByTown(cargo)) {
 			local townList = AITownList();
@@ -407,21 +410,21 @@ class Place {
 	}
 
 	static function SearchNearProducingPlaces(cargo, fromTile, maxDistance) {
-		return Place.GetCargoProducing(cargo,false).Filter(function(place):(cargo,fromTile,maxDistance) {
+		return Place.GetCargoProducing( cargo ).Filter(function(place):(cargo,fromTile,maxDistance) {
 			return place.DistanceManhattan(fromTile) <= maxDistance && place.GetLastMonthProduction(cargo) >= 1;
 		});
 	}
 	
 
-	static function GetNotUsedProducingPlaces(cargo, isIncreasableProcessingOrRaw = true) {
-		return Place.GetCargoProducing(cargo,isIncreasableProcessingOrRaw).Filter(function(place):(cargo) {
+	static function GetNotUsedProducingPlaces( cargo ) {
+		return Place.GetCargoProducing( cargo ).Filter(function(place):(cargo) {
 			return PlaceDictionary.Get().CanUseAsSource(place,cargo);
 		});
 	}
 	
-	static function GetProducingPlaceDistance(cargo, fromTile, isIncreasableProcessingOrRaw = true, maxDistance=200) {
-		return Place.GetNotUsedProducingPlaces(cargo, isIncreasableProcessingOrRaw).Map(function(place):(fromTile) {
-			return [place,place.DistanceManhattan(fromTile)];
+	static function GetProducingPlaceDistance( cargo, fromTile, maxDistance = 200) {
+		return Place.GetNotUsedProducingPlaces( cargo ).Map(function(place):(fromTile) {
+			return [place,place.DistanceManhattan( fromTile )];
 		}).Filter(function(placeDistance):(maxDistance) {
 			return placeDistance[1] < maxDistance;
 		})
@@ -449,7 +452,7 @@ class Place {
 			middleTile = src.GetLocation();
 		}
 		local existingDistance = destTile == null ? 0 : AIMap.DistanceManhattan(destTile, middleTile);
-		return Place.GetProducingPlaceDistance(cargo, middleTile, vehicleType == AIVehicle.VT_RAIL, maxDistance).Map(function(placeDistance):(cargo, destTile) {
+		return Place.GetProducingPlaceDistance(cargo, middleTile, maxDistance).Map(function(placeDistance):(cargo, destTile) {
 			local t = {};
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
@@ -580,6 +583,9 @@ class Place {
 		return PlaceProduction.Get().GetLastMonthProduction(industry,cargo);
 	}
 	
+	function GetGId() {
+		return Id();
+	}
 	
 	function DistanceManhattan(tile) {
 		return HgTile(GetLocation()).DistanceManhattan(HgTile(tile));
@@ -587,18 +593,8 @@ class Place {
 	
 	function GetStationGroups() {
 		local result = {};
-		foreach(hgStaion in GetHgStations()) {
+		foreach(hgStaion in GetStations()) {
 			result[hgStaion.stationGroup] <- hgStaion.stationGroup;
-		}
-		return result;
-	}
-	
-	function GetHgStations() {
-		local result = [];
-		foreach(id,hgStation in HgStation.worldInstances) {
-			if(hgStation.place != null && hgStation.place.IsSamePlace(this)) {
-				result.push(hgStation);
-			}
 		}
 		return result;
 	}
@@ -642,22 +638,20 @@ class Place {
 		return GetAccepting().IsTreatCargo(cargo) && GetProducing().IsTreatCargo(cargo);
 	}
 	
-	function CanUseNewRoute(cargo) {
-		local result = true;
+	function CanUseNewRoute(cargo, vehicleType) {
+		if(vehicleType == AIVehicle.VT_AIR) {
+			return true;
+		}
 		foreach(route in PlaceDictionary.Get().GetRoutesBySource(this)) {
-			if(route.cargo != cargo) {
+			if(route.cargo != cargo || route.IsOverflowPlace(this)) {
 				continue;
 			}
-			result = route.IsOverflowPlace(this); // 単体の新規ルートは何かに使用されていた場合（余っていない場合）、全て禁止
-			//HgLog.Info("CanUseNewRoute "+this+" used:"+route+" isOverflow:"+result);
-			if(!result) {
-				break;
+			if(route.GetVehicleType() == AIVehicle.VT_ROAD && vehicleType != AIVehicle.VT_ROAD) {
+				continue;
 			}
+			return false;
 		}
-		if(result) {
-			//HgLog.Info("CanUseNewRoute "+this+" result:"+result);
-		}
-		return result;
+		return true;
 	}
 	
 	function CanUseTrainSource() {
@@ -723,6 +717,29 @@ class Place {
 		return false;
 	}
 	
+	function AddStation(station) {
+		local placeId = Id();
+		if(!placeStationDictionary.rawin(placeId)) {
+			placeStationDictionary[placeId] <- [station];
+		} else {
+			placeStationDictionary[placeId].push(station);
+		}
+	}
+	
+	
+	function RemoveStation(station) {
+		ArrayUtils.Remove( placeStationDictionary[Id()], station );
+	}
+	
+	function GetStations() {
+		local placeId = Id();
+		if(placeStationDictionary.rawin(placeId)) {
+			return placeStationDictionary[placeId];
+		} else {
+			return [];
+		}
+	}
+	
 	function _tostring() {
 		return GetName();
 	}
@@ -752,6 +769,9 @@ class HgIndustry extends Place {
 	}
 	
 	function IsSamePlace(other) {
+		if(other == null) {
+			return false;
+		}
 		if(!(other instanceof HgIndustry)) {
 			return false;
 		}
@@ -838,24 +858,24 @@ class HgIndustry extends Place {
 		}
 	}
 	
+	// 入力すると出力が増えるかどうか or 入力が無くて勝手に増えるかどうか
 	function IsIncreasable() {
-		local traits = GetIndustryTraits();
-/*		if(traits=="PASS,/FOOD,BEER,PASS,") { 
-			return false;
-		}*/
-		if(HgArray(GetAccepting().GetCargos()).Contains(HogeAI.GetPassengerCargo()) && HgArray(GetProducing().GetCargos()).Contains(HogeAI.GetPassengerCargo())) {
-			return false;//FIRSのHOTELは生産量は増えない
+		if(HogeAI.Get().ecs || HogeAI.Get().yeti) {
+			return true;
 		}
-		
 		local industryType = AIIndustry.GetIndustryType(industry);
-		return AIIndustryType.ProductionCanIncrease(industryType);
-
-	}
-	
-	function IsIncreasableProcessingOrRaw() {
-		local industryType = AIIndustry.GetIndustryType(industry);
-		return AIIndustryType.ProductionCanIncrease(industryType) 
-					&& (AIIndustryType.IsProcessingIndustry (industryType) || AIIndustryType.IsRawIndustry(industryType));
+		local acceptingCargos = HgArray(GetAccepting().GetCargos());
+		if(acceptingCargos.Count() == 0 && !AIIndustryType.ProductionCanIncrease(industryType)) {
+			return false;
+		}
+		if(!AIIndustryType.IsProcessingIndustry (industryType) && !AIIndustryType.IsRawIndustry(industryType)) {
+			foreach(producingCargo in GetProducing().GetCargos()) {
+				if(acceptingCargos.Contains(producingCargo)) {
+					return false; // 入出力に同じものがある(例:銀行)
+				}
+			}
+		}
+		return true;
 	}
 	
 	function IsRaw() {
@@ -863,11 +883,7 @@ class HgIndustry extends Place {
 		return AIIndustryType.IsRawIndustry(industryType);
 	}
 	
-	function IsProcessing() {
-		if(HogeAI.Get().ecs && GetIndustryTraits()=="WDPR,/WOOD,") {//ECSの製材所
-			return true;
-		}
-	
+	function IsProcessing() {		
 		local industryType = AIIndustry.GetIndustryType(industry);
 		return AIIndustryType.IsProcessingIndustry(industryType);
 	}
@@ -881,15 +897,13 @@ class HgIndustry extends Place {
 	}
 	
 	function HasStation(vehicleType) {
-		return vehicleType == AIVehicle.VT_WATER && (AIIndustry.HasDock(industry) || AIIndustry.IsBuiltOnWater(industry));
+		return vehicleType == AIVehicle.VT_WATER && AIIndustry.HasDock(industry);
 	}
 
 	function GetStationLocation(vehicleType) {
 		if(vehicleType == AIVehicle.VT_WATER) {
 			if(AIIndustry.HasDock(industry)) {
-				return AIIndustry.GetDockLocation (industry);
-			} else {
-				return GetLocation();
+				return AIIndustry.GetDockLocation(industry);
 			}
 		}
 		return null;
@@ -914,9 +928,22 @@ class HgIndustry extends Place {
 		}
 		return s;
 	}
-	function CanBuildAirport(airportType) {
+
+	function CanBuildAirport(airportType, cargo) {
 		local town = AIAirport.GetNearestTown(GetLocation(), airportType);
-		return AITown.GetAllowedNoise(town) >= AIAirport.GetNoiseLevelIncrease(GetLocation(),airportType);
+		local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease(GetLocation(),airportType);
+		if(AITown.GetAllowedNoise(town) >= noiseLevelIncrease) {
+			return true;
+		}
+		
+		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
+			HgLog.Info("debug CanBuildAirport:"+station.GetName()+" true");
+			if(station.CanShareByMultiRoute()) {
+				return station;
+			}
+		}
+		
+		return false;
 	}
 }
 
@@ -941,6 +968,9 @@ class TownCargo extends Place {
 	}
 
 	function IsSamePlace(other) {
+		if(other == null) {
+			return false;
+		}
 		if(!(other instanceof TownCargo)) {
 			return false;
 		}
@@ -1055,11 +1085,7 @@ class TownCargo extends Place {
 		return false;
 
 	}
-	
-	function IsIncreasableProcessingOrRaw() {
-		return false;
-	}
-	
+		
 	function IsRaw() {
 		return false;
 	}
@@ -1084,8 +1110,20 @@ class TownCargo extends Place {
 		return null;
 	}
 	
-	function CanBuildAirport(airportType) {
-		return AITown.GetAllowedNoise(town) >= AIAirport.GetNoiseLevelIncrease(GetLocation() + GetRadius(), airportType);
+	function CanBuildAirport(airportType, cargo) {
+		local location = GetLocation() + GetRadius();
+		local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease(location, airportType);
+		if( AITown.GetAllowedNoise(town) >= noiseLevelIncrease ) {
+			return true;
+		}
+		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
+			HgLog.Info("debug CanBuildAirport:"+station.GetName()+" true");
+			return true;
+		}
+		return false;
 	}
 	
+	function GetIndustryTraits() {
+		return "";
+	}
 }

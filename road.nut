@@ -66,6 +66,10 @@ class RoadRoute extends CommonRoute {
 		return RoadRouteBuilder;
 	}
 	
+	function GetBuildingCost(distance) {
+		return distance * HogeAI.Get().GetInflatedMoney(450);
+	}
+	
 	function SetPath(path) {
 		if(GetDistance() < 150) {
 			return;
@@ -415,7 +419,7 @@ class TownBus {
 	}
 
 	function ChooseBusEngine() {
-		local engineSet = RoadRoute.EstimateEngineSet.call(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2 );
+		local engineSet = RoadRoute.EstimateEngineSet(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2 );
 		return engineSet != null ? engineSet.engine : null;
 		
 		/*
