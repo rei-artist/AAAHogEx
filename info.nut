@@ -2,9 +2,9 @@ class HogeAI extends AIInfo
  {
    function GetAuthor()      { return "Rei Ishibashi"; }
    function GetName()        { return "AAAHogEx"; }
-   function GetDescription() { return "The most profitable AI in the world."; }
+   function GetDescription() { return "AAAHogEx understands the industry chain and plans the most profitable routes. Therefore, it is the most profitable AI even for complex NewGRFs such as FIRS and ECS."; }
    function GetVersion()     { return 1; }
-   function GetDate()        { return "2021-09-29"; }
+   function GetDate()        { return "2022-01-27"; }
    function CreateInstance() { return "HogeAI"; }
    function GetShortName()   { return "HOGE"; }
    function GetAPIVersion()    { return "1.2"; }

@@ -353,7 +353,7 @@ class TrainPlanner {
 				local trainPower = AIEngine.GetPower(trainEngine);
 				local power = trainPower;
 				local maxSpeed = min(AIEngine.GetMaxSpeed(trainEngine),wagonSpeed);
-				if(wagonWeight == 0) { // 多分従動力車
+				if(wagonWeight == 0) { // 多分従動力車　TODO 実際に連結させて調べたい
 					wagonCapacity = trainCapacity;
 					wagonWeightLength[1] = 5 + GetCargoWeight(cargo, wagonCapacity);
 				}
@@ -381,11 +381,10 @@ class TrainPlanner {
 					//local lengthWeights = GetLengthWeightsParams(trainInfo.length, trainWeight, trainCapacity, 1, wagonInfo.length, wagonWeight, wagonCapacity, numWagon);
 					local cruiseSpeed = GetSpeed(maxTractiveEffort, power, lengthWeights, 1);
 					cruiseSpeed = min(maxSpeed,cruiseSpeed);
-					local income = HogeAI.GetCargoIncome(distance, cargo, cruiseSpeed, max(15, capacity * 30 / (production*7/10)))
+					local income = HogeAI.GetCargoIncome(distance, cargo, cruiseSpeed, max(5, capacity * 30 / production) - 5)
 						* capacity * (trainReiliability+100)/200
 							- (trainRunningCost + wagonRunningCost * numWagon);
 							
-					// TODO: 路線当たりのincomeを算出する
 					//HgLog.Info("income:"+income+" speed:"+cruiseSpeed+" "+AIEngine.GetName(trainEngine)+"-"+AIEngine.GetName(wagonEngine)+"x"+numWagon+" "+AICargo.GetName(cargo));
 					if(income <= 0) {
 						continue;
@@ -401,8 +400,9 @@ class TrainPlanner {
 					}
 					local maxVehicles = distance / 14 + 2;
 					local days = distance * 664 / cruiseSpeed / 24 + 5; // TODO 積み込み時間の考慮
-					local vehiclesPerRoute = min( maxVehicles, production * 12 * days * 2 / ( 365 * capacity ) ); // TODO 速度と距離による限界数を考慮
-					local numVehicles = min( production * 12 / capacity, distance / 15 );
+					local deliverableProduction = min(production , capacity * 3 / 2);
+					local vehiclesPerRoute =  min( maxVehicles, deliverableProduction * 12 * days * 2 / ( 365 * capacity ) + 1 ); // TODO 速度と距離による限界数を考慮
+					local numVehicles = min( deliverableProduction * 12 / capacity, distance / 15 );
 					local routeIncome = income * vehiclesPerRoute;
 					local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
 					
@@ -419,6 +419,7 @@ class TrainPlanner {
 						roi = roi
 						income = income
 						routeIncome = routeIncome
+						production = production
 						lengthWeights = clone lengthWeights
 					});
 				}
@@ -631,6 +632,7 @@ class TrainRoute extends Route {
 			t.engineSetAllRailDate <- route.engineSetAllRailDate;
 			t.lastDestClosedDate <- route.lastDestClosedDate;
 			t.additionalTiles <- route.additionalTiles;
+			t.cannotChangeDest <- route.cannotChangeDest;
 
 			
 //			HgLog.Info("save route:"+route+" additionalRoute:"+route.additionalRoute);
@@ -685,6 +687,7 @@ class TrainRoute extends Route {
 			trainRoute.engineSetAllRailDate = t.engineSetAllRailDate;
 			trainRoute.lastDestClosedDate = t.lastDestClosedDate;
 			trainRoute.additionalTiles = t.additionalTiles;
+			trainRoute.cannotChangeDest = t.cannotChangeDest;
 			//trainRoute.usedRateHistory = t.rawin("usedRateHistory") ? t.usedRateHistory : [];
 			
 			idMap[t.id] <- trainRoute;
@@ -790,6 +793,7 @@ class TrainRoute extends Route {
 	engineSetAllRailDate = null;
 	lastDestClosedDate = null;
 	additionalTiles = null;
+	cannotChangeDest = null;
 	
 	averageUsedRate = null;
 	isBuilding = null;
@@ -815,6 +819,7 @@ class TrainRoute extends Route {
 		this.slopesTable = {};
 		this.trainLength = 7;
 		this.additionalTiles = [];
+		this.cannotChangeDest = false;
 	}
 	
 	function GetVehicleType() {
@@ -843,6 +848,10 @@ class TrainRoute extends Route {
 
 	function GetBuildingCost(distance) {
 		return distance * HogeAI.Get().GetInflatedMoney(720);
+	}
+	
+	function GetBuildingTime(distance) {
+		return distance * 2 + 100;
 	}
 	
 	function GetFinalDestPlace() {
@@ -1066,7 +1075,7 @@ class TrainRoute extends Route {
 				explain += "-"+AIEngine.GetName(wagonEngine)+"x"+numWagon;
 			}
 			explain += " depot:"+HgTile(depotTile)+" "+this;
-			HgLog.Info("BuildTrain income:"+engineSet.income+" roi:"+engineSet.roi+" "+explain+" "+this);
+			HgLog.Info("BuildTrain income:"+engineSet.income+" roi:"+engineSet.roi+" production:"+engineSet.production+" "+explain+" "+this);
 			
 			//HgLog.Info("Try build "+explain);
 
@@ -1566,6 +1575,9 @@ class TrainRoute extends Route {
 		if(additionalRoute != null) {
 			additionalRoute.Close();
 		}
+		if(returnRoute != null) {
+			returnRoute.Close();
+		}
 	}	
 	
 	function Remove() {					
@@ -1573,12 +1585,18 @@ class TrainRoute extends Route {
 		isRemoved = true;
 		Close();
 		PlaceDictionary.Get().RemoveRoute(this);
+		if(returnRoute != null) {
+			returnRoute.Remove(false);
+		}
 	}
 
 	function ReOpen() {
 		HgLog.Warning("ReOpen route:"+this);
 		isClosed = false;
 		PlaceDictionary.Get().AddRoute(this);
+		if(returnRoute != null) {
+			returnRoute.ReOpen();
+		}
 		//BuildFirstTrain();
 	}
 	
@@ -1685,9 +1703,6 @@ class TrainRoute extends Route {
 		if(additionalRoute != null) {
 			additionalRoute.RollbackUpdateRailType(railType);
 		}
-	}
-	function GetDistance() {
-		return AIMap.DistanceManhattan(srcHgStation.platformTile, destHgStation.platformTile);
 	}
 
 	function NeedsAdditionalProducing(orgRoute = null, isDest = false) {
@@ -1950,6 +1965,11 @@ class TrainRoute extends Route {
 		if(isRemoved) {
 			return;
 		}
+		if(srcHgStation.place != null && srcHgStation.place.IsClosed()) {
+			HgLog.Warning("Route Remove (src place closed)"+this);
+			Remove();
+			return;
+		}
 	
 		if(transferRoute != null) {
 			if(isClosed) {
@@ -1990,7 +2010,12 @@ class TrainRoute extends Route {
 				}
 			} else {
 				if(acceptableStationIndex == -1) {
-					Close();
+					if(destHgStations[destHgStations.len()-1].place != null && destHgStations[destHgStations.len()-1].place.IsClosed()) {
+						HgLog.Warning("Route Remove (dest place closed)"+this);
+						Remove(); //TODO 最終以外が単なるCloseの場合、Removeは不要。ただしRemoveしない場合、station.placeは更新する必要がある。レアケースなのでとりあえずRemove
+					} else {
+						Close();
+					}
 				}
 			}
 		}
@@ -2068,6 +2093,11 @@ class TrainReturnRoute extends Route {
 			BuildedPath(Path.Load(t.destDeparturePath)));
 	}
 	
+	function Close() {
+	}
+	
+	function ReOpen() {
+	}
 	
 	function GetVehicleType() {
 		return AIVehicle.VT_RAIL;
@@ -2096,6 +2126,10 @@ class TrainReturnRoute extends Route {
 		return originalRoute.IsClosed();
 	}
 	
+	function IsRemoved() {
+		return originalRoute.IsRemoved();
+	}
+	
 	function IsBiDirectional() {
 		return false;
 	}
@@ -2104,6 +2138,8 @@ class TrainReturnRoute extends Route {
 		switch (idx) {
 			case "cargo":
 				return originalRoute.cargo;
+			case "lastDestClosedDate": // TODO: return routeのdest closeには対応していない。一時的に受け入れ拒否された場合にsrcへcargoをそのまま持ち帰ってしまうのでrouteが死ぬ
+				return null;
 			default: 
 				throw("the index '" + idx + "' does not exist");
 		}
@@ -2114,13 +2150,17 @@ class TrainReturnRoute extends Route {
 		return [srcHgStation, destHgStation, srcArrivalPath.path, srcDeparturePath.path, destArrivalPath.path, destDeparturePath.path];
 	}
 	
-	function Remove(){
-		srcHgStation.Remove();
-		destHgStation.Remove();
-		srcArrivalPath.Remove();
-		srcDeparturePath.Remove();
-		destArrivalPath.Remove();
-		destDeparturePath.Remove();
+	function Remove( isPhysicalRemove = false ){
+		PlaceDictionary.Get().RemoveRoute(this);
+	
+		if(isPhysicalRemove) {
+			srcHgStation.Remove();
+			destHgStation.Remove();
+			srcArrivalPath.Remove();
+			srcDeparturePath.Remove();
+			destArrivalPath.Remove();
+			destDeparturePath.Remove();
+		}
 	}
 
 	function _tostring() {

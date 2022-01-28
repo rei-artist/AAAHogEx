@@ -169,6 +169,10 @@ class StationFactory {
 		local testMode = AITestMode();
 		local result = null;
 		
+		if(CargoUtils.IsPaxOrMail(cargo) && nearestFor == null) {
+			nearestFor = place.GetLocation();
+		}
+		
 		if(place.HasStation(GetVehicleType())) {
 			result = PlaceStation(place.GetStationLocation(GetVehicleType()));
 		}
@@ -412,7 +416,7 @@ class StationFactory {
 	
 	function CreateOnTiles(tiles,stationDirection) {
 		local result = [];
-		foreach(platformTile in GetPlatformTiles(tiles,stationDirection)) {
+		foreach(platformTile,v in GetPlatformTiles(tiles,stationDirection)) {
 			result.push(Create(platformTile,stationDirection));
 		}
 		return result;
@@ -1010,6 +1014,17 @@ class HgStation {
 			AIStation.SetName(GetAIStation(), s+name);
 		} else if(place != null) {
 			AIStation.SetName(GetAIStation(), s+place.GetName());
+		} else if(cargo != null) {
+			local hasPlace = false;
+			foreach(station in stationGroup.hgStations) {
+				if(station.place != null) {
+					hasPlace = true;
+				}
+			}
+			if(!hasPlace) {
+				local town = AITile.GetClosestTown(GetLocation());	
+				AIStation.SetName(GetAIStation(), s+AITown.GetName(town)+" "+AICargo.GetName(cargo)+" Yard");
+			}
 		}
 	}
 	
@@ -1937,9 +1952,10 @@ class SmartStation extends RailStation {
 	function GetBuildableScore() {
 		local result = 0;
 		foreach(xy in GetHopeBuildableAndFlatTiles()) {
-			if(AITile.IsBuildable(At(xy[0],xy[1]))) {
+			local tile = At(xy[0],xy[1]);
+			if(AITile.IsBuildable(tile)) {
 				result ++;
-				if(IsFlat(At(xy[0],xy[1]))) {
+				if(IsFlat(tile)) {
 					result ++;
 				}
 			}

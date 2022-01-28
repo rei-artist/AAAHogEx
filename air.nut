@@ -15,6 +15,7 @@ class Air {
 			population = 800
 			maxPlanes = 4
 			runways = 1
+			stationDateSpan = 30
 		},{
 			level = 2
 			airportType = AIAirport.AT_COMMUTER
@@ -22,6 +23,7 @@ class Air {
 			population = 1000
 			maxPlanes = 5
 			runways = 1
+			stationDateSpan = 20
 		},{
 			level = 3
 			airportType = AIAirport.AT_LARGE
@@ -29,6 +31,7 @@ class Air {
 			population = 2000
 			maxPlanes = 5
 			runways = 1
+			stationDateSpan = 20
 		},{
 			level = 4
 			airportType = AIAirport.AT_METROPOLITAN
@@ -36,6 +39,7 @@ class Air {
 			population = 4000
 			maxPlanes = 10
 			runways = 2
+			stationDateSpan = 12
 		},{
 			level = 5
 			airportType = AIAirport.AT_INTERNATIONAL
@@ -43,6 +47,7 @@ class Air {
 			population = 10000
 			maxPlanes = 12			
 			runways = 2
+			stationDateSpan = 8
 		},{
 			level = 6
 			airportType = AIAirport.AT_INTERCON
@@ -50,6 +55,7 @@ class Air {
 			population = 20000
 			maxPlanes = 20
 			runways = 4
+			stationDateSpan = 5
 		}
 	];
 	static allAirportTypes = [
@@ -154,6 +160,10 @@ class AirRoute extends CommonRoute {
 		return HogeAI.Get().GetInflatedMoney(13000); // TODO 空港のタイプによって異なる
 	}
 	
+	function GetBuildingTime(distance) {
+		return 400;
+	}
+	
 	function SetPath(path) {
 	}
 	
@@ -169,14 +179,18 @@ class AirRoute extends CommonRoute {
 	}
 	
 	function GetStationDateSpan(self) {
-		local defaultSpan = 12;
 		if((typeof self) == "instance" && self instanceof AirRoute) {	
 			local srcUsings = ArrayUtils.Without(srcHgStation.GetUsingRoutes(),this).len()+1; // srcHgStation.GetUsingRoutesにまだthisが含まれていない事があるので
 			local destUsings = ArrayUtils.Without(destHgStation.GetUsingRoutes(),this).len()+1;
-			return max( defaultSpan * srcUsings / Air.Get().GetAiportTraits(srcHgStation.airportType).runways,
-				defaultSpan * destUsings / Air.Get().GetAiportTraits(destHgStation.airportType).runways );
+			return max( Air.Get().GetAiportTraits(srcHgStation.airportType).stationDateSpan * srcUsings,
+				Air.Get().GetAiportTraits(destHgStation.airportType).stationDateSpan * destUsings );
 		} else {
-			return defaultSpan;
+			local traits = Air.Get().GetAvailableAiportTraits();
+			if(traits.len() >= 1) {
+				return traits[0].stationDateSpan;
+			} else {
+				return 30;
+			}
 		}
 	}
 	/*
@@ -472,7 +486,11 @@ class AirStation extends HgStation {
 	}
 	
 	function CanShareByMultiRoute() {
-		foreach(route in GetUsingRoutes()) {
+		usingRoutes = GetUsingRoutes();
+		if(usingRoutes.len() >= 3) { // 最低数1のルートが大量にシェアされて小型空港が溢れかえるので
+			return false;
+		}
+		foreach(route in usingRoutes) {
 			if(route.IsBiDirectional()) {
 				return false;
 			}

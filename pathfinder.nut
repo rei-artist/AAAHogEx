@@ -7,7 +7,7 @@ class Rail
 {
 	static idCounter = IdCounter();
 	
-	_aystar_class = import("graph.aystar", "", 4);
+	_aystar_class = import("graph.aystar", "", 6);
 	_max_cost = null;              ///< The maximum cost for a route.
 	_cost_tile = null;             ///< The cost for a single tile.
 	_cost_guide = null;
@@ -59,7 +59,7 @@ class Rail
 		this._can_build_water = false;
 		this._cost_water = 20;
 		this._estimate_rate = 2;
-		this._pathfinder = this._aystar_class(this._Cost, this._Estimate, this._Neighbours, this._CheckDirection, this, this, this, this);
+		this._pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
 
 		this.cost = this.Cost(this);
 		this._running = false;
@@ -255,7 +255,7 @@ function Rail::_GetDirectionIndex(p1,p2) {
 	return (p2 - p1) / AIMap.DistanceManhattan(p1,p2);
 }
 
-function Rail::_Cost(path, new_tile, new_direction, self)
+function Rail::_Cost(self, path, new_tile, new_direction)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
@@ -342,7 +342,7 @@ function Rail::_Cost(path, new_tile, new_direction, self)
 	return path.GetCost() + cost;
 }
 
-function Rail::_Estimate(cur_tile, cur_direction, goal_tiles, self)
+function Rail::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 {
 	local min_cost = self._max_cost;
 	/* As estimate we multiply the lowest possible cost for a single tile with
@@ -472,7 +472,7 @@ function Rail::_PermitedDiagonalOffset(track) {
 }
 
 
-function Rail::_Neighbours(path, cur_node, self)
+function Rail::_Neighbours(self, path, cur_node)
 {
 	/* self._max_cost is the maximum path cost, if we go over it, the path isn't valid. */
 	if (path.GetCost() >= self._max_cost) return [];

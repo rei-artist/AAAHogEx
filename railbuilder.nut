@@ -124,13 +124,13 @@ class HgRailPathFinder extends Rail {
 		return isFoundPath;
 	}
 	
-	function _Cost(path, new_tile, new_direction, self)
+	function _Cost(self, path, new_tile, new_direction)
 	{
 		if (path == null) return 0;
 
 		local prev_tile = path.GetTile();
 
-		local cost = ::Rail._Cost(path, new_tile, new_direction, self);
+		local cost = ::Rail._Cost(self, path, new_tile, new_direction);
 		if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_ROAD)) cost += self._cost_level_crossing;
 			
 		

@@ -642,8 +642,8 @@ class Place {
 		if(vehicleType == AIVehicle.VT_AIR) {
 			return true;
 		}
-		foreach(route in PlaceDictionary.Get().GetRoutesBySource(this)) {
-			if(route.cargo != cargo || route.IsOverflowPlace(this)) {
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(route.IsOverflowPlace(this)) {
 				continue;
 			}
 			if(route.GetVehicleType() == AIVehicle.VT_ROAD && vehicleType != AIVehicle.VT_ROAD) {
@@ -652,6 +652,57 @@ class Place {
 			return false;
 		}
 		return true;
+	}
+	
+	function CanUseTransferRoute(cargo, vehicleType) {
+		if(vehicleType == AIVehicle.VT_RAIL) { // 今のところreturn route用のみなので無条件でOK
+			return true;
+		}
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(route.IsOverflowPlace(this)) {
+				continue;
+			}
+			if(route.GetVehicleType() == AIVehicle.VT_ROAD) {
+				continue;
+			}
+			return false;
+		}
+		return true;
+	}
+	
+	function GetRoutes(cargo = null) {
+		local result = [];
+		result.extend(GetProducing().GetRoutesUsingSource(cargo));
+		result.extend(GetAccepting().GetRoutesUsingDest(cargo));
+		return result;
+	}
+	
+	function GetRoutesUsingSource(cargo = null) {
+		if(cargo == null) {
+			return PlaceDictionary.Get().GetRoutesBySource(this);
+		}
+	
+		local result = []
+		foreach(route in PlaceDictionary.Get().GetRoutesBySource(this)) {
+			if(route.cargo == cargo) {
+				result.push(route);
+			}
+		}
+		return result;
+	}
+	
+	function GetRoutesUsingDest(cargo = null) {
+		if(cargo == null) {
+			return PlaceDictionary.Get().GetRoutesByDest(this);
+		}
+		
+		local result = []
+		foreach(route in PlaceDictionary.Get().GetRoutesByDest(this)) {
+			if(route.cargo == cargo) {
+				result.push(route);
+			}
+		}
+		return result;
 	}
 	
 	function CanUseTrainSource() {
@@ -692,19 +743,6 @@ class Place {
 		return false;
 	}
 	
-	function GetSuppliedRoutes(cargo) {
-		local result = [];
-		foreach(route in PlaceDictionary.Get().GetRoutesByDest(this)) {
-			if(route.IsRemoved()) {
-				continue;
-			}
-			if(route.cargo == cargo) {
-				result.push(route);
-			}
-		}
-		return result;
-	}
-
 	function IsCargoNotAcceptedRecently(cargo) {
 		if(!IsCargoAccepted(cargo)) {
 			return false;
@@ -738,6 +776,17 @@ class Place {
 		} else {
 			return [];
 		}
+	}
+	
+	function GetExpectedProduction(cargo) {
+		return GetLastMonthProduction(cargo);
+/* メタデータが無いので一切不明
+		local accepting = GetAccepting();
+		if(IsIncreasable() && accepting.GetCargos().len() >= 1 && accepting.GetRoutesUsingDest().len() == 0) {
+			return GetLastMonthProduction(cargo) * 3;
+		} else {
+			return GetLastMonthProduction(cargo);
+		}*/
 	}
 	
 	function _tostring() {
@@ -937,7 +986,6 @@ class HgIndustry extends Place {
 		}
 		
 		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			HgLog.Info("debug CanBuildAirport:"+station.GetName()+" true");
 			if(station.CanShareByMultiRoute()) {
 				return station;
 			}
@@ -1034,8 +1082,9 @@ class TownCargo extends Place {
 	}
 	
 	function GetLastMonthProduction(cargo) {
-		return AITown.GetLastMonthProduction( town, cargo ); // / 2;
+		return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
 	}
+	
 	
 	function GetLastMonthTransportedPercentage(cargo) {
 		return AITown.GetLastMonthTransportedPercentage(town, cargo);
@@ -1117,7 +1166,6 @@ class TownCargo extends Place {
 			return true;
 		}
 		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			HgLog.Info("debug CanBuildAirport:"+station.GetName()+" true");
 			return true;
 		}
 		return false;

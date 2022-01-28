@@ -69,7 +69,11 @@ class RoadRoute extends CommonRoute {
 	function GetBuildingCost(distance) {
 		return distance * HogeAI.Get().GetInflatedMoney(450);
 	}
-	
+
+	function GetBuildingTime(distance) {
+		return distance + 10;
+	}
+
 	function SetPath(path) {
 		if(GetDistance() < 150) {
 			return;
@@ -369,7 +373,6 @@ class TownBus {
 		if(busEngine == null) {
 			HgLog.Warning("Not found bus engine "+this);
 			return false;
-			
 		}
 		HogeAI.WaitForPrice(AIEngine.GetPrice(busEngine));
 		local bus = AIVehicle.BuildVehicle(depot, busEngine);
@@ -472,13 +475,14 @@ class TownBus {
 						continue;
 					}*/
 					if(AIRoad.BuildRoadDepot (depotTile, tile)) {
+						HgLog.Info("BuildBusDepot succeeded."+HgTile(depotTile)+" "+this);
 						local aiExec = AIExecMode();
 						HogeAI.WaitForMoney(10000);
 						if(!AIRoad.AreRoadTilesConnected(tile, depotTile) && !AIRoad.BuildRoad(tile, depotTile)) {
 							continue;
 						}
 						if(!AIRoad.BuildRoadDepot (depotTile, tile)) {
-							HgLog.Warning("failed BuildRoadDepot"+HgTile(depotTile)+" "+this);
+							HgLog.Warning("BuildBusDepot failed."+HgTile(depotTile)+" "+this);
 							return false;
 						}
 						this.depot = depotTile;
@@ -487,7 +491,7 @@ class TownBus {
 				}
 			}
 		}
-		HgLog.Warning("failed BuildRoadDepot"+this);
+		HgLog.Warning("BuildBusDepot failed."+this);
 		return false;
 	}
 	
@@ -692,6 +696,6 @@ class TownBus {
 	
 	
 	function _tostring() {
-		return "TownBus["+AITown.GetName(town)+"]";
+		return "TownBus["+AITown.GetName(town)+":"+AICargo.GetName(cargo)+"]";
 	}
 }

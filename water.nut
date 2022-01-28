@@ -76,6 +76,10 @@ class WaterRoute extends CommonRoute {
 		return HogeAI.Get().GetInflatedMoney(10000); // TODO 適当。土地成型すると高額だが、ただのdockは激安(292)
 	}
 	
+	function GetBuildingTime(distance) {
+		return 400;
+	}
+	
 	function SetPath(path) {
 		local execMode = AIExecMode();
 		local count = 0;

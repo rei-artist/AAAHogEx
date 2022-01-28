@@ -154,6 +154,18 @@ class ArrayUtils {
 		}
 		return result;
 	}
+	
+	function And(a1, a2) {
+		local result = [];
+		foreach(e1 in a1) {
+			foreach(e2 in a2) {
+				if(e1 == e2) {
+					result.push(e1);
+				}
+			}
+		}
+		return result;
+	}
 }
 
 class IdCounter {
@@ -450,3 +462,9 @@ class VehicleUtils {
 	
 }
 
+class CargoUtils {
+	static function IsPaxOrMail(cargo) {
+		return HogeAI.GetPassengerCargo() == cargo || HogeAI.GetMailCargo() == cargo;
+	}
+
+}
