@@ -50,8 +50,11 @@ class TrainInfoDictionary {
 		if(HogeAI.Get().maxTrains <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_RAIL)) {
 			return null;
 		}
-		
-		local trainInfo = CreateTrainInfo(GetDepot(engine), engine);
+		local depot = GetDepot(engine);
+		if(depot == null) {
+			return null;
+		}
+		local trainInfo = CreateTrainInfo(depot, engine);
 		if(trainInfo == null) {
 			return null;
 		}
@@ -60,7 +63,26 @@ class TrainInfoDictionary {
 	}
 	
 	function GetDepot(engine) {
-		local railType = AIEngine.GetRailType(engine);
+		local railType = null;//AIEngine.GetRailType(engine);
+		if(railType == null) {
+			foreach(r,v in AIRailTypeList()) {
+				if(AIEngine.IsWagon(engine)) {
+					if(AIEngine.CanRunOnRail(engine, r)) {
+						railType = r;
+						break;
+					}
+				} else {
+					if(AIEngine.HasPowerOnRail(engine, r)) {
+						railType = r;
+						break;
+					}
+				}
+			}
+		}
+		if(railType == null) {
+			HgLog.Warning("Unknown railType engine:"+AIEngine.GetName(engine+"(GetDepot)"));
+			return null;
+		}
 		if(!railTypeDepot.rawin(railType)) {
 			local execMode = AIExecMode();
 			local oldRailType = AIRail.GetCurrentRailType();
@@ -189,6 +211,7 @@ class TrainPlanner {
 	cargo = null;
 	production = null;
 	distance = null;
+	isBidirectional = null;
 	
 	// optional
 	railType = null;
@@ -202,6 +225,7 @@ class TrainPlanner {
 	
 	
 	constructor() {
+		isBidirectional = false;
 		if(!HogeAI.Get().roiBase) {
 			limitWagonEngines = 2;
 			limitTrainEngines = 5;
@@ -381,14 +405,6 @@ class TrainPlanner {
 					//local lengthWeights = GetLengthWeightsParams(trainInfo.length, trainWeight, trainCapacity, 1, wagonInfo.length, wagonWeight, wagonCapacity, numWagon);
 					local cruiseSpeed = GetSpeed(maxTractiveEffort, power, lengthWeights, 1);
 					cruiseSpeed = min(maxSpeed,cruiseSpeed);
-					local income = HogeAI.GetCargoIncome(distance, cargo, cruiseSpeed, max(5, capacity * 30 / production) - 5)
-						* capacity * (trainReiliability+100)/200
-							- (trainRunningCost + wagonRunningCost * numWagon);
-							
-					//HgLog.Info("income:"+income+" speed:"+cruiseSpeed+" "+AIEngine.GetName(trainEngine)+"-"+AIEngine.GetName(wagonEngine)+"x"+numWagon+" "+AICargo.GetName(cargo));
-					if(income <= 0) {
-						continue;
-					}
 					local acceleration = GetAcceleration(10, maxTractiveEffort, power, lengthWeights);
 					if(acceleration < 0) {
 						//HgLog.Warning("acceleration:"+acceleration);
@@ -399,10 +415,22 @@ class TrainPlanner {
 						break;
 					}
 					local maxVehicles = distance / 14 + 2;
-					local days = distance * 664 / cruiseSpeed / 24 + 5; // TODO 積み込み時間の考慮
-					local deliverableProduction = min(production , capacity * 3 / 2);
-					local vehiclesPerRoute =  min( maxVehicles, deliverableProduction * 12 * days * 2 / ( 365 * capacity ) + 1 ); // TODO 速度と距離による限界数を考慮
-					local numVehicles = min( deliverableProduction * 12 / capacity, distance / 15 );
+					local loadingTime = 5;
+					local days = (distance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
+					local deliverableProduction = min(production , capacity * 3 / 2); // TODO 実際にはローディング時間、プラットフォーム数、入れ替え時間などに依存している
+					local vehiclesPerRoute =  max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) ), 1 );
+					local inputProduction = production;
+					if(vehiclesPerRoute < (isBidirectional ? 3 : 2)) {
+						inputProduction = inputProduction / 2;
+					}
+					local waitingInStationTime = max(loadingTime, (capacity * vehiclesPerRoute - (inputProduction * days) / 30)*30 / inputProduction / vehiclesPerRoute );
+					local income = CargoUtils.GetCargoIncome(distance, cargo, cruiseSpeed, waitingInStationTime, isBidirectional)
+						* capacity * (trainReiliability+100)/200
+							- (trainRunningCost + wagonRunningCost * numWagon);
+							
+					if(income <= 0) {
+						continue;
+					}
 					local routeIncome = income * vehiclesPerRoute;
 					local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
 					
@@ -420,6 +448,7 @@ class TrainPlanner {
 						income = income
 						routeIncome = routeIncome
 						production = production
+						vehiclesPerRoute = vehiclesPerRoute
 						lengthWeights = clone lengthWeights
 					});
 				}
@@ -742,10 +771,11 @@ class TrainRoute extends Route {
 		return false;
 	}
 	
-	function EstimateEngineSet(self, cargo, distance, production) {
+	function EstimateEngineSet(self, cargo, distance, production, isBidirectional) {
 		local trainPlanner = TrainPlanner();
 		trainPlanner.cargo = cargo;
 		trainPlanner.production = max(50,production);
+		trainPlanner.isBidirectional = isBidirectional;
 		trainPlanner.distance = distance;
 		trainPlanner.skipWagonNum = 5;
 		trainPlanner.limitTrainEngines = 1;
@@ -847,7 +877,7 @@ class TrainRoute extends Route {
 	}
 
 	function GetBuildingCost(distance) {
-		return distance * HogeAI.Get().GetInflatedMoney(720);
+		return distance * HogeAI.Get().GetInflatedMoney(720) + HogeAI.Get().GetInflatedMoney(10000);
 	}
 	
 	function GetBuildingTime(distance) {
@@ -901,6 +931,7 @@ class TrainRoute extends Route {
 		trainPlanner.cargo = cargo;
 		trainPlanner.distance = GetDistance();
 		trainPlanner.production = max(50,GetProduction());
+		trainPlanner.isBidirectional = IsBiDirectional();
 		trainPlanner.railType = GetRailType();
 		trainPlanner.selfGetMaxSlopesFunc = this;
 		trainPlanner.additonalTrainEngine = latestEngineSet != null ? latestEngineSet.trainEngine : null;
@@ -932,6 +963,7 @@ class TrainRoute extends Route {
 		trainPlanner.cargo = cargo;
 		trainPlanner.distance = GetDistance();
 		trainPlanner.production = max(50,GetProduction());
+		trainPlanner.isBidirectional = IsBiDirectional();
 		trainPlanner.selfGetMaxSlopesFunc = this;
 		trainPlanner.additonalTrainEngine = latestEngineSet != null ? latestEngineSet.trainEngine : null;
 		trainPlanner.additonalWagonEngine = latestEngineSet != null ? latestEngineSet.wagonEngine : null;

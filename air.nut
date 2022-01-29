@@ -15,7 +15,7 @@ class Air {
 			population = 800
 			maxPlanes = 4
 			runways = 1
-			stationDateSpan = 30
+			stationDateSpan = 20
 		},{
 			level = 2
 			airportType = AIAirport.AT_COMMUTER
@@ -23,7 +23,7 @@ class Air {
 			population = 1000
 			maxPlanes = 5
 			runways = 1
-			stationDateSpan = 20
+			stationDateSpan = 25
 		},{
 			level = 3
 			airportType = AIAirport.AT_LARGE
@@ -31,7 +31,7 @@ class Air {
 			population = 2000
 			maxPlanes = 5
 			runways = 1
-			stationDateSpan = 20
+			stationDateSpan = 14
 		},{
 			level = 4
 			airportType = AIAirport.AT_METROPOLITAN
@@ -39,7 +39,7 @@ class Air {
 			population = 4000
 			maxPlanes = 10
 			runways = 2
-			stationDateSpan = 12
+			stationDateSpan = 10
 		},{
 			level = 5
 			airportType = AIAirport.AT_INTERNATIONAL
@@ -47,7 +47,7 @@ class Air {
 			population = 10000
 			maxPlanes = 12			
 			runways = 2
-			stationDateSpan = 8
+			stationDateSpan = 7
 		},{
 			level = 6
 			airportType = AIAirport.AT_INTERCON
@@ -55,7 +55,7 @@ class Air {
 			population = 20000
 			maxPlanes = 20
 			runways = 4
-			stationDateSpan = 5
+			stationDateSpan = 4
 		}
 	];
 	static allAirportTypes = [
@@ -244,8 +244,8 @@ class AirRouteBuilder extends CommonRouteBuilder {
 	}
 	
 	function GetUsingAirportTypes() {
-		local usableAiportTypesDest = GetUsableAirportTypes(dest.GetLocation());
-		local usableAiportTypesSrc = GetUsableAirportTypes(srcPlace.GetLocation());
+		local usableAiportTypesDest = GetUsableAirportTypes(dest);
+		local usableAiportTypesSrc = GetUsableAirportTypes(srcPlace);
 		if(usableAiportTypesDest.len()==0) {
 			if(GetUsableStation(dest, cargo) != null) {
 				usableAiportTypesDest = Air.allAirportTypes;
@@ -273,13 +273,19 @@ class AirRouteBuilder extends CommonRouteBuilder {
 		return result;
 	}
 
-	function GetUsableAirportTypes(location) {
+	function GetUsableAirportTypes(placeOrGroup) {
 		local result = [];
 		local distanceCorrection = HogeAI.Get().isUseAirportNoise ? 1 : 0;
 		foreach(traits in Air.Get().GetAvailableAiportTraits()) {
-			local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease( location, traits.airportType );
-			if( noiseLevelIncrease <= AITown.GetAllowedNoise(AIAirport.GetNearestTown( location, traits.airportType )) + distanceCorrection) {
-				result.push(traits.airportType);
+			if(placeOrGroup instanceof Place) {
+				if(placeOrGroup.CanBuildAirport(traits.airportType, cargo)) {
+					result.push(traits.airportType);
+				}
+			} else {
+				local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease( location, traits.airportType );
+				if( noiseLevelIncrease <= AITown.GetAllowedNoise(AIAirport.GetNearestTown( location, traits.airportType )) + distanceCorrection) {
+					result.push(traits.airportType);
+				}
 			}
 		}
 		return result;

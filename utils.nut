@@ -463,6 +463,18 @@ class VehicleUtils {
 }
 
 class CargoUtils {
+
+	// waitingDays: 積み下ろし時間
+	static function GetCargoIncome(distance, cargo, speed, waitingDays=0, isBidirectional=false) {
+		if(speed<=0) {
+			return 0;
+		}
+		local days = max(1, distance*664/speed/24);
+		
+		local income = AICargo.GetCargoIncome(cargo,distance,days);
+		return income * 365 / (days * 2 + waitingDays) * (isBidirectional ? 2 : 1);
+	}
+	
 	static function IsPaxOrMail(cargo) {
 		return HogeAI.GetPassengerCargo() == cargo || HogeAI.GetMailCargo() == cargo;
 	}

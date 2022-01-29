@@ -945,8 +945,8 @@ class HgStation {
 			}
 			if(!success) {
 				HgLog.Warning("pieceStation.BuildExec failed:"+this+" "+AIError.GetLastErrorString());
-				Remove();
-				return false;
+				//Remove(); // 空港建設で支持を落すため、がかなりの確率で失敗するので
+				return true;
 			}
 		}
 		HgLog.Info("HgStation.BuildExec succeeded."+this);

@@ -346,7 +346,7 @@ class Place {
 	}
 	
 	static function AddNgPlace(facility, cargo, vehicleType) {
-		local limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 1500; 
+		local limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 300; 
 		Place.ngPlaces.rawset(facility.GetLocation() + ":" + cargo +":" + vehicleType, limit);
 		HgLog.Info("AddNgPlace:"+facility.GetName()+"["+AICargo.GetName(cargo)+"] vt:"+vehicleType+" limit:"+DateUtils.ToString(limit));
 	}
@@ -393,7 +393,7 @@ class Place {
 		if(Place.IsProducedByTown(cargo)) {
 			local townList = AITownList();
 			townList.Valuate(AITown.GetPopulation);
-			townList.KeepAboveValue( 600 );
+			townList.KeepAboveValue( 200 );
 			foreach(town, v in townList) {
 				result.push(TownCargo(town,cargo,true));
 			}
@@ -484,7 +484,7 @@ class Place {
 
 	static function GetCargoAccepting(cargo) {
 		local result = HgArray([]);
-		local limitPopulation = AICargo.GetTownEffect(cargo) == AICargo.TE_GOODS ? 1000 : 600;
+		local limitPopulation = AICargo.GetTownEffect(cargo) == AICargo.TE_GOODS ? 1000 : 200;
 		if(Place.IsAcceptedByTown(cargo)) {
 			result = HgArray.AIListKey(AITownList()).Map(function(town) : (cargo) {
 				return TownCargo(town,cargo,false);
@@ -841,7 +841,12 @@ class HgIndustry extends Place {
 	
 	function GetTiles(coverageRadius,cargo) {
 		local list = GetTileList(coverageRadius);
-		if(isProducing) {
+		if(IsAcceptingAndProducing(cargo)) {
+			list.Valuate( AITile.GetCargoProduction,cargo,1,1,coverageRadius);
+			list.RemoveValue(0)
+			list.Valuate( AITile.GetCargoAcceptance,cargo,1,1,coverageRadius);
+			list.RemoveBelowValue(8)
+		} else if(isProducing) {
 			list.Valuate( AITile.GetCargoProduction,cargo,1,1,coverageRadius);
 			list.RemoveValue(0)
 		} else {
@@ -1166,7 +1171,9 @@ class TownCargo extends Place {
 			return true;
 		}
 		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			return true;
+			if(station.CanShareByMultiRoute()) {
+				return true;
+			}
 		}
 		return false;
 	}

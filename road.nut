@@ -422,7 +422,7 @@ class TownBus {
 	}
 
 	function ChooseBusEngine() {
-		local engineSet = RoadRoute.EstimateEngineSet(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2 );
+		local engineSet = RoadRoute.EstimateEngineSet(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2, true );
 		return engineSet != null ? engineSet.engine : null;
 		
 		/*
@@ -645,7 +645,7 @@ class TownBus {
 		
 		if(isTransfer) {
 			if(IsAllTownRoutesClosed()) {
-				HgLog.Warning("ReOpen:"+this);
+				HgLog.Info("ChangeTransferToTownBus(IsAllTownRoutesClosed):"+this);
 				if(BuildBus()) {
 					isTransfer = false;
 				}
@@ -657,26 +657,22 @@ class TownBus {
 		}
 		
 		local place = GetPlace();
-		local usedRoute = null;
 		foreach(route in PlaceDictionary.Get().GetRoutesBySource(place)) {
-			if(!route.IsClosed() && route.NeedsAdditionalProducingPlace(place)) {
-				usedRoute = route;
+			if(route.IsClosed() || !route.NeedsAdditionalProducingPlace(place)) {
+				continue;
 			}
-		}
-		
-		if(usedRoute != null) {		
 			
-			HgLog.Warning("Close:"+this+" (found used route:"+usedRoute+")");
 			local toHgStation;
-			if(usedRoute.srcHgStation.place.IsSamePlace(place)) {
-				toHgStation = usedRoute.srcHgStation.stationGroup.FindStation("PieceStation");
+			if(route.srcHgStation.place.IsSamePlace(place)) {
+				toHgStation = route.srcHgStation.stationGroup.FindStation("PieceStation");
 			} else {
-				toHgStation = usedRoute.destHgStation.stationGroup.FindStation("PieceStation");
+				toHgStation = route.destHgStation.stationGroup.FindStation("PieceStation");
 			}
 			if(toHgStation == null) {
-				HgLog.Warning("PieceStation not found.(CheckTransfer)"+this);
-				return;
+				HgLog.Warning("PieceStation not found:"+route+" at "+this);
+				continue;
 			}
+			HgLog.Info("ChangeTransfer:"+this+" (used route:"+route+")");
 			
 			removeBus = GetBus();
 			if(removeBus != null) {
@@ -691,6 +687,7 @@ class TownBus {
 				CreateTransferRoadRoute(2, stations[1], toHgStation);
 			}
 			isTransfer = true;
+			break;
 		}
 	}
 	

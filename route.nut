@@ -1,5 +1,7 @@
 
 class Route {
+	static allVehicleTypes = [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD, AIVehicle.VT_WATER, AIVehicle.VT_AIR];
+
 	static function SearchRoutes( bottomRouteWeighting, srcPlace, destPlace, destStationGroup, cargo ) {
 		return HgArray(ArrayUtils.And(
 			srcPlace.GetProducing().GetRoutesUsingSource(),
@@ -40,22 +42,22 @@ class Route {
 		return routes;
 	}
 
-	static function Estimate(vehicleType, cargo, distance, production) {
+	static function Estimate(vehicleType, cargo, distance, production, isBidirectional) {
 		local estimateTable = HogeAI.Get().estimateTable;
 		local productionIndex = HogeAI.Get().GetEstimateProductionIndex(production);
 		local distanceIndex = HogeAI.Get().GetEstimateDistanceIndex(distance);
-		local estimate = estimateTable[cargo][vehicleType][productionIndex][distanceIndex];
+		local estimate = estimateTable[cargo][vehicleType][productionIndex][distanceIndex][isBidirectional?1:0];
 		if(estimate == null) {
 			if(estimate == null) {
 				local routeClass = Route.GetRouteClassFromVehicleType(vehicleType);
-				estimate = routeClass.EstimateEngineSet(routeClass, cargo, distance, production);
+				estimate = routeClass.EstimateEngineSet(routeClass, cargo, distance, production, isBidirectional);
 				if(estimate == null) {
 					estimate = 0;
 				} else {
 					estimate.value <- HogeAI.Get().roiBase ? estimate.roi : estimate.routeIncome;
 				}
 			}
-			estimateTable[cargo][vehicleType][productionIndex][distanceIndex] = estimate;
+			estimateTable[cargo][vehicleType][productionIndex][distanceIndex][isBidirectional?1:0] = estimate;
 		}
 		if(estimate == 0) {
 			return null;
@@ -158,7 +160,7 @@ class Route {
 	}
 	
 	function NeedsToMeetDestDemandPlace(place) {
-		if(place != null && place instanceof HgIndustry) {
+		if(HogeAI.Get().ecs && place != null && place instanceof HgIndustry) {
 			return true;
 		}
 		return false;
@@ -244,8 +246,8 @@ class Route {
 class CommonRoute extends Route {
 
 	
-	function EstimateEngineSet(self, cargo, distance, production) {
-		local engineSets = self.GetEngineSetsVt(self, self.GetVehicleType(), cargo, distance, production);
+	function EstimateEngineSet(self, cargo, distance, production, isBidirectional) {
+		local engineSets = self.GetEngineSetsVt(self, self.GetVehicleType(), cargo, distance, production, isBidirectional);
 		if(engineSets.len() >= 1) {
 			return engineSets[0];
 		} else {
@@ -253,7 +255,7 @@ class CommonRoute extends Route {
 		}
 	}
 	
-	function GetEngineSetsVt(self, vehicleType, cargo, distance, production ) {
+	function GetEngineSetsVt(self, vehicleType, cargo, distance, production, isBidirectional ) {
 		if(distance == 0) {
 			return [];
 		}
@@ -273,39 +275,70 @@ class CommonRoute extends Route {
 				engineList.RemoveValue(AIAirport.PT_BIG_PLANE );
 			}
 		}
+		local orderDistance;
 		if((typeof self) == "instance" && self instanceof Route) {
-			local orderDistance = AIOrder.GetOrderDistance(self.GetVehicleType(), self.srcHgStation.platformTile, self.destHgStation.platformTile);
-			engineList.Valuate( function(e):(orderDistance) {
-			AIOrder.GetOrderDistance
-				local d = AIEngine.GetMaximumOrderDistance(e);
-				if(d == 0) {
-					return 1;
-				} else {
-					return d > orderDistance ? 1 : 0;
-				}
-			} );
-			engineList.KeepValue(1);
+			orderDistance = AIOrder.GetOrderDistance(self.GetVehicleType(), self.srcHgStation.platformTile, self.destHgStation.platformTile);
+		} else {
+			local x;
+			local y;
+			if(distance < AIMap.GetMapSizeX()-2) {
+				x = distance + 1;
+				y = 1;
+			} else {
+				x = AIMap.GetMapSizeX()-2;
+				y = min(AIMap.GetMapSizeY()-2, distance - x + 1);
+			}
+			AIMap.GetMapSizeY()
+			orderDistance = AIOrder.GetOrderDistance(self.GetVehicleType(), AIMap.GetTileIndex(1,1), AIMap.GetTileIndex(x,y));
 		}
+		engineList.Valuate( function(e):(orderDistance) {
+			local d = AIEngine.GetMaximumOrderDistance(e);
+			if(d == 0) {
+				return 1;
+			} else {
+				return d > orderDistance ? 1 : 0;
+			}
+		} );
+		engineList.KeepValue(1);
 		
 		production = max(20, production);
 		
 		local buildingCost = self.GetBuildingCost(distance)
 		
-		return HgArray.AIListKey(engineList).Map(function(e):( distance, cargo, production, buildingCost, vehicleType, self ) {
+		return HgArray.AIListKey(engineList).Map(function(e):( distance, cargo, production, isBidirectional, buildingCost, vehicleType, self ) {
 			local capacity = self.GetEngineCapacity(self,e,cargo);
 			if(capacity == 0) {
 				return { income = 0 };
 			}
 			local runningCost = AIEngine.GetRunningCost(e);
-			local cruiseSpeed = max( 4, AIEngine.GetMaxSpeed(e) * 2 / 3 * ( 100 + AIEngine.GetReliability(e)) / 200 );
+			local cruiseSpeed = max( 4, AIEngine.GetMaxSpeed(e) * ( 100 + AIEngine.GetReliability(e)) / 200 );
 			local maxVehicles = self.EstimateMaxVehicles(self, distance, cruiseSpeed);
 			if(self.IsSupportModeVt(vehicleType) && self.GetMaxTotalVehicles() / 2 < AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, vehicleType)) {
-				maxVehicles = min(maxVehicles, 10); // なるべく少ない車両数で済ませられる見積をするため
+				maxVehicles = min(maxVehicles, 10); // ROADはなるべく少ない車両数で済ませられる見積をするため
 			}
-			local stationTime = 5; //self.GetStationDateSpan(self);
-			local income = HogeAI.GetCargoIncome( distance, cargo, cruiseSpeed, max( stationTime, capacity * 30 / production - stationTime)) * capacity - runningCost;
-			local days = distance * 664 / cruiseSpeed / 24 + stationTime; // TODO 積み込み速度の考慮
-			local vehiclesPerRoute = min( maxVehicles, production * 12 * days * 2 / ( 365 * capacity ) + 1 );
+			local loadingTime = 5; // TODO: capacity/cargo/vehicleTypeによって異なる
+
+			local days = (distance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
+			local deliverableProduction = 0;
+			switch(vehicleType) {
+				case AIVehicle.VT_ROAD:
+					deliverableProduction = capacity * 5;
+					break;
+				case AIVehicle.VT_AIR:
+					deliverableProduction = capacity;
+					break;
+				case AIVehicle.VT_WATER:
+					deliverableProduction = capacity * 3;
+					break;
+			};
+			local deliverableProduction = min(production , deliverableProduction);
+			local vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) ), 1 ); // TODO 往復に1年以上かかる場合計算が狂う
+			local inputProduction = production;
+			if(vehiclesPerRoute < (isBidirectional ? 3 : 2)) {
+				inputProduction = inputProduction / 2;
+			}
+			local waitingInStationTime = max(loadingTime, (capacity * vehiclesPerRoute - (inputProduction * days) / 30)*30 / inputProduction / vehiclesPerRoute );
+			local income = CargoUtils.GetCargoIncome( distance, cargo, cruiseSpeed, waitingInStationTime, isBidirectional ) * capacity - runningCost;
 			local price = AIEngine.GetPrice(e);
 			local routeIncome = income * vehiclesPerRoute;
 			local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
@@ -319,6 +352,7 @@ class CommonRoute extends Route {
 				roi = roi
 				value = HogeAI.Get().roiBase ? roi : routeIncome
 				capacity = capacity
+				vehiclesPerRoute = vehiclesPerRoute
 			};
 		}).Filter(function(e) {
 			return e.income > 0;
@@ -594,7 +628,7 @@ class CommonRoute extends Route {
 	function ChooseEngine() {
 		if(chosenEngine == null || lastChooseEngineDate + 30 < AIDate.GetCurrentDate()) {
 			local distance = AIMap.DistanceManhattan(srcHgStation.platformTile, destHgStation.platformTile);
-			local engineSet = EstimateEngineSet( this, cargo, distance,  GetProduction() );
+			local engineSet = EstimateEngineSet( this, cargo, distance,  GetProduction(), IsBiDirectional() );
 			chosenEngine = engineSet != null ? engineSet.engine : null;
 			lastChooseEngineDate = AIDate.GetCurrentDate();
 		}
@@ -899,7 +933,10 @@ class CommonRoute extends Route {
 					if(latestVehicle == null || ChooseEngine() != AIVehicle.GetEngineType(latestVehicle)) {
 						//HgLog.Info("BuildVehicle "+this);
 						latestVehicle = BuildVehicle();
-						firstBuild = 1;
+						if(latestVehicle != null) {
+							CloneVehicle(latestVehicle);
+							firstBuild = 2;
+						}
 					}
 					if(latestVehicle != null) {
 						local capacity = AIVehicle.GetCapacity(latestVehicle, cargo);
@@ -975,7 +1012,7 @@ class CommonRoute extends Route {
 		if(!destRoute) {
 			return false;
 		}
-		if(HogeAI.Get().IsBidirectionalCargo(destRoute.cargo) && isTransfer && destHgStation.stationGroup == destRoute.destHgStation.stationGroup) {
+		if(isTransfer && destRoute.IsBiDirectional() && destHgStation.stationGroup == destRoute.destHgStation.stationGroup) {
 			return true;
 		} else {
 			return false;//TODO !isTransfer はplaceの一致で判断
@@ -1221,23 +1258,28 @@ class CommonRouteBuilder extends RouteBuilder {
 			}
 		}
 	
+		local vehicleType = GetVehicleType();
 		local dest = destPlace != null ? destPlace : destStationGroup.hgStations[0];
-		if(Place.IsNgPathFindPair(srcPlace, dest, GetVehicleType())) {
+
+		if(Place.IsNgPathFindPair(srcPlace, dest, vehicleType)) {
 			HgLog.Warning("IsNgPathFindPair==true "+this);
 			return null;
 		}
-		if(Place.IsNgPlace(dest, cargo, GetVehicleType())) {
+		if(Place.IsNgPlace(dest, cargo, vehicleType)) {
 			HgLog.Warning("dest is ng facility."+this);
 			return null;
 		}
-		if(Place.IsNgPlace(srcPlace, cargo, GetVehicleType())) {
+		if(Place.IsNgPlace(srcPlace, cargo, vehicleType)) {
 			HgLog.Warning("src is ng facility."+this);
 			return null;
 		}
 
 		local testMode = AITestMode();
-		local routeClass = GetRouteClass();
-		local engineSet = routeClass.EstimateEngineSet(routeClass, cargo, srcPlace.DistanceManhattan(GetDestLocation()), srcPlace.GetLastMonthProduction(cargo));
+		
+		local isBidirectional = destPlace != null ? destPlace.IsAcceptingAndProducing(cargo) : false;
+		local distance = srcPlace.DistanceManhattan(GetDestLocation());
+		local production = srcPlace.GetLastMonthProduction(cargo);
+		local engineSet = Route.Estimate(vehicleType, cargo, distance, production, isBidirectional);
 		if(engineSet==null) {
 			HgLog.Warning("No suitable engine. "+this);
 			return null;
@@ -1245,7 +1287,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		
 		local stationFactory = CreateStationFactory();
 		if(stationFactory == null) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("CreateStationFactory failed. "+this);
 			return null;
 		}
@@ -1257,7 +1299,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			destHgStation = stationFactory.CreateBestOnStationGroup( destStationGroup, cargo, srcPlace.GetLocation() );
 		} else if(destPlace != null) {
 			isTransfer = false;
-			if(destPlace instanceof TownCargo || GetVehicleType() == AIVehicle.VT_WATER) {
+			if(destPlace instanceof TownCargo || vehicleType == AIVehicle.VT_WATER) {
 				stationFactory.nearestFor = srcPlace.GetLocation();
 			}
 			destHgStation = stationFactory.CreateBest( destPlace, cargo, srcPlace.GetLocation() );
@@ -1269,7 +1311,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		if(destHgStation == null) {
 			destHgStation = SearchSharableStation(destPlace == null ? destStationGroup : destPlace, stationFactory.GetStationType(), cargo, true);
 			if(destHgStation == null) {
-				Place.AddNgPlace(dest, cargo, GetVehicleType());
+				Place.AddNgPlace(dest, cargo, vehicleType);
 				HgLog.Warning("No destStation."+this);
 				return null;
 			}
@@ -1278,7 +1320,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		}
 		local list = HgArray(destHgStation.GetTiles()).GetAIList();
 		HogeAI.notBuildableList.AddList(list);
-		if(srcPlace instanceof TownCargo || GetVehicleType() == AIVehicle.VT_WATER) {
+		if(srcPlace instanceof TownCargo || vehicleType == AIVehicle.VT_WATER) {
 			stationFactory.nearestFor = destHgStation.platformTile;
 		}
 		local srcHgStation = stationFactory.CreateBest(srcPlace, cargo, destHgStation.platformTile);
@@ -1287,7 +1329,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		if(srcHgStation == null) {
 			srcHgStation = SearchSharableStation(srcPlace, stationFactory.GetStationType(), cargo, false);				
 			if(srcHgStation == null) {
-				Place.AddNgPlace(srcPlace, cargo, GetVehicleType());
+				Place.AddNgPlace(srcPlace, cargo, vehicleType);
 				HgLog.Warning("stationFactory.CreateBest failed."+this);
 				return null;
 			}
@@ -1316,7 +1358,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		}
 		
 		if(srcHgStation.stationGroup == destHgStation.stationGroup) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("Same stationGroup."+this);
 			Rollback(rollbackFacitilies);
 			return null;
@@ -1324,14 +1366,14 @@ class CommonRouteBuilder extends RouteBuilder {
 		
 		local pathBuilder = CreatePathBuilder(engineSet.engine, cargo);
 		if(!pathBuilder.BuildPath(destHgStation.GetEntrances(), srcHgStation.GetEntrances())) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("BuildPath failed."+this);
 			Rollback(rollbackFacitilies);
 			return null;
 		}
 		local distance = AIMap.DistanceManhattan(srcHgStation.platformTile, destHgStation.platformTile)
 		if(pathBuilder.path != null && distance > 40 && distance * 2 < pathBuilder.path.GetTotalDistance()) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("Too long path distance."+this);
 			Rollback(rollbackFacitilies);
 			return null;
@@ -1345,7 +1387,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		route.Initialize();
 
 		if(!route.BuildDepot(pathBuilder.path)) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("BuildDepot failed."+this);
 			Rollback(rollbackFacitilies);
 			return null;
@@ -1363,7 +1405,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		route.SetPath(pathBuilder.path);
 		local vehicle = route.BuildVehicle();
 		if(vehicle==null) {
-			Place.AddNgPathFindPair(srcPlace, dest, GetVehicleType());
+			Place.AddNgPathFindPair(srcPlace, dest, vehicleType);
 			HgLog.Warning("BuildVehicle failed."+this);
 			Rollback(rollbackFacitilies);
 			return null;
