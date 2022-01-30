@@ -1,4 +1,4 @@
-
+﻿
 class RoadRoute extends CommonRoute {
 	static instances = [];
 

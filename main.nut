@@ -1,4 +1,4 @@
-
+﻿
 require("utils.nut");
 require("tile.nut");
 require("pathfinder.nut");
@@ -59,7 +59,6 @@ class HogeAI extends AIController {
 	supressInterrupt = null;
 	limitDate = null;
 	isTimeoutToMeetSrcDemand = null;
-	frightPriority = null;
 	
 	yeti = null;
 	ecs = null;
@@ -174,7 +173,6 @@ class HogeAI extends AIController {
 		ecs = false;
 		isTimeoutToMeetSrcDemand = false;
 		pendings = [];
-		frightPriority = true;
 		DelayCommandExecuter();
 	}
 	 
@@ -357,7 +355,7 @@ class HogeAI extends AIController {
 	function ScanPlaces() {
 		HgLog.Info("###### Scan places");
 		
-		if(frightPriority && isTimeoutToMeetSrcDemand) {
+		if(IsForceToHandleFright() && isTimeoutToMeetSrcDemand) {
 			return;
 		}
 		AIController.Sleep(1);
@@ -1633,7 +1631,8 @@ class HogeAI extends AIController {
 		
 		local ignoreCargos = {};
 		
-		if(yeti && frightPriority && !roiBase) { // YETIは、YETIが美味しくないので、これをしないと10年は旅客とメールしかやらない
+		HgLog.Info("IsForceToHandleFright: "+IsForceToHandleFright());
+		if(IsForceToHandleFright()  && !roiBase) {
 			local paxMailOnly = true;
 			foreach(route in Route.GetAllRoutes()) {
 				if(!CargoUtils.IsPaxOrMail(route.cargo)) {
@@ -2700,6 +2699,10 @@ class HogeAI extends AIController {
 	function IsAvoidRemovingWater() {
 		return GetSetting("Avoid removing water") == 1;	
 
+	}
+
+	function IsForceToHandleFright() {
+		return GetSetting("IsForceToHandleFright") == 1;
 	}
 }
  

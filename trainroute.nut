@@ -1,4 +1,4 @@
-
+﻿
 class TrainInfoDictionary {
 	static instance = GeneratorContainer(function() { 
 		return TrainInfoDictionary(); });

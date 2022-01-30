@@ -1,4 +1,4 @@
-/* $Id: main.nut 15101 2009-01-16 00:05:26Z truebrain $ */
+﻿/* $Id: main.nut 15101 2009-01-16 00:05:26Z truebrain $ */
 
 /**
  * A Rail Pathfinder.

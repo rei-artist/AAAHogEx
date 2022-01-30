@@ -1,4 +1,4 @@
-
+﻿
 class PlaceProduction {
 	static instance = GeneratorContainer(function() { 
 		return PlaceProduction(); 

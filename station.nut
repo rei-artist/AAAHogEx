@@ -1,4 +1,4 @@
-
+﻿
 class StationGroup {
 	static idCounter = IdCounter();
 	
@@ -69,7 +69,7 @@ class StationGroup {
 
 	function GetStationCandidatesInSpread(stationFactory,checkedTile=null) {
 		local rectangle = GetBuildablePlatformRectangle(HogeAI.Get().maxStationSpread - stationFactory.GetSpreadMargin());
-		HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle);
+		//HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle);
 		
 		local result = stationFactory.CreateInRectangle(rectangle,checkedTile);
 		foreach(s in result) {
@@ -168,6 +168,10 @@ class StationFactory {
 	function CreateBest(place, cargo, toTile, useStationGroup = true) {
 		local testMode = AITestMode();
 		local result = null;
+		
+		if(GetVehicleType() == AIVehicle.VT_AIR) {
+			useStationGroup = false; // なぜか空港はJoinしようとするとERR_STATION_TOO_CLOSE_TO_ANOTHER_STATIONが発生するので強制OFF
+		}
 		
 		if(CargoUtils.IsPaxOrMail(cargo) && nearestFor == null) {
 			nearestFor = place.GetLocation();

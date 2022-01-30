@@ -1,4 +1,4 @@
-
+﻿
 class Route {
 	static allVehicleTypes = [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD, AIVehicle.VT_WATER, AIVehicle.VT_AIR];
 

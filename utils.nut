@@ -1,4 +1,4 @@
-
+﻿
 class HgArray {
 	array = null;
 	

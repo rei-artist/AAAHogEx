@@ -1,4 +1,4 @@
-
+﻿
 class Air {
 	static instance_ = GeneratorContainer(function() { 
 		return Air(); 

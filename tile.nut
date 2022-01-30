@@ -1,4 +1,4 @@
-
+﻿
 class HgTile {
 	static DIR_NE = 0;
 	static DIR_NW = 1;

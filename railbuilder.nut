@@ -1,4 +1,4 @@
-
+﻿
 class HgRailPathFinder extends Rail {
 	_cost_level_crossing = 0;
 	
