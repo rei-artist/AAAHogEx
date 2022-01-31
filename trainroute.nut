@@ -251,6 +251,10 @@ class TrainPlanner {
 
 	function GetEngineSets() {
 		local result = [];
+		
+		if(CargoUtils.IsPaxOrMail(cargo) && isBidirectional && RoadRoute.GetMaxTotalVehicles() <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD)) {
+			production /= 4; // フィーダーのサポートが無いと著しく収益性が落ちる
+		}
 
 		local buildingCost = TrainRoute.GetBuildingCost(distance)
 	

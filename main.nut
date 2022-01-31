@@ -1815,10 +1815,15 @@ class HogeAI extends AIController {
 		if(!(dest instanceof Place)) {
 			route.transferRoute = dest;
 		}
-			
-			
+
 		destHgStation.BuildAfter();
-		route.BuildFirstTrain();
+		if(!route.BuildFirstTrain()) {
+			HgLog.Warning("railBuilder.Build failed.");
+			srcHgStation.Remove();
+			destHgStation.Remove();
+			return null;
+		}
+
 		TrainRoute.instances.push(route);
 		PlaceDictionary.Get().AddRoute(route);
 		if(cargo == HogeAI.GetPassengerCargo() && srcPlace instanceof TownCargo) {
