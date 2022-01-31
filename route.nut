@@ -216,7 +216,7 @@ class Route {
 			}
 			if(saved) {
 				srcHgStation.place = null;
-				srcHgStation.savedData = Save();
+				srcHgStation.savedData = srcHgStation.Save();
 			} else {
 				HgLog.Warning("Remove Route (src industry closed:"+AIIndustry.GetName(industry)+")"+this);
 				Remove();
@@ -319,19 +319,19 @@ class CommonRoute extends Route {
 			local loadingTime = 5; // TODO: capacity/cargo/vehicleTypeによって異なる
 
 			local days = (distance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
-			local deliverableProduction = 0;
+			local routeCapacity = 0;
 			switch(vehicleType) {
 				case AIVehicle.VT_ROAD:
-					deliverableProduction = capacity * 5;
+					routeCapacity = capacity * 5;
 					break;
 				case AIVehicle.VT_AIR:
-					deliverableProduction = capacity;
+					routeCapacity = capacity;
 					break;
 				case AIVehicle.VT_WATER:
-					deliverableProduction = capacity * 3;
+					routeCapacity = capacity * 3;
 					break;
 			};
-			local deliverableProduction = min(production , deliverableProduction);
+			local deliverableProduction = min(production , routeCapacity);
 			local vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) ), 1 ); // TODO 往復に1年以上かかる場合計算が狂う
 			local inputProduction = production;
 			if(vehiclesPerRoute < (isBidirectional ? 3 : 2)) {

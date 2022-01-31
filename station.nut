@@ -173,7 +173,7 @@ class StationFactory {
 			useStationGroup = false; // なぜか空港はJoinしようとするとERR_STATION_TOO_CLOSE_TO_ANOTHER_STATIONが発生するので強制OFF
 		}
 		
-		if(CargoUtils.IsPaxOrMail(cargo) && nearestFor == null) {
+		if(/*CargoUtils.IsPaxOrMail(cargo) &&*/ nearestFor == null) {
 			nearestFor = place.GetLocation();
 		}
 		
@@ -280,7 +280,7 @@ class StationFactory {
 			if(AITile.IsSeaTile(station.platformTile)) {
 				station.score -= 10;
 			}
-			if(nearestFor!=null) {
+			if(nearestFor != null) {
 				local platformRect = station.GetPlatformRectangle();
 				local distance = min(AIMap.DistanceManhattan(platformRect.lefttop.tile, nearestFor), AIMap.DistanceManhattan(platformRect.rightbottom.tile, nearestFor));
 				station.score -= distance;
@@ -379,6 +379,7 @@ class StationFactory {
 		if(!isOnlyProducingCargo) {
 			HgTable.Extend(stationGroups, place.GetAccepting().GetStationGroups());
 		}
+		local oldNearestFor = nearestFor;
 		foreach(stationGroup,v in stationGroups) {
 			if(stationGroup.IsTownStop()) {
 				continue;
@@ -398,7 +399,9 @@ class StationFactory {
 			local s = stationGroup.GetStationCandidatesInSpread(this);
 			stations.extend(s);
 		}
-		return SelectBestHgStation(stations, place.GetLocation(), toTile, place.GetName());
+		local result = SelectBestHgStation(stations, place.GetLocation(), toTile, place.GetName());
+		nearestFor = oldNearestFor;
+		return result;
 	}
 	 
 	function GetPlatformWidth(stationDirection) {

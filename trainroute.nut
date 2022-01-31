@@ -341,7 +341,7 @@ class TrainPlanner {
 					local money = max(200000,AICompany.GetBankBalance(AICompany.COMPANY_SELF));
 					trainEngines.Valuate(function(e):(wagonSpeed, money, cargo) {
 						return (min(AIEngine.GetMaxSpeed(e) ,wagonSpeed) * (100+AIEngine.GetReliability(e))/200 
-							* min(min(1000, AIEngine.GetMaxTractiveEffort(e)*10),AIEngine.GetPower(e)) //min(TrainPlanner.GetCargoWeight(cargo,300),AIEngine.GetMaxTractiveEffort(e))
+							* min(min(5000, AIEngine.GetMaxTractiveEffort(e)*10),AIEngine.GetPower(e)) //min(TrainPlanner.GetCargoWeight(cargo,300),AIEngine.GetMaxTractiveEffort(e))
 							* ((money - (AIEngine.GetPrice(e)+AIEngine.GetRunningCost(e)*5)).tofloat() / money)).tointeger();
 					});
 				} else {
@@ -381,40 +381,46 @@ class TrainPlanner {
 				local trainPower = AIEngine.GetPower(trainEngine);
 				local power = trainPower;
 				local maxSpeed = min(AIEngine.GetMaxSpeed(trainEngine),wagonSpeed);
-				if(wagonWeight == 0) { // 多分従動力車　TODO 実際に連結させて調べたい
+				if(wagonWeight == 0) { // 多分従動力車　TODO 実際に連結させて調べたい(TODO 2ccで違う場合もあった)
 					wagonCapacity = trainCapacity;
 					wagonWeightLength[1] = 5 + GetCargoWeight(cargo, wagonCapacity);
 				}
 				
 				local lengthWeights = [];
+				local numLoco = 1;
 				lengthWeights.push([trainInfo.length, trainWeight + GetCargoWeight(cargo, trainCapacity)]);
-				for(local numWagon = 0; trainInfo.length + wagonInfo.length * numWagon <= 7 * 16; numWagon+=skipWagonNum) {
+				for(local numWagon = 0; trainInfo.length * numLoco + wagonInfo.length * numWagon <= 7 * 16; numWagon+=skipWagonNum) {
 					if(numWagon >= 1 && TrainRoute.IsUnsuitableEngineWagon(trainEngine, wagonEngine)) {
 						break;
 					}
 					if(numWagon >= 1) {
 						for(local i=0; i<skipWagonNum; i++) {
 							lengthWeights.push(wagonWeightLength);
-							if(wagonWeight == 0) {
+							if(wagonWeight == 0) { // 多分従動力車
 								maxTractiveEffort += trainMaxTractiveEffort;
 								power += trainPower;
 							}
 						}
 					}
 					//HgLog.Info("numWagon"+numWagon);
-					local capacity = trainCapacity + wagonCapacity * numWagon;
+					local capacity = trainCapacity * numLoco + wagonCapacity * numWagon;
 					if(capacity == 0) {
 						continue;
 					}
 					//local lengthWeights = GetLengthWeightsParams(trainInfo.length, trainWeight, trainCapacity, 1, wagonInfo.length, wagonWeight, wagonCapacity, numWagon);
 					local cruiseSpeed = GetSpeed(maxTractiveEffort, power, lengthWeights, 1);
 					cruiseSpeed = min(maxSpeed,cruiseSpeed);
-					local acceleration = GetAcceleration(10, maxTractiveEffort, power, lengthWeights);
+					local requestSpeed = min(40, max(10, maxSpeed / 5));
+					local acceleration = GetAcceleration(requestSpeed, maxTractiveEffort, power, lengthWeights);
 					if(acceleration < 0) {
 						//HgLog.Warning("acceleration:"+acceleration);
-						break;
+						numLoco ++;
+						lengthWeights.insert(0,[trainInfo.length, trainWeight + GetCargoWeight(cargo, trainCapacity)]);
+						maxTractiveEffort += trainMaxTractiveEffort;
+						power += trainPower;
+						continue;
 					}
-					local price = trainPrice + wagonPrice * numWagon;
+					local price = trainPrice * numLoco + wagonPrice * numWagon;
 					if(firstRoute && price * 3 / 2 > HogeAI.GetUsableMoney()) {
 						break;
 					}
@@ -430,7 +436,7 @@ class TrainPlanner {
 					local waitingInStationTime = max(loadingTime, (capacity * vehiclesPerRoute - (inputProduction * days) / 30)*30 / inputProduction / vehiclesPerRoute );
 					local income = CargoUtils.GetCargoIncome(distance, cargo, cruiseSpeed, waitingInStationTime, isBidirectional)
 						* capacity * (trainReiliability+100)/200
-							- (trainRunningCost + wagonRunningCost * numWagon);
+							- (trainRunningCost * numLoco + wagonRunningCost * numWagon);
 							
 					if(income <= 0) {
 						continue;
@@ -446,6 +452,7 @@ class TrainPlanner {
 						wagonEngine = numWagon == 0 ? null : wagonEngine
 						trainEngine = trainEngine
 						numWagon = numWagon
+						numLoco = numLoco
 						capacity = capacity
 						price = price
 						roi = roi
@@ -1116,7 +1123,7 @@ class TrainRoute extends Route {
 			//HgLog.Info("Try build "+explain);
 
 			
-			local numEngineVehicle = 1;
+			local numEngineVehicle = engineSet.numLoco;
 			local engineVehicles = [];
 			
 			local r = BuildEngineVehicle(engineVehicles, trainEngine, explain);

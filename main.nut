@@ -355,7 +355,7 @@ class HogeAI extends AIController {
 	function ScanPlaces() {
 		HgLog.Info("###### Scan places");
 		
-		if(IsForceToHandleFright() && isTimeoutToMeetSrcDemand) {
+		if(/*IsForceToHandleFright() &&*/ isTimeoutToMeetSrcDemand) { // Airやるだけなら良いが、余計なルートを作ってsupply chainを混乱させる事があったのでコメントアウト
 			return;
 		}
 		AIController.Sleep(1);
@@ -846,7 +846,29 @@ class HogeAI extends AIController {
 		}
 		return additionalPlaces;
 	}
-		
+	
+	function GetNeedsOfRoutes(place, searchedPlaces = null) {
+		HgLog.Info("GetNeedsOfRoutes place:"+place.GetName());
+		if(searchedPlaces == null) {
+			searchedPlaces = {};
+		}
+		local producing = place.GetProducing();
+		if(searchedPlaces.rawin(producing.Id())) {
+			return 100; // リング状のインダストリチェーンを見つけた
+		}
+		searchedPlaces.rawset(producing.Id(), true);
+		local result = 0;
+		foreach( route in producing.GetRoutesUsingSource() ) {
+			HgLog.Info("GetNeedsOfRoutes place:"+place.GetName()+" using:"+route);
+			if(route.NeedsAdditionalProducing()) {
+				HgLog.Info("NeedsAdditionalProducing:true");
+				result += route.GetRouteWeighting() 
+					+ (route.destHgStation.place != null ? GetNeedsOfRoutes(route.destHgStation.place, searchedPlaces) : 0);
+			}
+		}
+		return result;
+	}
+
 	function GetCargoPlansToMeetSrcDemand(acceptingPlace, forRoute = null) {
 		if(!acceptingPlace.IsIncreasable()) {
 			return [];
@@ -857,7 +879,6 @@ class HogeAI extends AIController {
 			return [];
 		}
 		
-		local result = [];
 		local stockpiledAverage = 0;
 		if(stockpiled) {
 			foreach(cargo in cargos) {
@@ -867,6 +888,7 @@ class HogeAI extends AIController {
 		}
 		
 		local producingPlace = acceptingPlace.GetProducing();
+		local needs = GetNeedsOfRoutes(producingPlace);
 		
 		local labelCargoMap = {};
 		local totalSupplied = 0;
@@ -1027,7 +1049,7 @@ class HogeAI extends AIController {
 		
 		if(!acceptingPlace.IsRaw() && !acceptingPlace.IsProcessing()) { // この場合全てのcargoを満たさなくても良い(FIRSでは)
 			if(totalSupplied >= 2) {
-				return result;
+				return [];
 			}
 		}
 		/*
@@ -1063,6 +1085,7 @@ class HogeAI extends AIController {
 		}
 		*/
 		
+		local result = [];
 		foreach(cargoLabel, cargoScore in cargoScores) {
 			if(stockpiled && !acceptingPlace.IsRaw()) {
 				cargoScore.score += stopped;
@@ -1083,8 +1106,8 @@ class HogeAI extends AIController {
 			local cargoPlan = {};
 			cargoPlan.place <- acceptingPlace;
 			cargoPlan.cargo <- cargoScore.cargo;
-			cargoPlan.score <- cargoScore.score;
-			cargoPlan.scoreExplain <- cargoScore.explain;
+			cargoPlan.score <- cargoScore.score * 100 + needs;
+			cargoPlan.scoreExplain <- "("+cargoScore.explain + ")*100+"+needs+"(needs)";
 			if(forRoute != null) {
 				cargoPlan.forRoute <- forRoute;
 			}
@@ -1175,7 +1198,7 @@ class HogeAI extends AIController {
 					score -= used;
 					scoreExplain += "-"+used+"(used)";
 				}
-				cargoPlan.score <- score;
+				cargoPlan.score <- score * 100;
 				cargoPlan.scoreExplain <- scoreExplain;
 				if(forRoute != null) {
 					cargoPlan.forRoute <- forRoute;
@@ -1214,11 +1237,11 @@ class HogeAI extends AIController {
 						cargoPlans.extend(GetCargoPlansToMeetSrcDemand(place, route));
 						cargoPlans.extend(GetCargoPlansToMeetDestSupply(place, route));
 						placePlans.rawset(placeId,{
-							routeScore = routeScore
+							//routeScore = routeScore
 							cargoPlans = cargoPlans
 						});
 					} else {
-						placePlans[placeId].routeScore = max(placePlans[placeId].routeScore, routeScore);
+						//placePlans[placeId].routeScore = max(placePlans[placeId].routeScore, routeScore);
 					}
 				}
 				
@@ -1227,8 +1250,8 @@ class HogeAI extends AIController {
 			local cargoPlans = [];
 			foreach(placeId, placePlan in placePlans) {
 				foreach(cargoPlan in placePlan.cargoPlans) {
-					cargoPlan.score += placePlan.routeScore;
-					cargoPlan.scoreExplain += "routeScore:+"+placePlan.routeScore;
+					//cargoPlan.score += placePlan.routeScore;
+					//cargoPlan.scoreExplain += "routeScore:+"+placePlan.routeScore;
 					cargoPlans.push(cargoPlan);
 				}
 			}
@@ -1239,7 +1262,7 @@ class HogeAI extends AIController {
 			
 			local demandAndSupplyPlans = []
 			foreach(cargoPlan1 in cargoPlans) {
-				if(!cargoPlan1.place.IsProducing() || cargoPlan1.score < 4) { // 出力側は強い必要が無ければマッチする必要は無い。単純にたくさん取れるところから引くべき
+				if(!cargoPlan1.place.IsProducing() || cargoPlan1.score < 400) { // 出力側は強い必要が無ければマッチする必要は無い。単純にたくさん取れるところから引くべき
 					continue;
 				}
 				foreach(cargoPlan2 in cargoPlans) {
@@ -1252,7 +1275,7 @@ class HogeAI extends AIController {
 							cargo = cargoPlan2.cargo
 							destPlace = cargoPlan2.place
 							srcPlace = cargoPlan1.place
-							score = cargoPlan2.score + 1
+							score = cargoPlan2.score + 100
 							scoreExplain = cargoPlan2.scoreExplain + "+1(MatchNeeds:"+cargoPlan1.place.GetName()+")"
 						});
 					}
@@ -1308,7 +1331,7 @@ class HogeAI extends AIController {
 					searchedPlaces.rawset(accepting.Id(), true);
 					if(!DoCargoPlans( GetCargoPlansToMeetSrcDemand( accepting ), searchedPlaces ) ) {
 						if(limitDate < AIDate.GetCurrentDate()) {
-							isTimeoutToMeetSrcDemand = cargoPlan.score >= 4;
+							isTimeoutToMeetSrcDemand = cargoPlan.score >= 400;
 						}
 						return false;
 					}
@@ -1328,7 +1351,7 @@ class HogeAI extends AIController {
 					searchedPlaces.rawset(accepting.Id(), true);
 					if(!DoCargoPlans( GetCargoPlansToMeetSrcDemand( accepting ), searchedPlaces ) ) {
 						if(limitDate < AIDate.GetCurrentDate()) {
-							isTimeoutToMeetSrcDemand = cargoPlan.score >= 4;
+							isTimeoutToMeetSrcDemand = cargoPlan.score >= 400;
 						}
 						return false;
 					}
@@ -1341,7 +1364,7 @@ class HogeAI extends AIController {
 						HgLog.Info("Success to meet the demand for cargoPlan:"+cargoPlanName);
 						newRoute.cannotChangeDest = true;
 						if(limitDate < AIDate.GetCurrentDate()) {
-							isTimeoutToMeetSrcDemand = cargoPlan.score >= 4;
+							isTimeoutToMeetSrcDemand = cargoPlan.score >= 400;
 							return false;
 						} else {
 							return true;
@@ -1349,10 +1372,10 @@ class HogeAI extends AIController {
 					}
 				}
 				if(limitDate < AIDate.GetCurrentDate()) {
-					isTimeoutToMeetSrcDemand = cargoPlan.score >= 4;
+					isTimeoutToMeetSrcDemand = cargoPlan.score >= 400;
 					return false;
 				}
-				if(cargoPlan.score <= 0) {
+				if(cargoPlan.score < 100) {
 					return false;
 				}
 			}
@@ -1666,7 +1689,8 @@ class HogeAI extends AIController {
 						continue;
 					}
 					HgLog.Info("Estimate d:"+distance+" roi:"+estimate.roi+" income:"+estimate.routeIncome+" "
-						+AIEngine.GetName(estimate.engine)+"("+estimate.vehiclesPerRoute+") runningCost:"+AIEngine.GetRunningCost(estimate.engine)+" capacity:"+estimate.capacity);
+						+ AIEngine.GetName(estimate.engine)+(estimate.rawin("numLoco")?"x"+estimate.numLoco:"") +"("+estimate.vehiclesPerRoute+") "
+						+ "runningCost:"+AIEngine.GetRunningCost(estimate.engine)+" capacity:"+estimate.capacity);
 					maxValue = max(maxValue, estimate.value);
 					if(estimate.value == maxValue) {
 						maxVehicleType = routeClass.GetVehicleType();
@@ -1774,9 +1798,11 @@ class HogeAI extends AIController {
 			local stationGroup = dest.srcHgStation.stationGroup;
 			
 			local destStationFactory = TerminalStationFactory(2);//DestRailStationFactory(2);//
+			destHgStation = destStationFactory.CreateBestOnStationGroup( dest.srcHgStation.stationGroup, cargo, srcPlace.GetLocation() );
+			/*			
 			destStationFactory.nearestFor = destTile;
 			destHgStation = destStationFactory.SelectBestHgStation( dest.srcHgStation.stationGroup.GetStationCandidatesInSpread(destStationFactory),
-				destTile, srcPlace.GetLocation(), "transfer");
+				destTile, srcPlace.GetLocation(), "transfer");*/
 		
 		}
 
