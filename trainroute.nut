@@ -324,7 +324,8 @@ class TrainPlanner {
 			local wagonPrice = AIEngine.GetPrice(wagonEngine);
 			local wagonWeight = AIEngine.GetWeight(wagonEngine);
 			local wagonWeightLength = [wagonInfo.length, wagonWeight + GetCargoWeight(cargo, wagonCapacity)];
-			
+			local isFollowerForceWagon = wagonWeight == 0 && !AIEngine.GetName(wagonEngine).find("Unpowered"); // 多分従動力車　TODO 実際に連結させて調べたい
+
 			local trainEngines = AIEngineList(AIVehicle.VT_RAIL);
 			trainEngines.Valuate(AIEngine.IsWagon);
 			trainEngines.KeepValue(0);
@@ -381,7 +382,7 @@ class TrainPlanner {
 				local trainPower = AIEngine.GetPower(trainEngine);
 				local power = trainPower;
 				local maxSpeed = min(AIEngine.GetMaxSpeed(trainEngine),wagonSpeed);
-				if(wagonWeight == 0) { // 多分従動力車　TODO 実際に連結させて調べたい(TODO 2ccで違う場合もあった)
+				if(isFollowerForceWagon) { 
 					wagonCapacity = trainCapacity;
 					wagonWeightLength[1] = 5 + GetCargoWeight(cargo, wagonCapacity);
 				}
@@ -396,7 +397,7 @@ class TrainPlanner {
 					if(numWagon >= 1) {
 						for(local i=0; i<skipWagonNum; i++) {
 							lengthWeights.push(wagonWeightLength);
-							if(wagonWeight == 0) { // 多分従動力車
+							if(isFollowerForceWagon) {
 								maxTractiveEffort += trainMaxTractiveEffort;
 								power += trainPower;
 							}
@@ -1602,13 +1603,15 @@ class TrainRoute extends Route {
 		HgLog.Warning("Close route start:"+this);
 		isClosed = true;
 		local execMode = AIExecMode();
+		/*
 		foreach(engineVehicle, v in engineVehicles) {
 			//HgLog.Info("SendVehicleToDepot for renewal:"+engineVehicle+" "+ToString());
 			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(engineVehicle, AIOrder.ORDER_CURRENT)) == 0) {
-				AIVehicle.SendVehicleToDepot (engineVehicle);
+				if(AIOrder.ResolveOrderPosition(engineVehicle, AIOrder.ORDER_CURRENT) == 0) {
+					AIVehicle.SendVehicleToDepot (engineVehicle);
+				}
 			}
-			
-		}
+		}*/
 		if(destHgStation.place != null) {
 			if(destHgStation.place.IsClosed()) {
 				destHgStation.place = null;
@@ -1850,6 +1853,12 @@ class TrainRoute extends Route {
 		local execMode = AIExecMode();
 		local engineSet = null;
 
+		if(isClosed) {
+			foreach(engineVehicle, v in engineVehicles) {
+				//HgLog.Info("SendVehicleToDepot for renewal:"+engineVehicle+" "+ToString());
+				SendVehicleToDepot(engineVehicle);
+			}
+		}
 		foreach(engineVehicle, v in engineVehicles) {
 			if(!AIVehicle.IsValidVehicle (engineVehicle)) {
 				HgLog.Warning("invalid veihicle found "+engineVehicle+" at "+this);
@@ -1872,9 +1881,7 @@ class TrainRoute extends Route {
 		foreach(engineVehicle, v in engineVehicles) {
 			if(reduceTrains) {
 				if(isBiDirectional || AIVehicle.GetCargoLoad(engineVehicle,cargo) == 0) {
-					if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(engineVehicle, AIOrder.ORDER_CURRENT)) == 0) {
-						AIVehicle.SendVehicleToDepot (engineVehicle);
-					}
+					SendVehicleToDepot(engineVehicle);
 				}
 			}
 		}
@@ -1902,11 +1909,17 @@ class TrainRoute extends Route {
 						HgLog.Info(AIEngine.GetName(wagonEngine)+" new:"+AIEngine.GetName(engineSet.wagonEngine));
 					}*/
 					if(isBiDirectional || AIVehicle.GetCargoLoad(engineVehicle,cargo) == 0) {
-						if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(engineVehicle, AIOrder.ORDER_CURRENT)) == 0) {
-							AIVehicle.SendVehicleToDepot (engineVehicle);
-						}
+						SendVehicleToDepot(engineVehicle);
 					}
 				}
+			}
+		}
+	}
+	
+	function SendVehicleToDepot(vehicle) {
+		if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) == 0) {
+			if(AIOrder.ResolveOrderPosition(vehicle, AIOrder.ORDER_CURRENT) == 0) {
+				AIVehicle.SendVehicleToDepot (vehicle);
 			}
 		}
 	}

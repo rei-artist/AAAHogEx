@@ -305,8 +305,17 @@ class HgTile {
 		if(AIRoad.BuildRoadDepot (depotTile, front)) {
 			local aiExec = AIExecMode();
 			HogeAI.WaitForMoney(10000);
-			if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(depotTile, front)) {
+			/*
+			if( AIRoad.GetRoadTramType( AIRoad.GetCurrentRoadType() ) ==  AIRoad.ROADTRAMTYPES_ROAD ) {
+				if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(depotTile, front)) {
+					return false;
+				}
+			}*/
+			if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(front, depotTile)) {
 				return false;
+			}
+			if( AIRoad.GetRoadTramType( AIRoad.GetCurrentRoadType() ) ==  AIRoad.ROADTRAMTYPES_TRAM ) {
+				AITile.DemolishTile(depotTile);
 			}
 			if(!AIRoad.BuildRoadDepot (depotTile, front)) {
 				return false;

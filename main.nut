@@ -179,7 +179,7 @@ class HogeAI extends AIController {
 	function Start() {
 		HgLog.Info("AAAHogEx Started!");
 		
-		HgLog.Info("aaa:" + AAA.func(AAA) + " bbb:" + BBB.func(BBB));
+		HgLog.Info("aaa:" + (typeof AAA) + " bbb:" + BBB.func(BBB));
 		
 		local newGrfList = AINewGRFList();
 		newGrfList.Valuate( AINewGRF.IsLoaded );
@@ -611,7 +611,7 @@ class HogeAI extends AIController {
 		foreach(candidate in candidates) {
 			if(candidate.vehicleType == AIVehicle.VT_RAIL || candidate.vehicleType == AIVehicle.VT_ROAD) {
 				local cost = HgTile(orgTile).GetPathFindCost(HgTile(candidate.place.GetLocation()));
-				if(cost > 300) {
+				if(cost > 300) {		//TODO 道路は本来かなり長距離の橋もいけるが、RoadPathFinderで制限される。
 					continue;
 				}
 			} else if(candidate.vehicleType == AIVehicle.VT_AIR) {
@@ -953,91 +953,7 @@ class HogeAI extends AIController {
 			
 			local cargoLabel = AICargo.GetCargoLabel(cargo);
 			local industryTraits = acceptingPlace instanceof HgIndustry ? acceptingPlace.GetIndustryTraits() : "";
-			if(yeti) {
-				if(acceptingPlace.GetName().find("4X ") != null) { // Worker Yard
-					if(cargoLabel == "PASS") {
-						if(acceptingPlace.GetStockpiledCargo(cargo) == 0) {
-							local sunk = totalNeeds + totalSupplied + 1;
-							score += sunk;
-							scoreExplain += "+"+sunk+"(PASS)"
-						} else {
-							score = 0;
-							scoreExplain = "0(PASS)"
-						}
-					} else if(cargoLabel == "FOOD") {
-						if(acceptingPlace.GetStockpiledCargo(cargo) == 0 
-								&& acceptingPlace.GetStockpiledCargo(labelCargoMap["PASS"]) >= 1) {
-							local sunk = totalNeeds + totalSupplied + 1;
-							score += sunk;
-							scoreExplain += "+"+sunk+"(FOOD)"
-						} else {
-							score = 0;
-							scoreExplain = "0(FOOD)"
-						}
-					} else if(cargoLabel == "BDMT") {
-						if(acceptingPlace.GetStockpiledCargo(cargo) == 0
-								&& acceptingPlace.GetStockpiledCargo(labelCargoMap["PASS"]) >= 1
-								&& acceptingPlace.GetStockpiledCargo(labelCargoMap["FOOD"]) >= 1) {
-							local sunk = totalNeeds + totalSupplied + 1;
-							score += sunk;
-							scoreExplain += "+"+sunk+"(BDMT)"
-						} else {
-							score = 0;
-							scoreExplain = "0(BDMT)"
-						}
-					}
-				} else {
-					if(cargoLabel == "YETI") {
-						if(acceptingPlace.GetStockpiledCargo(cargo) == 0) {
-							local sunk = totalNeeds + totalSupplied + 1;
-							score += sunk;
-							scoreExplain += "+"+sunk+"(YETI)"
-						} else {
-							score = 0;
-							scoreExplain = "0(YETI)"
-						}
-					} else {
-						if(acceptingPlace.GetStockpiledCargo(cargo) == 0
-								&& (!labelCargoMap.rawin("YETI")
-									|| acceptingPlace.GetStockpiledCargo(labelCargoMap["YETI"]) >= 1)) {
-							local sunk = totalNeeds + totalSupplied + 1;
-							score += sunk;
-							scoreExplain += "+"+sunk+"("+cargoLabel+")"
-						} else {
-							score = 0;
-							scoreExplain = "0("+cargoLabel+")"
-						}
-					}
-				}
-			}
-			/*
-			if(ecs) {
-				local cargoLabel = AICargo.GetCargoLabel(cargo);
-				if(cargoLabel == "DYES") {
-					score -= 1;
-					scoreExplain += "-1(DYES)"
-				}
-				if(cargoLabel == "GLAS") {
-					score -= 1;
-					scoreExplain += "-1(GLAS)"
-				}
-				if(cargoLabel == "COAL") {
-					score -= 1;
-					scoreExplain += "-1(COAL)"
-				}
-				if(industryTraits == "FERT,FOOD,/FISH,STEL,LVST,") {
-					if(cargoLabel == "STEL") {
-						score -= 1;
-						scoreExplain += "-1(STEL(Tinning Factory))"
-					}
-				} else if(industryTraits == "VEHI,/DYES,GLAS,STEL,") {
-					if(cargoLabel == "STEL") {
-						score += 1;
-						scoreExplain += "+1(STEL(Vehicles factory))"
-					}
-				}
-			}
-			*/
+
 			
 			cargoScores[cargoLabel] <- {
 				cargo = cargo
@@ -1052,38 +968,6 @@ class HogeAI extends AIController {
 				return [];
 			}
 		}
-		/*
-		if(ecs) {
-			if(industryTraits == "GOOD,/FICR,DYES,WOOL,") {
-				if(cargoScores["FICR"].supplied >= 1) {
-					cargoScores["WOOL"].score -= 1;
-					cargoScores["WOOL"].scoreExplain += "-1(Textile mill)"
-				}
-				if(cargoScores["WOOL"].supplied >= 1) {
-					cargoScores["FICR"].score -= 1;
-					cargoScores["FICR"].scoreExplain += "-1(Textile mill)"
-				}
-				if(cargoScores["WOOL"].supplied >= 1 || cargoScores["FICR"].supplied >= 1) {
-					cargoScores["DYES"].score += 2;
-					cargoScores["DYES"].scoreExplain += "+2(Textile mill)"
-				}
-			}
-			if(industryTraits == "GOOD,/DYES,PAPR,") {
-				if(cargoScores["PAPR"].supplied >= 1) {
-					cargoScores["DYES"].score += 1;
-					cargoScores["DYES"].scoreExplain += "+1(Textile mill)"
-				}
-				if(cargoScores["WOOL"].supplied >= 1) {
-					cargoScores["FICR"].score -= 1;
-					cargoScores["FICR"].scoreExplain += "-1(Textile mill)"
-				}
-				if(cargoScores["WOOL"].supplied >= 1 || cargoScores["FICR"].supplied >= 1) {
-					cargoScores["DYES"].score += 2;
-					cargoScores["DYES"].scoreExplain += "-2(Textile mill)"
-				}
-			}
-		}
-		*/
 		
 		local result = [];
 		foreach(cargoLabel, cargoScore in cargoScores) {
@@ -1091,18 +975,63 @@ class HogeAI extends AIController {
 				cargoScore.score += stopped;
 				cargoScore.explain += "+"+stopped+"(stopped)";
 			}
-/*			if(ecs) {
-				if(cargoScore.supplied == 0) {
-					cargoScore.score += totalSupplied / 2;
-					cargoScore.explain += "+"+(totalSupplied / 2)+"(supplied==0)"
+			if(totalSupplied == 0 && acceptingPlace.IsProcessing()) {
+				cargoScore.score += 2;
+				cargoScore.explain += "+2(IsProcessing && totalSupplied==0)"
+			}
+			if(yeti) {
+				if(acceptingPlace.GetName().find("4X ") != null) { // Worker Yard
+					if(cargoLabel == "PASS") {
+						if(cargoScore.supplied < 3) {
+							local sunk = totalNeeds + totalSupplied + 1;
+							cargoScore.score += sunk;
+							cargoScore.explain += "+"+sunk+"(PASS)"
+						} else {
+							cargoScore.score = 0;
+							cargoScore.explain = "0(PASS)"
+						}
+					} else if(cargoLabel == "FOOD") {
+						if(cargoScore.supplied < 3 && cargoScores["PASS"].supplied >= 3) {
+							local sunk = totalNeeds + totalSupplied + 1;
+							cargoScore.score += sunk;
+							cargoScore.explain += "+"+sunk+"(FOOD)"
+						} else {
+							cargoScore.score = 0;
+							cargoScore.explain = "0(FOOD)"
+						}
+					} else if(cargoLabel == "BDMT") {
+						if(cargoScore.supplied < 3 && cargoScores["PASS"].supplied >= 3 && cargoScores["FOOD"].supplied >= 3) {
+							local sunk = totalNeeds + totalSupplied + 1;
+							cargoScore.score += sunk;
+							cargoScore.explain += "+"+sunk+"(BDMT)"
+						} else {
+							cargoScore.score = 0;
+							cargoScore.explain = "0(BDMT)"
+						}
+					}
+				} else {
+					if(cargoLabel == "YETI") {
+						if(cargoScore.supplied < 3) {
+							local sunk = totalNeeds + totalSupplied + 1;
+							cargoScore.score += sunk;
+							cargoScore.explain += "+"+sunk+"(YETI)"
+						} else {
+							cargoScore.score = 0;
+							cargoScore.explain = "0(YETI)"
+						}
+					} else {
+						if(cargoScore.supplied < 3
+								&& (!cargoScores.rawin("YETI") || cargoScores["YETI"].supplied >= 3)) {
+							local sunk = totalNeeds + totalSupplied + 1;
+							cargoScore.score += sunk;
+							cargoScore.explain += "+"+sunk+"("+cargoLabel+")"
+						} else {
+							cargoScore.score = 0;
+							cargoScore.explain = "0("+cargoLabel+")"
+						}
+					}
 				}
-			} else {*/
-				if(totalSupplied == 0 && acceptingPlace.IsProcessing()) {
-					cargoScore.score += 2;
-					cargoScore.explain += "+2(IsProcessing && totalSupplied==0)"
-				}
-//			}
-			
+			}
 			local cargoPlan = {};
 			cargoPlan.place <- acceptingPlace;
 			cargoPlan.cargo <- cargoScore.cargo;
@@ -2487,6 +2416,7 @@ class HogeAI extends AIController {
 			return;
 		}
 		local currentRailType = AIRail.GetCurrentRailType();
+		local currentRoadType = AIRoad.GetCurrentRoadType();
 		
 		lastIntervalDate = AIDate.GetCurrentDate();
 		PlaceProduction.Get().Check();
@@ -2531,6 +2461,7 @@ class HogeAI extends AIController {
 		lastIntervalDate = AIDate.GetCurrentDate();
 		
 		AIRail.SetCurrentRailType(currentRailType);
+		AIRoad.SetCurrentRoadType(currentRoadType);
 		
 	}
 		 

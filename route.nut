@@ -246,8 +246,8 @@ class Route {
 class CommonRoute extends Route {
 
 	
-	function EstimateEngineSet(self, cargo, distance, production, isBidirectional) {
-		local engineSets = self.GetEngineSetsVt(self, self.GetVehicleType(), cargo, distance, production, isBidirectional);
+	function EstimateEngineSet(self, cargo, distance, production, isBidirectional, isTownBus=false) {
+		local engineSets = self.GetEngineSetsVt(self, self.GetVehicleType(), cargo, distance, production, isBidirectional, isTownBus);
 		if(engineSets.len() >= 1) {
 			return engineSets[0];
 		} else {
@@ -255,18 +255,22 @@ class CommonRoute extends Route {
 		}
 	}
 	
-	function GetEngineSetsVt(self, vehicleType, cargo, distance, production, isBidirectional ) {
+	function GetEngineSetsVt(self, vehicleType, cargo, distance, production, isBidirectional, isTownBus=false ) {
 		if(distance == 0) {
 			return [];
 		}
 		local engineList = AIEngineList(vehicleType);
-		if(vehicleType == AIVehicle.VT_ROAD) {
-			engineList.Valuate(AIEngine.HasPowerOnRoad, AIRoad.GetCurrentRoadType());
-			engineList.KeepValue(1);
-		}
 		engineList.Valuate(AIEngine.CanRefitCargo, cargo);
 		engineList.KeepValue(1);
 		
+		if(isTownBus) {
+			local roadType = AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin();
+			engineList.Valuate(AIEngine.HasPowerOnRoad, roadType );
+			engineList.KeepValue(1);
+		} else if((typeof self) == "instance" && self instanceof RoadRoute) {
+			engineList.Valuate(AIEngine.HasPowerOnRoad, self.GetRoadType());
+			engineList.KeepValue(1);
+		}
 		if((typeof self) == "instance" && self instanceof AirRoute) {
 			local usableBigPlane = Air.GetAiportTraits(self.srcHgStation.airportType).supportBigPlane 
 				&& Air.GetAiportTraits(self.destHgStation.airportType).supportBigPlane;
@@ -364,11 +368,14 @@ class CommonRoute extends Route {
 	function GetEngineCapacity(self, engine, cargo) {
 		local result;
 		if(self.instances.len() >= 1) {
-			local route = self.instances[0];
-			result = AIVehicle.GetBuildWithRefitCapacity(route.depot, engine, cargo);
-		} else {
-			result = AIEngine.GetCapacity(engine);
+			foreach(route in self.instances) {
+				result = AIVehicle.GetBuildWithRefitCapacity(route.depot, engine, cargo);
+				if(result != -1) {
+					return result;
+				}
+			}
 		}
+		result = AIEngine.GetCapacity(engine);
 		if( self.GetVehicleType() == AIVehicle.VT_AIR && cargo == HogeAI.GetPassengerCargo()) {
 			result = result * 115 / 100;
 		}
@@ -1284,6 +1291,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			HgLog.Warning("No suitable engine. "+this);
 			return null;
 		}
+		BuildStart(engineSet);
 		
 		local stationFactory = CreateStationFactory();
 		if(stationFactory == null) {
@@ -1480,5 +1488,9 @@ class CommonRouteBuilder extends RouteBuilder {
 			}
 		}
 		return null;
+	}
+	
+	function BuildStart(engineSet) {
+		// overrideして使う
 	}
 }

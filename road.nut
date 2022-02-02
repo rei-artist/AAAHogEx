@@ -25,6 +25,7 @@ class RoadRoute extends CommonRoute {
 	}
 	
 	depots = null;
+	roadType = null;
 	
 	constructor() {
 		CommonRoute.constructor();
@@ -34,12 +35,20 @@ class RoadRoute extends CommonRoute {
 	function Save() {
 		local t = CommonRoute.Save();
 		t.depots <- depots;
+		t.roadType <- roadType;
 		return t;
 	}
 	
 	function Load(t) {
 		CommonRoute.Load(t);
 		depots = t.depots;
+		roadType = t.rawin("roadType") ? t.roadType : AIRoad.ROADTYPE_ROAD;
+	}
+	
+	function Initialize() {
+		CommonRoute.Initialize();
+		roadType = AIRoad.GetCurrentRoadType();
+		HgLog.Info("Initialize roadType:"+AIRoad.GetName(roadType)+" "+this);
 	}
 	
 	function GetVehicleType() {
@@ -72,6 +81,11 @@ class RoadRoute extends CommonRoute {
 
 	function GetBuildingTime(distance) {
 		return distance + 10;
+	}
+	
+	
+	function GetRoadType() {
+		return roadType;
 	}
 
 	function SetPath(path) {
@@ -150,6 +164,25 @@ class RoadRouteBuilder extends CommonRouteBuilder {
 	function CreatePathBuilder(engine, cargo) {
 		return RoadBuilder(engine, cargo);
 	}
+	
+	function BuildStart(engineSet) {
+		foreach(roadType,v in AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD )) {
+			if(AIEngine.HasPowerOnRoad(engineSet.engine, roadType)) { //TODO 複数該当するケース。その場合は一番安いroadType?
+				HgLog.Info("BuildStart RoadType:"+AIRoad.GetName(roadType)+" "+this);
+				AIRoad.SetCurrentRoadType(roadType);
+				return;
+			}
+		}
+		foreach(roadType,v in AIRoadTypeList(AIRoad.ROADTRAMTYPES_TRAM )) {
+			if(AIEngine.HasPowerOnRoad(engineSet.engine, roadType)) {
+				HgLog.Info("BuildStart RoadType:"+AIRoad.GetName(roadType)+" "+this);
+				AIRoad.SetCurrentRoadType(roadType);
+				return;
+			}
+		}
+		HgLog.Warning("Unkwown road type: engine"+AIEngine.GetName(engineSet.engine)+" "+this);
+		AIRoad.SetCurrentRoadType(AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin());
+	}
 }
 
 class RoadBuilder {	
@@ -215,8 +248,9 @@ class RoadBuilder {
 			local par = path.GetParent();
 			if (par != null) {
 				local last_node = path.GetTile();
+				local isBridgeOrTunnel = AIBridge.IsBridgeTile(path.GetTile()) || AITunnel.IsTunnelTile(path.GetTile());
 				if (AIMap.DistanceManhattan(path.GetTile(), par.GetTile()) == 1 ) {
-					if(!AIBridge.IsBridgeTile(path.GetTile()) && !AITunnel.IsTunnelTile(path.GetTile())) {
+					//if(!isBridgeOrTunnel) {
 						HogeAI.WaitForMoney(1000);
 						if (!RoadRouteBuilder.BuildRoadUntilFree(path.GetTile(), par.GetTile())) {
 							local error = AIError.GetLastError();
@@ -225,10 +259,10 @@ class RoadBuilder {
 								return RetryBuildRoad(path starts);
 							}
 						}
-					}
+					//}
 				} else {
-					if (!AIBridge.IsBridgeTile(path.GetTile()) && !AITunnel.IsTunnelTile(path.GetTile())) {
-						if (AIRoad.IsRoadTile(path.GetTile())) {
+					if (!isBridgeOrTunnel || !AIRoad.HasRoadType(path.GetTile(),AIRoad.GetCurrentRoadType())) {
+						if (!isBridgeOrTunnel && AIRoad.IsRoadTile(path.GetTile())) {
 							AITile.DemolishTile(path.GetTile());
 						}
 						HogeAI.WaitForMoney(20000);
@@ -422,16 +456,21 @@ class TownBus {
 	}
 
 	function ChooseBusEngine() {
-		local engineSet = RoadRoute.EstimateEngineSet(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2, true );
+		local engineSet = RoadRoute.EstimateEngineSet(RoadRoute, cargo, AIMap.DistanceManhattan(stations[0],stations[1]),  GetPlace().GetLastMonthProduction(cargo) / 2, true, true );
 		return engineSet != null ? engineSet.engine : null;
-		
-		/*
-		return CommonRoute.ChooseEngineCargo(
-			cargo, AIMap.DistanceManhattan(stations[0],stations[1]), AIVehicle.VT_ROAD, GetPlace().GetLastMonthProduction(cargo) / 2);*/
-
 	}
 	
+	
 	function BuildBusStops() {
+		local currentRoadType = AIRoad.GetCurrentRoadType();
+		AIRoad.SetCurrentRoadType(GetRoadType()); // TODO tram対応
+		local result = _BuildBusStops();
+		AIRoad.SetCurrentRoadType(currentRoadType);
+		return result;
+	}
+	
+	function _BuildBusStops() {
+	
 		local aiTest = AITestMode();
 		local tile = AITown.GetLocation(town);
 		local rect = Rectangle.Center(HgTile(tile),5);
@@ -460,6 +499,14 @@ class TownBus {
 	}
 	
 	function BuildBusDepot() {
+		local currentRoadType = AIRoad.GetCurrentRoadType();
+		AIRoad.SetCurrentRoadType(GetRoadType()); // TODO tram対応
+		local result = _BuildBusDepot();
+		AIRoad.SetCurrentRoadType(currentRoadType);
+		return result;
+	}
+	
+	function _BuildBusDepot() {
 		local aiTest = AITestMode();
 		local dirs = [AIMap.GetTileIndex(1, 0), AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(-1, 0), AIMap.GetTileIndex(0, -1)];
 		for(local i=5; i<=15; i+=2) {
@@ -680,6 +727,10 @@ class TownBus {
 					AIVehicle.SendVehicleToDepot (removeBus);
 				}
 			}
+			
+			local currentRoadType = AIRoad.GetCurrentRoadType();
+			AIRoad.SetCurrentRoadType(GetRoadType());
+			
 			if(RoadBuilder().BuildPath([stations[0]], [toHgStation.platformTile], true)) {
 				CreateTransferRoadRoute(1, stations[0], toHgStation);
 			}
@@ -687,8 +738,14 @@ class TownBus {
 				CreateTransferRoadRoute(2, stations[1], toHgStation);
 			}
 			isTransfer = true;
+
+			AIRoad.SetCurrentRoadType(currentRoadType);
 			break;
 		}
+	}
+	
+	function GetRoadType() {
+		return AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin();	
 	}
 	
 	

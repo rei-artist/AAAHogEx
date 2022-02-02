@@ -1399,6 +1399,14 @@ class PieceStation extends HgStation {
 	}
 	
 	function BuildStation(joinStation) {
+		local currentRoadType = AIRoad.GetCurrentRoadType();
+		AIRoad.SetCurrentRoadType(AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin());
+		local result = _BuildStation(joinStation);
+		AIRoad.SetCurrentRoadType(currentRoadType);
+		return result;
+	}
+	
+	function _BuildStation(joinStation) {
 //		HgLog.Info("platformTile:"+HgTile(platformTile)+" front:"+HgTile(GetFrontTile(platformTile))+" GetRoadVehicleType:"+GetRoadVehicleType()+" joinStation:"+joinStation);
 		
 		if(BuildUtils.RetryUntilFree(function():(platformTile,joinStation) {
@@ -2739,25 +2747,26 @@ class SrcRailStation extends RailStation {
 		}
 		
 		local a = [];
-		a.push([[2,4],[2,5],[2,6]]);
-		a.push([[1,5],[2,5],[2,6]]);
-		a.push([[2,5],[2,6],[1,6]]);
-		a.push([[2,5],[2,6],[3,6]]);
-		a.push([[2,7],[2,6],[1,6]]);
-		a.push([[2,7],[2,6],[3,6]]);
-		a.push([[1,4],[1,5],[2,5]]);
-		a.push([[1,4],[1,5],[0,5]]);
-		a.push([[0,5],[1,5],[2,5]]);
-		a.push([[1,5],[0,5],[0,6]]);
+		a.push([[2,0],[2,1],[2,2]]);
+		a.push([[1,1],[2,1],[2,2]]);
+		a.push([[2,1],[2,2],[1,2]]);
+		a.push([[2,1],[2,2],[3,2]]);
+		a.push([[2,3],[2,2],[1,2]]);
+		a.push([[2,3],[2,2],[3,2]]);
+		a.push([[1,0],[1,1],[2,1]]);
+		a.push([[1,0],[1,1],[0,1]]);
+		a.push([[0,1],[1,1],[2,1]]);
+		a.push([[1,1],[0,1],[0,2]]);
+		a.push([[1,1],[0,1],[0,0]]);
 		/*
 		a.push([[0,4],[0,5],[-1,5]]);
 		a.push([[1,5],[0,5],[-1,5]]);
 		a.push([[0,6],[0,5],[-1,5]]);*/
 		foreach(r in a) {
 			result.push([
-				[r[0][0],r[0][1]-4+platformLength],
-				[r[1][0],r[1][1]-4+platformLength],
-				[r[2][0],r[2][1]-4+platformLength]]);
+				[r[0][0],r[0][1]+platformLength],
+				[r[1][0],r[1][1]+platformLength],
+				[r[2][0],r[2][1]+platformLength]]);
 		}
 		return result;
 	}
