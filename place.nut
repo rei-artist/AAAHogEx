@@ -360,6 +360,13 @@ class Place {
 			} else {
 				return AIDate.GetCurrentDate() < date;
 			}
+		} else if(HogeAI.Get().IsAvoidSecondaryIndustryStealing()) {
+			if(facility instanceof HgIndustry && facility.IsProcessing()) {
+				if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1 && facility.GetRoutes().len() == 0) {
+					HgLog.Info("Detect SecondaryIndustryStealing:"+facility.GetName());
+					return true;
+				}
+			}
 		}
 		return false;
 	}
@@ -913,7 +920,7 @@ class HgIndustry extends Place {
 	}
 	
 	// 入力すると出力が増えるかどうか or 入力が無くて勝手に増えるかどうか
-	function IsIncreasable() {
+	function IsIncreasable(inputCargo = null) {
 		if(HogeAI.Get().ecs || HogeAI.Get().yeti) {
 			return true;
 		}
@@ -929,7 +936,14 @@ class HgIndustry extends Place {
 				}
 			}
 		}
+		if(inputCargo != null) {
+		}
+		
 		return true;
+	}
+
+	function IsIncreasableInputCargo(inputCargo) {
+		return !HgArray(GetProducing().GetCargos()).Contains(inputCargo);// 油田の旅客をはじく
 	}
 	
 	function IsRaw() {
@@ -997,6 +1011,10 @@ class HgIndustry extends Place {
 		}
 		
 		return false;
+	}
+	
+	function _tostring() {
+		return "Industry:" + GetName() + ":" + isProducing;
 	}
 }
 
@@ -1087,7 +1105,11 @@ class TownCargo extends Place {
 	}
 	
 	function GetLastMonthProduction(cargo) {
-		return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
+		if(RoadRoute.IsTooManyVehiclesForSupportRoute(RoadRoute)) {
+			return min(200, AITown.GetLastMonthProduction( town, cargo ) / 3);
+		} else {
+			return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
+		}
 	}
 	
 	
@@ -1180,5 +1202,9 @@ class TownCargo extends Place {
 	
 	function GetIndustryTraits() {
 		return "";
+	}
+	
+	function _tostring() {
+		return "TownCargo:" + GetName() + ":" + AICargo.GetName(cargo) + ":" + isProducing;
 	}
 }

@@ -141,7 +141,7 @@ class AirRoute extends CommonRoute {
 	}
 	
 	function GetThresholdVehicleNumRateForNewRoute() {
-		return 0.9;
+		return 0.95;
 	}
 
 	function GetThresholdVehicleNumRateForSupportRoute() {
@@ -164,6 +164,16 @@ class AirRoute extends CommonRoute {
 		return 400;
 	}
 	
+	function GetPathDistance() {
+		local p1 = srcHgStation.platformTile;
+		local p2 = destHgStation.platformTile;
+		
+		local w = abs(AIMap.GetTileX(p1) - AIMap.GetTileX(p2));
+		local h = abs(AIMap.GetTileY(p1) - AIMap.GetTileY(p2));
+		
+		return (min(w,h).tofloat() * 0.414 + max(w,h)).tointeger();
+	}
+
 	function SetPath(path) {
 	}
 	
@@ -444,7 +454,7 @@ class AirStation extends HgStation {
 					return false;
 				}
 			}
-			if(!Rectangle(HgTile(platformTile), HgTile(platformTile + AIMap.GetTileIndex(platformNum, platformLength))).LevelTiles()) {
+			if(!Rectangle(HgTile(platformTile), HgTile(platformTile + AIMap.GetTileIndex(platformNum, platformLength))).LevelTiles(isTestMode)) {
 				if(!isTestMode) {
 					HgLog.Warning("LevelTiles(AirStation) failed");
 				}

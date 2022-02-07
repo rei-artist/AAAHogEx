@@ -3,7 +3,7 @@
 /**
  * A Rail Pathfinder.
  */
-class Rail
+class RailPathFinder
 {
 	static idCounter = IdCounter();
 	
@@ -69,6 +69,131 @@ class Rail
 		this.useInitializePath2 = false;
 	}
 
+	_cost_level_crossing = 0;
+	
+	cargo = null;
+	platformLength = null;
+	
+	isFoundPath = false;
+		
+	function InitializeParameters() {
+		_cost_level_crossing = 900;
+		_cost_crossing_reverse = 300;
+		_cost_bridge_per_tile_ex = 130;
+		_cost_tunnel_per_tile_ex  = 130;
+		_cost_diagonal_tile = 67;
+		_cost_diagonal_sea = 200;
+		_cost_guide = 300; //20;
+		_cost_under_bridge = 50;
+		
+		cost.tile = 100;
+		cost.turn = 300;
+		_cost_tight_turn = 1500;
+		cost.bridge_per_tile = 20;
+		cost.max_bridge_length = platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
+		
+		cost.slope = 0;
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000 && cargo != null) {
+			local trainPlanner = TrainPlanner();
+			trainPlanner.cargo = cargo;
+			trainPlanner.distance = 100;
+			trainPlanner.production = 100;
+			trainPlanner.limitWagonEngines = 1;
+			trainPlanner.skipWagonNum = 2;
+			local engineSets = trainPlanner.GetEngineSetsOrder();
+			if(engineSets.len()>=1 && AIEngine.GetMaxTractiveEffort(engineSets[0].trainEngine) < 300) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+				HgLog.Info("TrainRoute: pathfinding consider slope");
+				cost.slope = 400;
+			}
+		}
+		
+		cost.coast = 0;
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+			cost.tunnel_per_tile = 20;
+			cost.max_tunnel_length = cost.max_bridge_length;
+		} else {
+			cost.tunnel_per_tile = 50;
+			cost.max_tunnel_length = 6;
+		}
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 2000000 && !HogeAI.Get().IsAvoidRemovingWater()) {
+			_can_build_water = true;
+			_cost_water = 20;
+		}
+	}
+	
+	function FindPathDay(limitDay,eventPoller) {
+		return FindPath(null,eventPoller,limitDay);
+	}
+	
+	function FindPath(limitCount,eventPoller,limitDay=null) {
+		if(limitDay != null) {
+			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay);
+		} else {
+			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount);
+			limitCount *= 3;
+		}
+		local counter = 0;
+		local path = false;
+		local startDate = AIDate.GetCurrentDate();
+		local endDate = limitDay != null ? startDate + limitDay : null;
+		local totalInterval = 0;
+		while (path == false && ((endDate!=null && AIDate.GetCurrentDate() < endDate + totalInterval) || (endDate==null && counter < limitCount))) {
+			path = _FindPath(50);
+			counter++;
+//			HgLog.Info("counter:"+counter);
+			local intervalStartDate = AIDate.GetCurrentDate();
+			if(eventPoller.OnPathFindingInterval()==false) {
+				HgLog.Warning("TrainRoute: FindPath break by OnPathFindingInterval");
+				path = null;
+				break;
+			}
+			totalInterval += AIDate.GetCurrentDate() - intervalStartDate;
+		}
+		if(path == false) { // 継続中
+			path = _pathfinder._open.Peek();
+		} else if(path != null) {
+			HgLog.Info("TrainRoute: Path found. (count:" + counter + " date:"+ (AIDate.GetCurrentDate() - startDate - totalInterval) +")");
+			isFoundPath = true;
+		} else {
+			HgLog.Info("TrainRoute: FindPath failed");
+		}
+		if(path != null) {
+			path = Path.FromPath(path);
+			if(!isFoundPath) {
+				while(path != null && AITile.HasTransportType(path.GetTile(), AITile.TRANSPORT_RAIL)) {
+					HgLog.Info("tail tile is on rail:"+path.GetTile());
+					path = path.GetParent();
+				}
+			}
+			path = RemoveConnectedHead(path);
+			path = RemoveConnectedHead(path.Reverse()).Reverse();
+		}
+		return path;
+	}
+
+	function RemoveConnectedHead(path) {
+		local prev = null;
+		local prevprev = null;
+		local lastPath = path;
+		while(path != null) {
+			if(prev != null && prevprev != null) {
+				if(AIRail.AreTilesConnected (prevprev.GetTile(),prev.GetTile(),path.GetTile())) {
+					lastPath = prev;
+				} else {
+					break;
+				}
+			}
+			prevprev = prev;
+			prev = path;
+			path = path.GetParent();
+		}
+		return lastPath;
+	}
+		
+	function IsFoundGoal() {
+		return isFoundPath;
+	}
+	
 	/**
 	 * Initialize a path search between sources and goals.
 	 * @param sources The source tiles.
@@ -77,8 +202,9 @@ class Rail
 	 * @see AyStar::InitializePath()
 	 */
 	function InitializePath(sources, goals, ignored_tiles = [], reversePath = null) {
+		InitializeParameters();
 		if(sources[0].len() == 3) {
-			InitializePath2(sources, goals, ignored_tiles, reversePath);
+			_InitializePath2(sources, goals, ignored_tiles, reversePath);
 			return;
 		}
 	
@@ -95,7 +221,7 @@ class Rail
 	}
 	
 	
-	function InitializePath2(sources, goals, ignored_tiles = [], reversePath=null) {
+	function _InitializePath2(sources, goals, ignored_tiles = [], reversePath=null) {
 		local nsources = [];
 
 		foreach (node in sources) {
@@ -155,10 +281,10 @@ class Rail
 	 *  which is an indication it is not yet done looking for a route.
 	 * @see AyStar::FindPath()
 	 */
-	function FindPath(iterations);
+	function _FindPath(iterations);
 };
 
-class Rail.Cost
+class RailPathFinder.Cost
 {
 	_main = null;
 
@@ -206,7 +332,7 @@ class Rail.Cost
 	}
 };
 
-function Rail::FindPath(iterations)
+function RailPathFinder::_FindPath(iterations)
 {
 	local test_mode = AITestMode();
 	local ret = this._pathfinder.FindPath(iterations);
@@ -221,7 +347,7 @@ function Rail::FindPath(iterations)
 	return ret;
 }
 
-function Rail::_GetBridgeNumSlopes(end_a, end_b)
+function RailPathFinder::_GetBridgeNumSlopes(end_a, end_b)
 {
 	local slopes = 0;
 	local direction = (end_b - end_a) / AIMap.DistanceManhattan(end_a, end_b);
@@ -242,20 +368,20 @@ function Rail::_GetBridgeNumSlopes(end_a, end_b)
 	return slopes;
 }
 
-function Rail::_nonzero(a, b)
+function RailPathFinder::_nonzero(a, b)
 {
 	return a != 0 ? a : b;
 }
 
-function Rail::_IsStraight(p1,p2,p3) {
+function RailPathFinder::_IsStraight(p1,p2,p3) {
 	return _GetDirectionIndex(p1,p2) == _GetDirectionIndex(p2,p3);
 }
 
-function Rail::_GetDirectionIndex(p1,p2) {
+function RailPathFinder::_GetDirectionIndex(p1,p2) {
 	return (p2 - p1) / AIMap.DistanceManhattan(p1,p2);
 }
 
-function Rail::_Cost(self, path, new_tile, new_direction)
+function RailPathFinder::_Cost(self, path, new_tile, new_direction)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
@@ -274,7 +400,10 @@ function Rail::_Cost(self, path, new_tile, new_direction)
 			cost += self._cost_tight_turn;
 		}
 	}
-	 
+
+	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_ROAD)) cost += self._cost_level_crossing;
+
+		
 	local distance = AIMap.DistanceManhattan(new_tile, prev_tile);
 	if (distance > 1) {
 		/* Check if we should build a bridge or a tunnel. */
@@ -342,7 +471,7 @@ function Rail::_Cost(self, path, new_tile, new_direction)
 	return path.GetCost() + cost;
 }
 
-function Rail::_Estimate(self, cur_tile, cur_direction, goal_tiles)
+function RailPathFinder::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 {
 	local min_cost = self._max_cost;
 	/* As estimate we multiply the lowest possible cost for a single tile with
@@ -367,7 +496,7 @@ function Rail::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 }
 
 
-function Rail::_CanChangeBridge(path, cur_node) {
+function RailPathFinder::_CanChangeBridge(path, cur_node) {
 	local tracks = AIRail.GetRailTracks(cur_node);
 	local direction;
 	if(tracks == AIRail.RAILTRACK_NE_SW) {
@@ -396,7 +525,7 @@ function Rail::_CanChangeBridge(path, cur_node) {
 	return true;
 }
 
-function Rail::_IsUnderBridge(node) {
+function RailPathFinder::_IsUnderBridge(node) {
 	local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
 	local c_node = node;
 	foreach(offset in offsets) {
@@ -415,7 +544,7 @@ function Rail::_IsUnderBridge(node) {
 	return false;
 }
 
-function Rail::IsOnPath(path,node) {
+function RailPathFinder::IsOnPath(path,node) {
 	while(path != null) {
 		if(path.GetTile()==node) {
 			return true;
@@ -425,7 +554,7 @@ function Rail::IsOnPath(path,node) {
 	return false;
 }
 
-function Rail::_GetGoal2(node) {
+function RailPathFinder::_GetGoal2(node) {
 	foreach (goal in this._goals) {
 		if (goal[0] == node) {
 			return goal[1];
@@ -434,7 +563,7 @@ function Rail::_GetGoal2(node) {
 	return null;
 }
 
-function Rail::_IsGoal2(node) {
+function RailPathFinder::_IsGoal2(node) {
 	foreach (goal in this._goals) {
 		if (goal[1] == node) {
 			return true;
@@ -443,7 +572,7 @@ function Rail::_IsGoal2(node) {
 	return false;
 }
 
-function Rail::_IsInclude90DegreeTrack(target, parTile, curTile) {
+function RailPathFinder::_IsInclude90DegreeTrack(target, parTile, curTile) {
 	foreach(neighbor in HgTile.GetConnectionTiles(target, AIRail.GetRailTracks (target))) {
 		if(neighbor == curTile) {
 			continue;
@@ -457,7 +586,7 @@ function Rail::_IsInclude90DegreeTrack(target, parTile, curTile) {
 	return false;
 }
 
-function Rail::_PermitedDiagonalOffset(track) {
+function RailPathFinder::_PermitedDiagonalOffset(track) {
 	switch(track) {
 		case AIRail.RAILTRACK_SW_SE:
 			return [AIMap.GetTileIndex(-1, 0),AIMap.GetTileIndex(0, -1)];
@@ -472,7 +601,7 @@ function Rail::_PermitedDiagonalOffset(track) {
 }
 
 
-function Rail::_Neighbours(self, path, cur_node)
+function RailPathFinder::_Neighbours(self, path, cur_node)
 {
 	/* self._max_cost is the maximum path cost, if we go over it, the path isn't valid. */
 	if (path.GetCost() >= self._max_cost) return [];
@@ -583,12 +712,12 @@ function Rail::_Neighbours(self, path, cur_node)
 	return tiles;
 }
 
-function Rail::_IsBuildableSea(tile, next_tile) {
+function RailPathFinder::_IsBuildableSea(tile, next_tile) {
 	return ( AITile.IsSeaTile(tile) || (AITile.IsCoastTile(tile) && AITile.IsBuildable(tile)) )
 		&& _RaiseAtWater(tile,next_tile);
 }
 
-function Rail::_BuildRail(p1,p2,p3) {
+function RailPathFinder::_BuildRail(p1,p2,p3) {
 	if(AIRail.BuildRail(p1,p2,p3)) {
 		return true;
 	}
@@ -597,12 +726,12 @@ function Rail::_BuildRail(p1,p2,p3) {
 	}
 	local r = CanDemolishRail(p2);
 	if(r) {
-		HgLog.Info("CanDemolishRail(Rail::_BuildRail):"+HgTile(p2));
+		HgLog.Info("CanDemolishRail(RailPathFinder::_BuildRail):"+HgTile(p2));
 	}
 	return r;
 }
 
-function Rail::CanDemolishRail(p) {
+function RailPathFinder::CanDemolishRail(p) {
 	if(!AICompany.IsMine(AITile.GetOwner(p))) {
 		return false;
 	}
@@ -612,7 +741,7 @@ function Rail::CanDemolishRail(p) {
 	return false;
 }
 
-function Rail::_RaiseAtWater(t0,t1) {
+function RailPathFinder::_RaiseAtWater(t0,t1) {
 	if(!AIMap.IsValidTile(t1)) {
 		return false;
 	}
@@ -630,12 +759,12 @@ function Rail::_RaiseAtWater(t0,t1) {
 	return true;
 }
 
-function Rail::_CheckDirection(tile, existing_direction, new_direction, self)
+function RailPathFinder::_CheckDirection(tile, existing_direction, new_direction, self)
 {
 	return false;
 }
 
-function Rail::_dir(from, to)
+function RailPathFinder::_dir(from, to)
 {
 	if (from - to == 1) return 0;
 	if (from - to == -1) return 1;
@@ -644,7 +773,7 @@ function Rail::_dir(from, to)
 	throw("Shouldn't come here in _dir");
 }
 
-function Rail::_GetDirection(pre_from, from, to, is_bridge)
+function RailPathFinder::_GetDirection(pre_from, from, to, is_bridge)
 {
 	if (is_bridge) {
 		local d = (from - to) / AIMap.DistanceManhattan(from,to);
@@ -663,7 +792,7 @@ function Rail::_GetDirection(pre_from, from, to, is_bridge)
  *  for performance reasons. Tunnels will only be build if no terraforming
  *  is needed on both ends.
  */
-function Rail::_GetTunnelsBridges(par, last_node, cur_node)
+function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 {
 	local tiles = [];
 	
@@ -756,7 +885,7 @@ function Rail::_GetTunnelsBridges(par, last_node, cur_node)
 	return tiles;
 }
 
-function Rail::_IsSlopedRail(start, middle, end)
+function RailPathFinder::_IsSlopedRail(start, middle, end)
 {
 	local NW = 0; // Set to true if we want to build a rail to / from the north-west
 	local NE = 0; // Set to true if we want to build a rail to / from the north-east

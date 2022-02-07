@@ -273,7 +273,7 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 			 * 3) The next tile is the entrance of a tunnel / bridge in the correct direction. */
 			if (AIRoad.AreRoadTilesConnected(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			} else if ((AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&
+			} else if (/*(AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&*/
 					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile)) &&
 					AIRoad.BuildRoad(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);

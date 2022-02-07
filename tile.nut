@@ -1,5 +1,7 @@
 ﻿
 class HgTile {
+	static pathFindCostCache = {};
+
 	static DIR_NE = 0;
 	static DIR_NW = 1;
 	static DIR_SE = 2;
@@ -146,6 +148,16 @@ class HgTile {
 	}
 	
 	function GetPathFindCost(hgTile, notAllowLandFill = false) {
+		local t1 = min( tile, hgTile.tile );
+		local t2 = max( tile, hgTile.tile );
+		local key = t1 + ":" + t2;
+	
+		if(!notAllowLandFill) {
+			if(HgTile.pathFindCostCache.rawin(key)) {
+				return HgTile.pathFindCostCache[key];
+			}
+		}
+	
 		local dx = abs(hgTile.X()-X());
 		local dy = abs(hgTile.Y()-Y());
 		local notBuildables = GetNotBuildables(hgTile,notAllowLandFill ? true : AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 2000000);
@@ -154,6 +166,11 @@ class HgTile {
 		result = result == 0 ? 1 : result;
 		
 //		HgLog.Info("GetPathFindCost:"+this+" to "+hgTile+"="+result+"(("+(min(dx,dy) + dx + dy)/6+"+"+(notBuildables/6)+") D:"+(dx+dy));
+		
+		
+		if(!notAllowLandFill) {
+			HgTile.pathFindCostCache.rawset(key, result);
+		}
 		
 		return result;
 	}
@@ -569,8 +586,8 @@ class Rectangle {
 		return HogeAI.IsBuildableRectangle(lefttop.tile, Width(), Height());
 	}
 	
-	function LevelTiles() {
-		return TileListUtil.LevelAverage(GetTileListIncludeEdge());
+	function LevelTiles(isTestMode = false) {
+		return TileListUtil.LevelAverage(GetTileListIncludeEdge(), isTestMode);
 	}
 	
 	function GetRandomTile() {
@@ -607,7 +624,7 @@ class Rectangle {
 }
 
 class TileListUtil {
-	static function LevelAverage(tileList) {
+	static function LevelAverage(tileList, isTestMode = false) {
 		// TODO 道路の向きによってはtestで成功したものがexecで失敗する
 		local landfill = AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 2000000;
 		tileList.Valuate(AITile.GetCornerHeight, AITile.CORNER_N);
@@ -621,6 +638,7 @@ class TileListUtil {
 		}
 		
 		local around = [AIMap.GetTileIndex(-1,-1),AIMap.GetTileIndex(-1,0),AIMap.GetTileIndex(0,-1),0];
+		local lowerTiles = [];
 		foreach(tile,level in tileList) {
 			if(level <= 0) {
 				if(!landfill) {
@@ -644,6 +662,7 @@ class TileListUtil {
 			} else if(level > average) {
 				if(!TileListUtil.LowerTile (tile, AITile.SLOPE_N)) {
 //					HgLog.Warning("failed LevelTiles LowerTile tile:"+HgTile(tile));
+					lowerTiles.push(tile);
 					return false;
 				}
 			}	
@@ -651,6 +670,43 @@ class TileListUtil {
 				return false;
 			}
 		}
+		if(isTestMode) {
+			local needsChecks = {};
+			foreach(tile in lowerTiles) {
+				foreach(d in around) {
+					if( needsChecks.rawin(tile+d) ) {
+						needsChecks[tile+d].push(tile);
+					} else {
+						needsChecks[tile+d].push([tile]);
+					}
+				}
+			}
+			foreach(tile,lowerTiles in needsChecks) {
+				if(lowerTiles.len() >= 3) {
+					if(AIRoad.IsRoadTile(tile)) {
+						return false;
+					}
+				} else if(lowerTiles.len() == 2) {
+					if(AIRoad.IsRoadTile(tile)) {
+						return false;
+						
+						local ngTile;
+						if(lowerTiles[0] == tile) {
+							ngTile = lowerTiles[1];
+						} else if(lowerTiles[1] == tile) {
+							ngTile = lowerTiles[0];
+						} else {
+							ngTile = AIMap.DistanceManhattan(lowerTiles[0], tile) == 1 ? lowerTiles[0] : lowerTiles[1];
+						}
+						if(AIRoad.AreRoadTilesConnected(tile, ngTile)) { // これでは調べられない。現時点で調べる方法は無い
+							return false;
+						}
+					}
+					// Railに妨げられる事は稀なのでチェックしない
+				}
+			}
+		}
+		
 		return true;
 	}
 	
