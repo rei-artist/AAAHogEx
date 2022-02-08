@@ -786,8 +786,15 @@ class TownBus {
 		}*/
 		
 	}
-	
+
 	function CreateTransferRoutes(route, placeStation) {
+		HogeAI.Get().supressInterval = true; // TownBus.CheckIntervalとの競合を防ぐ
+		_CreateTransferRoutes(route, placeStation);
+		HogeAI.Get().supressInterval = false;
+	}
+
+	
+	function _CreateTransferRoutes(route, placeStation) {
 		if(stations.len() < 2 ) {
 			return;
 		}

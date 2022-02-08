@@ -198,6 +198,10 @@ class HogeAI extends AIController {
 			}
 		}
 		
+		foreach(objectType,v in AIObjectTypeList()) {
+			HgLog.Info("objType:" + AIObjectType.GetName(objectType) + " views:"+AIObjectType.GetViews(objectType)+" id:"+objectType);
+		}
+		
 
 		DoLoad();
 		/*
@@ -1913,7 +1917,7 @@ class HogeAI extends AIController {
 		*/
 		
 		
-		if(CargoUtils.IsPaxOrMail(cargo)) {
+		if(CargoUtils.IsPaxOrMail(route.cargo)) {
 			CommonRouteBuilder.CheckTownTransfer(route, destHgStation);
 		}
 					

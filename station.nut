@@ -1199,8 +1199,20 @@ class RailStation extends HgStation {
 		if(cargo == null) {
 			return AIRail.BuildRailStation(platformTile, GetPlatformRailTrack(), platformNum, platformLength, joinStation);
 		} else {
+			local industryType;
+			if(place != null) {
+				if(place instanceof HgIndustry) {
+					industryType = AIIndustry.GetIndustryType(place.industry);
+				} else if(place instanceof TownCargo) {
+					industryType = AIIndustryType.INDUSTRYTYPE_TOWN;
+				}
+			}
+			if(industryType == null) {
+				industryType = AIIndustryType.INDUSTRYTYPE_UNKNOWN;
+			}
+		
 			return AIRail.BuildNewGRFRailStation(platformTile, GetPlatformRailTrack(), platformNum, platformLength, joinStation, 
-				cargo,  AIIndustryType.INDUSTRYTYPE_UNKNOWN,  AIIndustryType.INDUSTRYTYPE_UNKNOWN, 100, isSourceStation!=null ? isSourceStation : (place!=null ? place.IsProducing() : true));
+				cargo,  industryType,  industryType, 500, isSourceStation!=null ? isSourceStation : (place!=null ? place.IsProducing() : true));
 		}
 	}
 	
