@@ -6,8 +6,8 @@
 class RailPathFinder
 {
 	static idCounter = IdCounter();
-	
-	_aystar_class = import("graph.aystar", "", 6);
+		
+	_aystar_class = AyStar; //import("graph.aystar", "", 6);
 	_max_cost = null;              ///< The maximum cost for a route.
 	_cost_tile = null;             ///< The cost for a single tile.
 	_cost_guide = null;
@@ -24,9 +24,11 @@ class RailPathFinder
 	_cost_coast = null;            ///< The extra cost for a coast tile.
 	_cost_crossing_rail = null;
 	_cost_crossing_reverse = null;
+	_cost_level_crossing = 0;
 	_pathfinder = null;            ///< A reference to the used AyStar object.
 	_max_bridge_length = null;     ///< The maximum length of a bridge that will be build.
 	_max_tunnel_length = null;     ///< The maximum length of a tunnel that will be build.
+	_bottom_ex_tunnel_length = null;
 	_can_build_water = null;
 	_cost_water = null;
 	_estimate_rate = null;
@@ -34,9 +36,17 @@ class RailPathFinder
 	cost = null;                   ///< Used to change the costs.
 	_running = null;
 	_goals = null;
+	_goalsMap = null;
 	_count = null;
 	_reverseNears = null;
 	useInitializePath2 = false;
+	
+	
+	cargo = null;
+	platformLength = null;
+	distance = null;
+	
+	isFoundPath = false;
 	
 	constructor()
 	{
@@ -65,21 +75,16 @@ class RailPathFinder
 		this._running = false;
 		this._count = idCounter.Get() * 1000;
 		this._reverseNears = null;
+		this._goalsMap = {};
 		
 		this.useInitializePath2 = false;
 	}
 
-	_cost_level_crossing = 0;
-	
-	cargo = null;
-	platformLength = null;
-	
-	isFoundPath = false;
 		
-	function InitializeParameters() {
+	function InitializeParameters(isReverse) {
 		_cost_level_crossing = 900;
-		_cost_crossing_reverse = 300;
-		_cost_bridge_per_tile_ex = 130;
+		_cost_crossing_reverse = 100;
+		_cost_bridge_per_tile_ex = 300;
 		_cost_tunnel_per_tile_ex  = 130;
 		_cost_diagonal_tile = 67;
 		_cost_diagonal_sea = 200;
@@ -87,37 +92,36 @@ class RailPathFinder
 		_cost_under_bridge = 50;
 		
 		cost.tile = 100;
-		cost.turn = 300;
-		_cost_tight_turn = 1500;
+		cost.turn = 600;
+		_cost_tight_turn = 1500; //isReverse ? 300 : 1500;
 		cost.bridge_per_tile = 20;
+		cost.tunnel_per_tile = 0;
+		cost.coast = 0;
 		cost.max_bridge_length = platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
+		cost.max_tunnel_length = platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
+		_bottom_ex_tunnel_length = platformLength == null ? 7 : max( 7, platformLength );
 		
 		cost.slope = 0;
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000 && cargo != null) {
+		if(!HogeAI.Get().IsRich() && cargo != null && distance != null && distance < 150) {
 			local trainPlanner = TrainPlanner();
 			trainPlanner.cargo = cargo;
-			trainPlanner.distance = 100;
+			trainPlanner.distance = distance;
 			trainPlanner.production = 100;
 			trainPlanner.limitWagonEngines = 1;
 			trainPlanner.skipWagonNum = 2;
 			local engineSets = trainPlanner.GetEngineSetsOrder();
-			if(engineSets.len()>=1 && AIEngine.GetMaxTractiveEffort(engineSets[0].trainEngine) < 300) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+			if(engineSets.len()>=1 && AIEngine.GetMaxTractiveEffort(engineSets[0].trainEngine) < AIGameSettings.GetValue("vehicle.train_slope_steepness") * 100) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
 				HgLog.Info("TrainRoute: pathfinding consider slope");
 				cost.slope = 400;
 			}
 		}
 		
-		cost.coast = 0;
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
-			cost.tunnel_per_tile = 20;
-			cost.max_tunnel_length = cost.max_bridge_length;
-		} else {
-			cost.tunnel_per_tile = 50;
-			cost.max_tunnel_length = 6;
+		if(HogeAI.Get().IsRich()) {
+			cost.max_tunnel_length = platformLength == null ? 14 : max( 7, platformLength * 2 );
 		}
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 2000000 && !HogeAI.Get().IsAvoidRemovingWater()) {
+		if(HogeAI.GetUsableMoney() > HogeAI.GetInflatedMoney(2000000) && !HogeAI.Get().IsAvoidRemovingWater()) {
 			_can_build_water = true;
-			_cost_water = 20;
+			_cost_water = 100;
 		}
 	}
 	
@@ -127,9 +131,9 @@ class RailPathFinder
 	
 	function FindPath(limitCount,eventPoller,limitDay=null) {
 		if(limitDay != null) {
-			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay);
+			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay+" distance:"+distance);
 		} else {
-			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount);
+			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount+" distance:"+distance);
 			limitCount *= 3;
 		}
 		local counter = 0;
@@ -137,6 +141,7 @@ class RailPathFinder
 		local startDate = AIDate.GetCurrentDate();
 		local endDate = limitDay != null ? startDate + limitDay : null;
 		local totalInterval = 0;
+		PerformanceCounter.Clear();
 		while (path == false && ((endDate!=null && AIDate.GetCurrentDate() < endDate + totalInterval) || (endDate==null && counter < limitCount))) {
 			path = _FindPath(50);
 			counter++;
@@ -149,10 +154,12 @@ class RailPathFinder
 			}
 			totalInterval += AIDate.GetCurrentDate() - intervalStartDate;
 		}
+		PerformanceCounter.Print();
+		
 		if(path == false) { // 継続中
 			path = _pathfinder._open.Peek();
 		} else if(path != null) {
-			HgLog.Info("TrainRoute: Path found. (count:" + counter + " date:"+ (AIDate.GetCurrentDate() - startDate - totalInterval) +")");
+			HgLog.Info("TrainRoute: Path found. (count:" + counter + " date:"+ (AIDate.GetCurrentDate() - startDate - totalInterval) +") distance:"+distance);
 			isFoundPath = true;
 		} else {
 			HgLog.Info("TrainRoute: FindPath failed");
@@ -202,7 +209,7 @@ class RailPathFinder
 	 * @see AyStar::InitializePath()
 	 */
 	function InitializePath(sources, goals, ignored_tiles = [], reversePath = null) {
-		InitializeParameters();
+		InitializeParameters(reversePath != null);
 		if(sources[0].len() == 3) {
 			_InitializePath2(sources, goals, ignored_tiles, reversePath);
 			return;
@@ -211,11 +218,11 @@ class RailPathFinder
 		local nsources = [];
 
 		foreach (node in sources) {
-			local path = this._pathfinder.Path(null, node[1], 0xFF, this._Cost, this);
-			path = this._pathfinder.Path(path, node[0], 0xFF, this._Cost, this);
+			local path = this._pathfinder.Path(null, node[1], 0xFF, null, this._Cost, this);
+			path = this._pathfinder.Path(path, node[0], 0xFF, null, this._Cost, this);
 			nsources.push(path);
 		}
-		this._goals = goals;
+		_InitializeGoals(goals);
 		SetReversePath(reversePath);
 		this._pathfinder.InitializePath(nsources, goals, ignored_tiles);
 	}
@@ -225,15 +232,22 @@ class RailPathFinder
 		local nsources = [];
 
 		foreach (node in sources) {
-			local path = this._pathfinder.Path(null, node[2], 0xFF, this._Cost, this);
-			path = this._pathfinder.Path(path, node[1], 0xFF, this._Cost, this);
-			path = this._pathfinder.Path(path, node[0], 0xFF, this._Cost, this);
+			local path = this._pathfinder.Path(null, node[2], 0xFF, null, this._Cost, this);
+			path = this._pathfinder.Path(path, node[1], 0xFF, null, this._Cost, this);
+			path = this._pathfinder.Path(path, node[0], 0xFF, null, this._Cost, this);
 			nsources.push(path);
 		}
-		this._goals = goals;
+		_InitializeGoals(goals);
 		SetReversePath(reversePath);
 		this._pathfinder.InitializePath(nsources, goals, ignored_tiles);
 		useInitializePath2 = true;
+	}
+	
+	function _InitializeGoals(goals) {
+		this._goals = goals;
+		foreach(nodes in goals) {
+			this._goalsMap[nodes[0]] <- nodes[1];
+		}
 	}
 	
 	function SetReversePath(reversePath) {
@@ -255,7 +269,7 @@ class RailPathFinder
 			_reverseNears.rawset(tile,0)
 			path = path.GetParent();
 		}
-		for(local i=1; i<10; i++) {
+		for(local i=1; i<20; i++) {
 			local next = {}
 			foreach(tile,level in nears) {
 				foreach(d in HgTile.DIR4Index) {
@@ -332,16 +346,23 @@ class RailPathFinder.Cost
 	}
 };
 
-function RailPathFinder::_FindPath(iterations)
-{
+function RailPathFinder::_FindPath(iterations) {
+	local c = PerformanceCounter.Start("FindPath");
+	local result = __FindPath(iterations);
+	c.Stop();
+	
+	return result;
+}
+
+
+function RailPathFinder::__FindPath(iterations) {
 	local test_mode = AITestMode();
 	local ret = this._pathfinder.FindPath(iterations);
 	this._running = (ret == false) ? true : false;
 	if (!this._running && ret != null) {
-		foreach (goal in this._goals) {
-			if (goal[0] == ret.GetTile()) {
-				return this._pathfinder.Path(ret, goal[1], 0, this._Cost, this);
-			}
+		local goal2 = this._GetGoal2(ret.GetTile());
+		if(goal2 != null) {
+			return this._pathfinder.Path(ret, goal2, 0, null, this._Cost, this);
 		}
 	}
 	return ret;
@@ -374,47 +395,63 @@ function RailPathFinder::_nonzero(a, b)
 }
 
 function RailPathFinder::_IsStraight(p1,p2,p3) {
-	return _GetDirectionIndex(p1,p2) == _GetDirectionIndex(p2,p3);
+	return RailPathFinder._GetDirectionIndex(p1,p2) == RailPathFinder._GetDirectionIndex(p2,p3);
 }
 
 function RailPathFinder::_GetDirectionIndex(p1,p2) {
 	return (p2 - p1) / AIMap.DistanceManhattan(p1,p2);
 }
 
-function RailPathFinder::_Cost(self, path, new_tile, new_direction)
+function RailPathFinder::_Cost(self, path, new_tile, new_direction, mode) {
+	local counter = PerformanceCounter.Start("Cost");
+	local result = RailPathFinder.__Cost(self, path, new_tile, mode, new_direction);
+	counter.Stop();
+	return result;
+}
+
+function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
+	
 
 	local prev_tile = path.GetTile();
 	local par = path.GetParent();
+	local parpar = par != null ? par.GetParent() : null;
 
 	/* If the two tiles are more then 1 tile apart, the pathfinder wants a bridge or tunnel
 	 *  to be build. It isn't an existing bridge / tunnel, as that case is already handled. */
 	 
 	local cost = 0;
-	if(self._cost_tight_turn > 0 && par != null && par.GetParent() != null && par.GetParent().GetParent() != null) {
-		if(self._IsStraight(par.GetTile(), par.GetParent().GetTile(), par.GetParent().GetParent().GetTile())
+	if(self._cost_tight_turn > 0 && par != null && parpar != null && parpar.GetParent() != null) {
+		if(self._IsStraight(par.GetTile(), parpar.GetTile(), parpar.GetParent().GetTile())
 				&& self._IsStraight(par.GetTile(), prev_tile, new_tile)
-				&& self._GetDirectionIndex(par.GetTile(), par.GetParent().GetTile()) != self._GetDirectionIndex(prev_tile, par.GetTile())) {
+				&& self._GetDirectionIndex(par.GetTile(), parpar.GetTile()) != self._GetDirectionIndex(prev_tile, par.GetTile())) {
 			cost += self._cost_tight_turn;
 		}
 	}
 
 	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_ROAD)) cost += self._cost_level_crossing;
 
-		
+	local diagonal = false;
 	local distance = AIMap.DistanceManhattan(new_tile, prev_tile);
 	if (distance > 1) {
 		/* Check if we should build a bridge or a tunnel. */
 
 		local prevTunnelOrBridge = false;
-		if(par != null && par.GetParent() != null && AIMap.DistanceManhattan(par.GetTile(), par.GetParent().GetTile())>1) {
+		if(par != null && parpar != null && AIMap.DistanceManhattan(par.GetTile(), parpar.GetTile())>1) {
 			prevTunnelOrBridge = true;
 		}
-		cost += distance * (self._cost_tile + self._cost_bridge_per_tile) + self._cost_tile;
-		if(prevTunnelOrBridge || distance!=3) {
-			cost += distance * self._cost_bridge_per_tile_ex;
+		if(mode != null && mode instanceof RailPathFinder.Underground) {
+			cost += distance * (self._cost_tile + self._cost_tunnel_per_tile);
+			if(prevTunnelOrBridge || distance > self._bottom_ex_tunnel_length) {
+				cost += (distance - self._bottom_ex_tunnel_length) * self._cost_tunnel_per_tile_ex;
+			}
+		} else {
+			cost += distance * (self._cost_tile + self._cost_bridge_per_tile);
+			if(prevTunnelOrBridge || distance >= 6) {
+				cost += (distance-5) * self._cost_bridge_per_tile_ex;
+			}
 		}
 		if(self._reverseNears != null) {
 			local d = (prev_tile - new_tile)/ distance;
@@ -429,6 +466,7 @@ function RailPathFinder::_Cost(self, path, new_tile, new_direction)
 	} else {
 		cost += self._cost_tile;
 		if (par != null && AIMap.DistanceManhattan(par.GetTile(), prev_tile) == 1 && par.GetTile() - prev_tile != prev_tile - new_tile) {
+			diagonal = true;
 			if(AITile.IsSeaTile(new_tile)) {
 				cost = self._cost_diagonal_sea;
 			} else {
@@ -436,9 +474,9 @@ function RailPathFinder::_Cost(self, path, new_tile, new_direction)
 			}
 		}
 		
-		if (par != null && par.GetParent() != null &&
-				AIMap.DistanceManhattan(new_tile, par.GetParent().GetTile()) == 3 &&
-				par.GetParent().GetTile() - par.GetTile() != prev_tile - new_tile) {
+		if (par != null && parpar != null &&
+				AIMap.DistanceManhattan(new_tile, parpar.GetTile()) == 3 &&
+				parpar.GetTile() - par.GetTile() != prev_tile - new_tile) {
 			cost += self._cost_turn;
 		}
 
@@ -458,28 +496,47 @@ function RailPathFinder::_Cost(self, path, new_tile, new_direction)
 			}
 		}
 	}
-	/*
+	
 	if(self._reverseNears != null) {
 		if(self._reverseNears.rawin(new_tile)) {
 			local level = self._reverseNears[new_tile];
-			cost += self._cost_guide * level;
-		} else {
-			cost += self._cost_guide * 10;
+			if(level == 1) {
+				cost -= 50;
+			} else if(diagonal && level == 0) {
+				local tracks = AIRail.GetRailTracks(new_tile);
+				if(tracks != AIRail.RAILTRACK_NE_SW && tracks != AIRail.RAILTRACK_NW_SE) {
+					cost -= 50;
+				} else {
+					cost += 100;
+				}
+			}
 		}
-	}*/
+	} else {
+		local prevDir = (prev_tile - new_tile) / distance;
+		local dx = prevDir % AIMap.GetMapSizeX();
+		local dy = prevDir / AIMap.GetMapSizeX();
+		local revDir = dy - dx * AIMap.GetMapSizeX();
+		if(!HogeAI.IsBuildable(prev_tile + revDir) || !HogeAI.IsBuildable(new_tile + revDir)) {
+			cost += 300;
+		}
+		
+	}
 
 	return path.GetCost() + cost;
 }
 
-function RailPathFinder::_Estimate(self, cur_tile, cur_direction, goal_tiles)
-{
+function RailPathFinder::_Estimate(self, cur_tile, cur_direction, goals) {
+	local counter = PerformanceCounter.Start("Estimate");
+
 	local min_cost = self._max_cost;
 	/* As estimate we multiply the lowest possible cost for a single tile with
 	 *  with the minimum number of tiles we need to traverse. */
-	foreach (tile in goal_tiles) {
-		local dx = abs(AIMap.GetTileX(cur_tile) - AIMap.GetTileX(tile[0]));
-		local dy = abs(AIMap.GetTileY(cur_tile) - AIMap.GetTileY(tile[0]));
-		min_cost = min(min_cost, min(dx, dy) * self._cost_diagonal_tile * 2 + (max(dx, dy) - min(dx, dy)) * self._cost_tile);
+	foreach (goal in goals) {
+		local dx = abs(AIMap.GetTileX(cur_tile) - AIMap.GetTileX(goal[0]));
+		local dy = abs(AIMap.GetTileY(cur_tile) - AIMap.GetTileY(goal[0]));
+		local goalCost = goal.len() >= 3 ? goal[2] : 0;
+		
+		min_cost = min(min_cost, min(dx, dy) * self._cost_diagonal_tile * 2 + (max(dx, dy) - min(dx, dy)) * self._cost_tile + goalCost);
 	}
 	
 	local guide = 0;
@@ -490,7 +547,9 @@ function RailPathFinder::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 		} else {
 			guide = self._cost_guide * 10;
 		}
-	}	
+	}
+	
+	counter.Stop();
 	
 	return min_cost * self._estimate_rate + guide;
 }
@@ -514,7 +573,7 @@ function RailPathFinder::_CanChangeBridge(path, cur_node) {
 				|| _IsSlopedRail(n_node - direction, n_node, n_node + direction) 
 				|| AITile.IsStationTile(n_node)
 				|| _IsUnderBridge(n_node)  
-				|| IsOnPath(p,n_node)
+				//|| p.Contains(n_node) これのせいでナナメに横切れない
 				|| _GetGoal2(n_node) != null
 				|| _IsGoal2(n_node)) {
 			return false;
@@ -527,8 +586,8 @@ function RailPathFinder::_CanChangeBridge(path, cur_node) {
 
 function RailPathFinder::_IsUnderBridge(node) {
 	local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
-	local c_node = node;
 	foreach(offset in offsets) {
+		local c_node = node;
 		for(local i=0; i<10; i++) {
 			if(AIBridge.IsBridgeTile(c_node)) {
 				local end = AIBridge.GetOtherBridgeEnd(c_node);
@@ -544,21 +603,32 @@ function RailPathFinder::_IsUnderBridge(node) {
 	return false;
 }
 
-function RailPathFinder::IsOnPath(path,node) {
-	while(path != null) {
-		if(path.GetTile()==node) {
-			return true;
+function RailPathFinder::_IsCollideTunnel(start, end, level) {
+	local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
+	local dir = abs(start - end) / AIMap.DistanceManhattan(start, end);
+	for(local node = min(start,end) + dir; node < max(start,end); node += dir) {
+		foreach(offset in offsets) {
+			if(offset == dir) {
+				continue;
+			}
+			local c_node = node;
+			for(local i=0; i<13; i++) {
+				if(AITunnel.IsTunnelTile(c_node) && AITile.GetMaxHeight(c_node) == level) {
+					local end = AITunnel.GetOtherTunnelEnd(c_node);
+					if(end < node && node < c_node) {
+						return true;
+					}
+				}
+				c_node += offset;
+			}
 		}
-		path = path.GetParent();
 	}
 	return false;
 }
 
 function RailPathFinder::_GetGoal2(node) {
-	foreach (goal in this._goals) {
-		if (goal[0] == node) {
-			return goal[1];
-		}
+	if(_goalsMap.rawin(node)) {
+		return _goalsMap[node];
 	}
 	return null;
 }
@@ -573,6 +643,10 @@ function RailPathFinder::_IsGoal2(node) {
 }
 
 function RailPathFinder::_IsInclude90DegreeTrack(target, parTile, curTile) {
+	if(AIBridge.IsBridgeTile(target) || AITunnel.IsTunnelTile(target)) {
+		HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" false (tunnel or bridge)");
+		return false;
+	}
 	foreach(neighbor in HgTile.GetConnectionTiles(target, AIRail.GetRailTracks (target))) {
 		if(neighbor == curTile) {
 			continue;
@@ -601,14 +675,26 @@ function RailPathFinder::_PermitedDiagonalOffset(track) {
 }
 
 
-function RailPathFinder::_Neighbours(self, path, cur_node)
-{
+function RailPathFinder::_Neighbours(self, path, cur_node) {
+	local counter = PerformanceCounter.Start("Neighbours");
+	local result = RailPathFinder.__Neighbours(self, path, cur_node);
+	counter.Stop();
+	
+	return result;
+}
+
+
+// cur_node == path.GetTile()である。別に渡す意味あるの？
+function RailPathFinder::__Neighbours(self, path, cur_node) {
+
+
 	/* self._max_cost is the maximum path cost, if we go over it, the path isn't valid. */
 	if (path.GetCost() >= self._max_cost) return [];
 	
 	local tiles = [];
 	local offsets = HgTile.DIR4Index;
 	local par = path.GetParent();
+	local par_tile = par!=null ? par.GetTile() : null;
 	local underBridge = false;
 	local goal2 = self._GetGoal2(cur_node);
 	if(par != null) {
@@ -619,7 +705,7 @@ function RailPathFinder::_Neighbours(self, path, cur_node)
 	
 	
 	if (AITile.HasTransportType(cur_node, AITile.TRANSPORT_RAIL)) {
-		if(goal2 != null || par==null || par.GetParent()==null || (self.useInitializePath2 && par.GetParent().GetParent() == null)) { // start or goal tile
+		if(goal2 != null || par==null || par.GetParent()==null/* || (self.useInitializePath2 && par.GetParent().GetParent() == null) これのせいでナナメに横切れない*/) { // start or goal tile
 		} else if(BuildedPath.Contains(cur_node)) {
 			if(!HgTile.IsDiagonalTrack(AIRail.GetRailTracks(cur_node))) {
 				if(!self._CanChangeBridge(path, cur_node)) {
@@ -643,35 +729,32 @@ function RailPathFinder::_Neighbours(self, path, cur_node)
 	/* Check if the current tile is part of a bridge or tunnel. */
 	if (AIBridge.IsBridgeTile(cur_node) || AITunnel.IsTunnelTile(cur_node)) {
 		/* We don't use existing rails, so neither existing bridges / tunnels. */
-	} else if (par != null && AIMap.DistanceManhattan(cur_node, par.GetTile()) > 1) {
-		local other_end = par.GetTile();
-		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
+	} else if (par != null && AIMap.DistanceManhattan(cur_node, par_tile) > 1) {
+		local other_end = par_tile;
+		local dir = (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
+		local next_tile = cur_node + dir;
 //		tiles.push([next_tile, 1]);
-		local isBuildableSea =  self._can_build_water && self._IsBuildableSea(cur_node, next_tile);
 		//HgLog.Info("DistanceManhattan > 1 isBuildableSea:" + isBuildableSea + " "+ HgTile(cur_node) + " next_tile:"+HgTile(next_tile));
-		foreach (offset in offsets) {
-			if (self._BuildRail(cur_node, next_tile, next_tile + offset) || (isBuildableSea && cur_node != next_tile + offset)) {
-				tiles.push([next_tile, self._GetDirection(other_end, cur_node, next_tile, true)]);
-			}
-		}
-	} else {
-		local par_tile = par!=null ? par.GetTile() : null;
-		local parpar = par!=null ? par.GetParent() : null;
-		local parpar_tile = parpar!=null ? parpar.GetTile() : null;
-		if(parpar_tile != null) {
-			local distance = AIMap.DistanceManhattan(par_tile, parpar_tile);
-			if( distance > 1) {
-				local next_tile = cur_node + (cur_node - par_tile);
-				local bridge_list = AIBridgeList_Length(distance + 1);
-				if (!(!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), par_tile, parpar_tile)) 
-						&& AITunnel.GetOtherTunnelEnd(parpar_tile) != par_tile && !(AITile.IsSeaTile(par_tile) || AITile.IsSeaTile(parpar_tile))) {
-					//HgLog.Info("cur_node:"+HgTile(cur_node)+" par_tile:"+HgTile(par_tile)+" parpar_tile:"+HgTile(parpar_tile));
-					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
-					return tiles;
+		if(path.mode != null && path.mode instanceof RailPathFinder.Underground) {
+			tiles.push([next_tile, self._GetDirection(other_end, cur_node, next_tile, true)]);
+		} else {
+			foreach (offset in offsets) {
+				if (self._BuildRail(cur_node, next_tile, next_tile + offset)) {
+					tiles.push([next_tile, self._GetDirection(other_end, cur_node, next_tile, true)]);
 				}
 			}
 		}
-		
+	} else {
+		// [parpar]-<tunnel>-[par(PM_UNDERGROUND)][cur(slope)][next]
+		if(par != null && par.mode != null && par.mode instanceof RailPathFinder.Underground) {
+			local next_tile = cur_node + (cur_node - par_tile);
+			foreach (offset in offsets) {
+				if (self._BuildRail(cur_node, next_tile, next_tile + offset)) {
+					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, true)]);
+				}
+			}
+			return tiles;
+		}
 		
 		/* Check all tiles adjacent to the current tile. */
 		foreach (offset in offsets) {
@@ -685,10 +768,10 @@ function RailPathFinder::_Neighbours(self, path, cur_node)
 			 *  them and no rail exists there. */
 			if (par == null 
 					|| (goal2 == null && self._BuildRail(par_tile, cur_node, next_tile))
+					|| (underBridge && self._IsSlopedRail(par_tile, cur_node, next_tile)) // 橋の下の垂直方向スロープは成功
 					|| (goal2 == next_tile 
-						&& (AIRail.AreTilesConnected(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile))
-						&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node))
-					|| (self._can_build_water && self._IsBuildableSea(cur_node, next_tile))) {
+						&& (AIRail.AreTilesConnected(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile)
+						&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node)))) {
 				if (par != null) {
 					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
 				} else {
@@ -719,6 +802,9 @@ function RailPathFinder::_IsBuildableSea(tile, next_tile) {
 
 function RailPathFinder::_BuildRail(p1,p2,p3) {
 	if(AIRail.BuildRail(p1,p2,p3)) {
+		return true;
+	}
+	if(_can_build_water && _IsBuildableSea(p2, p3) && p1 != p3) {
 		return true;
 	}
 	if(AIError.GetLastError() != AIError.ERR_AREA_NOT_CLEAR) {
@@ -786,6 +872,86 @@ function RailPathFinder::_GetDirection(pre_from, from, to, is_bridge)
 	4 * this._dir(pre_from, from)) + this._dir(from, to));
 }
 
+function RailPathFinder::_BuildTunnelEntrance( A0, A1, A2, L, testMode = true ) {
+	if(!testMode || (AITile.IsBuildable(A0) && AITile.IsBuildable(A1) && AITile.IsBuildable(A2))) {
+		local boundHeights = HgTile.GetBoundHeights(A0, A1);
+		local maxa1a2 = max(boundHeights[0],boundHeights[1]);
+		local m = AITile.GetMinHeight(A2);
+		if(!(maxa1a2 - 1 <= m)) {
+			return false;
+		}
+		if(L < maxa1a2) {
+			return false;
+		}
+		local l = AITile.GetMaxHeight(A2);
+		if(l==m) {
+			if(!(L-1 == l || L == l)) {
+				return false;
+			}
+		} else {
+			if(!(L==l && L-1==m)) {
+				return false;
+			}
+		}
+		local A3 = A2 + (A2 - A1);
+		if(!(AITile.GetMaxHeight(A3) <= L+1)) {
+			return false;
+		}
+		if(!HgTile.LevelBound(A2,A3,L) || !HgTile.LevelBound(A1,A2,L-1)) {
+			return false;
+		}
+		return true;
+	}
+	return false;
+
+}
+
+function RailPathFinder::_GetUndergroundTunnel(A0, A1, A2, L=null) {
+	// [last_node(slope)] [cur_node(tunnel_start)] [next]
+	if(L == null) {
+		local m = AITile.GetMinHeight(A2);
+		local l = AITile.GetMaxHeight(A2);
+		if(l==m) {
+			local result = _GetUndergroundTunnel(A0, A1, A2, l);
+			if(result != null) {
+				return result;
+			}
+			return _GetUndergroundTunnel(A0, A1, A2, l+1);
+		} else if(l+2 == m) { // tight slope
+			L = l+1;
+		} else {
+			L = l;
+		}
+	}
+	if(!_BuildTunnelEntrance(A0, A1, A2, L)) {
+		return null;
+	}
+	local significant = false;
+	local dir = A2 - A1;
+	for (local i = 2; i <= this._max_tunnel_length; i++) {
+		local C = A2 + (i-1) * dir;
+		if(AITile.IsSeaTile(C) || AITile.IsCoastTile(C)) {
+			return null;
+		}
+		if(!AITile.IsBuildable(C) || AITile.GetMaxHeight(C) >= L + 1) {
+			significant = true;
+		}
+		local B2 = A2 + i * dir;
+		local B1 = B2 + dir;
+		local B0 = B1 + dir;
+		if(significant && _BuildTunnelEntrance(B0, B1, B2, L)) {
+			if(_IsCollideTunnel(A2 ,B2, L)) {
+				return null;
+			}
+			return [B2, _GetDirection(A0, A1, A2, true), RailPathFinder.Underground(L)];
+		}
+		if(AITile.GetMinHeight(B2) < L) {
+			return null;
+		}
+	}
+	return null;
+}
+
 /**
  * Get a list of all bridges and tunnels that can be build from the
  *  current tile. Bridges will only be build starting on non-flat tiles
@@ -798,7 +964,6 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 	
 	local dir = cur_node - last_node;
 	local next = cur_node + dir;
-	local bridge_dir = _GetDirection(par.GetTile(), cur_node, next, true);
 	
 	if(par.GetParent()!=null) {
 		local last_node2 = par.GetParent().GetTile();
@@ -806,58 +971,40 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 		if(!AITile.IsBuildable(cur_node)) {
 			return [];
 		}
-
-		if(dir == last_node - last_node2 && !AITile.IsBuildable(next)) {
-			for (local i = 0; i < this._max_tunnel_length; i++) {
-				local target = last_node + i * dir;
-				if (AITile.GetSlope(target))
-					break;
-				if (i > 2 && AITile.IsBuildable(target)) {
-					local targetnext = target + dir;
-					if (AITile.GetSlope(targetnext)){
-						break;
-					}
-					if (AITile.IsBuildable(targetnext)) {
-						local from = last_node;
-						local to = targetnext;
-						local dir = HgTile(from).GetDirection(HgTile(to));
-						local success = true;
-						foreach(corner in HgTile.GetCorners(dir)) {
-							if(!AITile.LowerTile(from, HgTile.GetSlopeFromCorner(corner))) {
-								success = false;
-								break;
-							}
-						}
-						if(success) {
-							foreach(corner in HgTile.GetCorners(HgTile.GetOtherSideDir(dir))) {
-								if(!AITile.LowerTile(to, HgTile.GetSlopeFromCorner(corner))) {
-									success = false;
-									break;
-								}
-							}
-						}
-						if(success) {
-							tiles.push([target, bridge_dir]);
-						}
-					}
-				}
+		
+		if(dir == last_node - last_node2 && (!AITile.IsBuildable(next) || AITile.GetMaxHeight(cur_node) < AITile.GetMaxHeight(next)) && !AITile.IsSeaTile(next)) {
+			// [last_node(slope)] [cur_node(tunnel_start)] [next]
+			local tunnelEnd = _GetUndergroundTunnel(last_node2, last_node, cur_node);
+			if(tunnelEnd != null) {
+				//HgLog.Info("_GetUndergroundTunnel cur_node:" + HgTile(cur_node) + " target:"+HgTile(tunnelEnd[0]));
+				tiles.push(tunnelEnd);
 			}
 		}
 	}
+	local bridge_dir = _GetDirection(par.GetTile(), cur_node, next, true);
 	
-	if(!AITile.IsBuildable(next)) {
+	local significant = false;
+	local level = AITile.GetMaxHeight(cur_node);
+	if(!AITile.IsBuildable(next) || level > AITile.GetMaxHeight(next)) {
 		for (local i = 2; i < this._max_bridge_length; i++) {
 			local bridge_list = AIBridgeList_Length(i + 1);
+			local checkTile = cur_node + (i-1) * dir;
+			if(!significant && (!AITile.IsBuildable(checkTile) || AITile.GetMaxHeight(checkTile) <= level - 2 || AITile.GetMaxHeight(checkTile) == level)) {
+				significant = true;
+			}
 			local target = cur_node + i * dir;
-			if (!bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), cur_node, target)) {
+			if (significant && !bridge_list.IsEmpty() && AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), cur_node, target)) {
 				tiles.push([target, bridge_dir]);
 			}
 		}
-		if(_can_build_water && _IsBuildableSea(cur_node, cur_node + dir)) {
+		if(_can_build_water && _IsBuildableSea(cur_node, next)) {
 			for (local i = 2; i < this._max_bridge_length; i++) {
 				local checkTile = cur_node + (i-1) * dir;
 				if(!((AITile.HasTransportType(checkTile, AITile.TRANSPORT_RAIL) || AITile.HasTransportType(checkTile, AITile.TRANSPORT_ROAD))
 						&& AITile.GetMaxHeight(checkTile) == 1 && !_IsUnderBridge(checkTile))) {
+					break;
+				}
+				if(AITile.IsStationTile(checkTile)) {
 					break;
 				}
 				local target = cur_node + i * dir;
@@ -865,14 +1012,19 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 					local bridge_list = AIBridgeList_Length(i + 1);
 					if (!bridge_list.IsEmpty()) {
 						tiles.push([target, bridge_dir]);
-						//HgLog.Info("bridge.push cur_node:" + HgTile(cur_node) + " target:"+HgTile(target));
 					}
 				}
 			}
 		}
 	}
 	local slope = AITile.GetSlope(cur_node);
-	if (slope != AITile.SLOPE_SW && slope != AITile.SLOPE_NW && slope != AITile.SLOPE_SE && slope != AITile.SLOPE_NE) return tiles;
+	if (slope != AITile.SLOPE_SW && slope != AITile.SLOPE_NW && slope != AITile.SLOPE_SE && slope != AITile.SLOPE_NE) {
+		return tiles;
+	}
+	if(AITile.IsCoastTile(cur_node)) { //埋め立てられてトンネル作成に失敗するのを回避する
+		return tiles;
+	}
+	
 	local other_tunnel_end = AITunnel.GetOtherTunnelEnd(cur_node);
 	if (!AIMap.IsValidTile(other_tunnel_end)) return tiles;
 
@@ -880,6 +1032,7 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 	local prev_tile = cur_node + (cur_node - other_tunnel_end) / tunnel_length;
 	if (AITunnel.GetOtherTunnelEnd(other_tunnel_end) == cur_node && tunnel_length >= 2 &&
 			prev_tile == last_node && tunnel_length < _max_tunnel_length && AITunnel.BuildTunnel(AIVehicle.VT_RAIL, cur_node)) {
+		//HgLog.Info("GetOtherTunnelEnd cur_node:" + HgTile(cur_node) + " target:"+HgTile(other_tunnel_end));
 		tiles.push([other_tunnel_end, bridge_dir]);
 	}
 	return tiles;
@@ -912,4 +1065,12 @@ function RailPathFinder::_IsSlopedRail(start, middle, end)
 	if (NE && (slope == AITile.SLOPE_NE || slope == AITile.SLOPE_SW)) return true;
 
 	return false;
+}
+
+class RailPathFinder.Underground {
+	level = null;
+
+	constructor(level) {
+		this.level = level;
+	}
 }

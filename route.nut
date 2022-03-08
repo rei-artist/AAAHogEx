@@ -54,7 +54,7 @@ class Route {
 				if(estimate == null) {
 					estimate = 0;
 				} else {
-					estimate.value <- HogeAI.Get().roiBase ? estimate.roi : estimate.routeIncome;
+					//estimate.value <- HogeAI.Get().roiBase ? estimate.roi : estimate.routeIncome * 100 / routeClass.GetBuildingTime(distance);
 				}
 			}
 			estimateTable[cargo][vehicleType][productionIndex][distanceIndex][isBidirectional?1:0] = estimate;
@@ -219,7 +219,12 @@ class Route {
 	
 	
 	function GetProduction() {
-		local planned = AIStation.GetCargoPlanned(srcHgStation.GetAIStation(), cargo);
+		local planned = AIStation.GetCargoWaiting(srcHgStation.GetAIStation(), cargo);
+		
+		//GetCargoPlanned (srcHgStation.GetAIStation(), cargo)// 0しか返らない
+		
+		
+ 		//HgLog.Info("GetCargoPlanned:"+planned+" "+this);
 		local lastMonth = srcHgStation.place != null ? srcHgStation.place.GetLastMonthProduction(cargo) : 0;
 		return max(planned, lastMonth);
 	}
@@ -229,7 +234,6 @@ class Route {
 		if(srcPlace != null && srcPlace instanceof HgIndustry && srcPlace.industry == industry) {
 			if(GetVehicleType() == AIVehicle.VT_RAIL) {
 				HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. Search transfer." + this);
-				HogeAI.Get().SearchAndBuildToMeetSrcDemandUsingRailTransfer(this, true);
 				HogeAI.Get().SearchAndBuildToMeetSrcDemandTransfer(this);
 			}
 			local saved = false;
@@ -264,6 +268,123 @@ class Route {
 	
 	function GetDistance() {
 		return AIMap.DistanceManhattan(srcHgStation.platformTile, destHgStation.platformTile);
+	}
+	
+	
+	function IsValidDestStationCargo() {
+		foreach(hgStation in destHgStation.stationGroup.hgStations) {
+			if(hgStation.IsAcceptingCargo(cargo)) {
+				return true;
+			}
+		}
+		if(IsBiDirectional()) {
+			foreach(hgStation in srcHgStation.stationGroup.hgStations) {
+				if(hgStation.IsAcceptingCargo(cargo)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+	
+	function GetFinalDestPlace() {
+		if(isTransfer) {
+			return GetDestRoute().GetFinalDestPlace();
+		} else {
+			return destHgStation.place;
+		}
+	}
+	
+	
+	function GetDestRoutes() {
+		local destRoutes = [];
+		if(isTransfer) {
+			if(destHgStation.stationGroup == null) {
+				HgLog.Warning("destHgStation.stationGroup == null "+this);
+				return [];
+			}
+			foreach(route in destHgStation.stationGroup.GetUsingRoutes()) {
+				if(route == this) {
+					continue;
+				}
+				if(route.srcHgStation.stationGroup == destHgStation.stationGroup) {
+					destRoutes.push(route);
+				}
+				if(route.IsBiDirectional() && route.destHgStation.stationGroup == destHgStation.stationGroup) {
+					destRoutes.push(route);
+				}
+			}
+		} else {
+			local destPlace = destHgStation.place;
+			if(destPlace == null || !destPlace.IsIncreasable()) {
+				return [];
+			}
+			destRoutes.extend( PlaceDictionary.Get().GetRoutesBySource( destPlace.GetProducing() ) );
+			if(HogeAI.Get().stockpiled) {
+				foreach(route in PlaceDictionary.Get().GetRoutesByDest( destPlace.GetAccepting() )) {
+					if(route.cargo != cargo) {
+						destRoutes.push(route);
+					}
+				}
+			}
+		}
+		return destRoutes;
+	}
+	
+	function HasRailDest(callRoutes = null) {
+		if(hasRailDest != null) {
+			return hasRailDest;
+		}
+	
+		if(callRoutes == null) {
+			callRoutes = [];
+		} else {
+			foreach(called in callRoutes) {
+				if(called == this) {
+					hasRailDest = false;
+					return hasRailDest;
+				}
+			}
+		}
+		callRoutes.push(this);
+		foreach(route in GetDestRoutes()) {
+			if(!route.IsClosed() && (route.GetVehicleType() == AIVehicle.VT_RAIL || route.HasRailDest(callRoutes))) {
+				hasRailDest = true;
+				return hasRailDest;
+			}
+		}
+		hasRailDest = false;
+		return hasRailDest;
+	}
+
+	// return: false or route instance
+	function GetDestRoute() { 
+		if(destRoute == null) {
+			local destRoutes = GetDestRoutes();
+			if(destRoutes.len() == 0) {
+				destRoute = false;
+			} else {
+				local self = this;
+				destRoute = HgArray(destRoutes).Map(function(r):(self) {
+					local score = 0;
+					if(!r.IsClosed()) {
+						if(r.GetVehicleType() == AIVehicle.VT_RAIL) {
+							score = 4;
+						} else if(r.HasRailDest()) {
+							score = 3;
+						} else if(r.GetVehicleType() != self.GetVehicleType()) {
+							score = 2;
+						} else {
+							score = 1;
+						}
+					}
+					return {route = r, score = score};
+				}).Sort(function(a,b) {
+					return b.score - a.score;
+				}).array[0].route;
+			}
+		}
+		return destRoute;
 	}
 }
 
@@ -369,6 +490,7 @@ class CommonRoute extends Route {
 			} else {
 				days = (pathDistance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
 			}
+			days = max(days,1);
 			
 			local routeCapacity = 0;
 			switch(vehicleType) {
@@ -406,7 +528,7 @@ class CommonRoute extends Route {
 				income = income
 				routeIncome = routeIncome
 				roi = roi
-				value = HogeAI.Get().roiBase ? roi : routeIncome
+				value = HogeAI.Get().roiBase ? roi : routeIncome //  * 100/ (HogeAI.Get().IsDebug() ? 1 : self.GetBuildingTime(pathDistance)) Busばかり作る羽目になるのでカット
 				capacity = capacity
 				vehiclesPerRoute = vehiclesPerRoute
 			};
@@ -633,7 +755,7 @@ class CommonRoute extends Route {
 				HgLog.Warning("AppendOrder failed. destination: "+HgTile(srcHgStation.platformTile)+" "+AIError.GetLastErrorString()+" "+this);
 			}
 		}
-		if(useDepotOrder) {
+		if(useDepotOrder && HogeAI.Get().IsEnableVehicleBreakdowns()) {
 			AIOrder.AppendOrder(vehicle, depot, AIOrder.OF_SERVICE_IF_NEEDED );
 		}
 		
@@ -651,7 +773,7 @@ class CommonRoute extends Route {
 			AIOrder.AppendOrder(vehicle, destHgStation.platformTile,
 				nonstopIntermediate + (!AITile.IsStationTile(destHgStation.platformTile) ? 0 : (AIOrder.OF_UNLOAD | AIOrder.OF_NO_LOAD)));
 		}
-		if(destDepot != null) {
+		if(destDepot != null && HogeAI.Get().IsEnableVehicleBreakdowns()) {
 			AIOrder.AppendOrder(vehicle, destDepot, AIOrder.OF_SERVICE_IF_NEEDED ); //5 or 6
 		}
 
@@ -713,13 +835,6 @@ class CommonRoute extends Route {
 	}
 	
 	
-	function GetFinalDestPlace() {
-		if(isTransfer) {
-			return GetDestRoute().GetFinalDestPlace();
-		} else {
-			return destHgStation.place;
-		}
-	}
 	
 	function IsClosed() {
 		return isClosed;
@@ -734,95 +849,6 @@ class CommonRoute extends Route {
 	}
 	
 	
-	function GetDestRoutes() {
-		local destRoutes = [];
-		if(isTransfer) {
-			if(destHgStation.stationGroup == null) {
-				HgLog.Warning("destHgStation.stationGroup == null "+this);
-				return [];
-			}
-			foreach(route in destHgStation.stationGroup.GetUsingRoutes()) {
-				if(route == this) {
-					continue;
-				}
-				if(route.srcHgStation.stationGroup == destHgStation.stationGroup) {
-					destRoutes.push(route);
-				}
-				if(route.IsBiDirectional() && route.destHgStation.stationGroup == destHgStation.stationGroup) {
-					destRoutes.push(route);
-				}
-			}
-		} else {
-			local destPlace = destHgStation.place;
-			if(destPlace == null || !destPlace.IsIncreasable()) {
-				return [];
-			}
-			destRoutes.extend( PlaceDictionary.Get().GetRoutesBySource( destPlace.GetProducing() ) );
-			if(HogeAI.Get().stockpiled) {
-				foreach(route in PlaceDictionary.Get().GetRoutesByDest( destPlace.GetAccepting() )) {
-					if(route.cargo != cargo) {
-						destRoutes.push(route);
-					}
-				}
-			}
-		}
-		return destRoutes;
-	}
-	
-	function HasRailDest(callRoutes = null) {
-		if(hasRailDest != null) {
-			return hasRailDest;
-		}
-	
-		if(callRoutes == null) {
-			callRoutes = [];
-		} else {
-			foreach(called in callRoutes) {
-				if(called == this) {
-					hasRailDest = false;
-					return hasRailDest;
-				}
-			}
-		}
-		callRoutes.push(this);
-		foreach(route in GetDestRoutes()) {
-			if(!route.IsClosed() && (route.GetVehicleType() == AIVehicle.VT_RAIL || route.HasRailDest(callRoutes))) {
-				hasRailDest = true;
-				return hasRailDest;
-			}
-		}
-		hasRailDest = false;
-		return hasRailDest;
-	}
-
-	function GetDestRoute() { 
-		if(destRoute == null) {
-			local destRoutes = GetDestRoutes();
-			if(destRoutes.len() == 0) {
-				destRoute = false;
-			} else {
-				local self = this;
-				destRoute = HgArray(destRoutes).Map(function(r):(self) {
-					local score = 0;
-					if(!r.IsClosed()) {
-						if(r.GetVehicleType() == AIVehicle.VT_RAIL) {
-							score = 4;
-						} else if(r.HasRailDest()) {
-							score = 3;
-						} else if(r.GetVehicleType() != self.GetVehicleType()) {
-							score = 2;
-						} else {
-							score = 1;
-						}
-					}
-					return {route = r, score = score};
-				}).Sort(function(a,b) {
-					return b.score - a.score;
-				}).array[0].route;
-			}
-		}
-		return destRoute;
-	}
 	
 	function NotifyChangeDestRoute() {
 		destRoute = null;
@@ -908,7 +934,7 @@ class CommonRoute extends Route {
 				continue;
 			}
 			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) == 0) {
-				HgLog.Info("ReduceVehicle maxVehicles:"+maxVehicles+" vehicleList.Count:"+vehicleList.Count()+" "+this);
+				//HgLog.Info("ReduceVehicle maxVehicles:"+maxVehicles+" vehicleList.Count:"+vehicleList.Count()+" "+this);
 				AIVehicle.SendVehicleToDepot (vehicle);
 				reduce --;
 			}
@@ -1121,22 +1147,6 @@ class CommonRoute extends Route {
 		} else {
 			return AIStation.GetCargoWaiting (srcHgStation.GetAIStation(), cargo) > max(300, capacity * 3) || AIStation.GetCargoRating(srcHgStation.GetAIStation(), cargo) < 30;
 		}
-	}
-	
-	function IsValidDestStationCargo() {
-		foreach(hgStation in destHgStation.stationGroup.hgStations) {
-			if(hgStation.IsAcceptingCargo(cargo)) {
-				return true;
-			}
-		}
-		if(IsBiDirectional()) {
-			foreach(hgStation in srcHgStation.stationGroup.hgStations) {
-				if(hgStation.IsAcceptingCargo(cargo)) {
-					return true;
-				}
-			}
-		}
-		return false;
 	}
 	
 	function Remove() {
@@ -1362,6 +1372,10 @@ class CommonRouteBuilder extends RouteBuilder {
 			HgLog.Warning("src is ng facility."+this);
 			return null;
 		}
+		if(!PlaceDictionary.Get().CanUseAsSource(srcPlace, cargo)) {
+			HgLog.Warning("src is used."+this);
+			return null;
+		}
 
 		local testMode = AITestMode();
 		
@@ -1389,7 +1403,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			destHgStation = stationFactory.CreateBestOnStationGroup( destStationGroup, cargo, srcPlace.GetLocation() );
 		} else if(destPlace != null) {
 			isTransfer = false;
-			if(destPlace instanceof TownCargo || vehicleType == AIVehicle.VT_WATER) {
+			if((destPlace instanceof TownCargo && vehicleType == AIVehicle.VT_ROAD) || vehicleType == AIVehicle.VT_WATER) {
 				stationFactory.nearestFor = srcPlace.GetLocation();
 			}
 			destHgStation = stationFactory.CreateBest( destPlace, cargo, srcPlace.GetLocation() );
@@ -1410,7 +1424,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		}
 		local list = HgArray(destHgStation.GetTiles()).GetAIList();
 		HogeAI.notBuildableList.AddList(list);
-		if(srcPlace instanceof TownCargo || vehicleType == AIVehicle.VT_WATER) {
+		if((destPlace != null && destPlace instanceof TownCargo && vehicleType == AIVehicle.VT_ROAD) || vehicleType == AIVehicle.VT_WATER) {
 			stationFactory.nearestFor = destHgStation.platformTile;
 		}
 		local srcHgStation = stationFactory.CreateBest(srcPlace, cargo, destHgStation.platformTile);

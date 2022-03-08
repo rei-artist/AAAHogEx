@@ -430,7 +430,8 @@ class AirStation extends HgStation {
 		return true;
 	}
 	
-	function BuildStation(joinStation) {
+	function BuildStation(joinStation,isTestMode) {
+		HogeAI.WaitForMoney(AIAirport.GetPrice(airportType) + 5000);
 		return AIAirport.BuildAirport (platformTile, airportType, joinStation);
 	}
 	
@@ -454,7 +455,7 @@ class AirStation extends HgStation {
 					return false;
 				}
 			}
-			if(!Rectangle(HgTile(platformTile), HgTile(platformTile + AIMap.GetTileIndex(platformNum, platformLength))).LevelTiles(isTestMode)) {
+			if(!Rectangle(HgTile(platformTile), HgTile(platformTile + AIMap.GetTileIndex(platformNum, platformLength))).LevelTiles(AIRail.RAILTRACK_NW_SE, isTestMode)) {
 				if(!isTestMode) {
 					HgLog.Warning("LevelTiles(AirStation) failed");
 				}

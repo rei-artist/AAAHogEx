@@ -6,6 +6,7 @@ class HgArray {
 		this.array = array;
 	}
 	
+	
 	static function AIListKey(list) {
 		local a = [];
 		foreach(k,v in list) {
@@ -29,6 +30,10 @@ class HgArray {
 			array.push(e);
 		}
 		return HgArray(array);
+	}
+	
+	function GetArray() {
+		return array;
 	}
 
 	function Map(func) {
@@ -309,6 +314,14 @@ class HgTable {
 		}
 		return result;
 	}
+	
+	static function Keys(table) {
+		local result = [];
+		foreach(k,v in table) {
+			result.push(k);
+		}
+		return result;
+	}
 }
 
 
@@ -395,34 +408,47 @@ class DelayCommandExecuter {
 	}
 }
 
-class PerformanceCounter {
-	static instance = GeneratorContainer(function() {
-		return PerformanceCounter();
-	});
+class PerformanceCounter {	
+	static table = {};
 	
-	table = {};
-	startTick = 0;
-	
-	static function Start() {
-		local self = PerformanceCounter.instance.Get();
-		self.startTick = AIController.GetTick();
-	}
-	
-	static function Stop(facility) {
-		local self = PerformanceCounter.instance.Get();
-		if (!(facility in self.table)) {
-			self.table[facility] <- 0;
+	startTick = null;
+	startOps = null;
+	totalTick = null;
+	totalOps = null;
+	count = null;
+
+	static function Start(name) {
+		local counter;
+		if(!PerformanceCounter.table.rawin(name)) {
+			counter = PerformanceCounter();
+			counter.totalTick = 0;
+			counter.totalOps = 0;
+			counter.count = 0;
+			PerformanceCounter.table.rawset(name, counter);
+		} else {
+			counter = PerformanceCounter.table.rawget(name);
 		}
-		local dt = AIController.GetTick() - self.startTick;
-		self.table[facility] += dt;
+		counter.startTick = AIController.GetTick();
+		counter.startOps = AIController.GetOpsTillSuspend();
+		return counter;
+	}
+
+	function Stop() {
+		local tick = AIController.GetTick() - startTick;
+		totalTick += tick;
+		totalOps += tick * 10000 + (startOps - AIController.GetOpsTillSuspend());
+		count ++;
 	}
 	
 	static function Print() {
-		local self = PerformanceCounter.instance.Get();
-		foreach(facility, time in self.table) {
-			HgLog.Info(facility+" "+time);
+		foreach(name, counter in PerformanceCounter.table) {
+			HgLog.Info(name+" "+counter.totalTick+"[ticks] "+counter.totalOps+"[ops] "+counter.count+"[times]");
 		}
-		self.table.clear();
+		PerformanceCounter.table.clear();
+	}
+	
+	static function Clear() {
+		PerformanceCounter.table.clear();
 	}
 }
 

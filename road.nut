@@ -80,7 +80,7 @@ class RoadRoute extends CommonRoute {
 	}
 
 	function GetBuildingTime(distance) {
-		return distance + 10;
+		return distance + 100;
 	}
 	
 	
@@ -109,16 +109,20 @@ class RoadRoute extends CommonRoute {
 			path = path.GetParent();
 		}
 	}
-	
+
 	function AppendSrcToDestOrder(vehicle) {
-		foreach(depot in depots) {
-			AIOrder.AppendOrder(vehicle, depot, AIOrder.OF_NON_STOP_INTERMEDIATE );
+		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
+			foreach(depot in depots) {
+				AIOrder.AppendOrder(vehicle, depot, AIOrder.OF_NON_STOP_INTERMEDIATE );
+			}
 		}
 	}
 	
 	function AppendDestToSrcOrder(vehicle) {
-		foreach(i,depot in depots) {
-			AIOrder.AppendOrder(vehicle, depots[depots.len()-i-1], AIOrder.OF_NON_STOP_INTERMEDIATE );
+		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
+			foreach(i,depot in depots) {
+				AIOrder.AppendOrder(vehicle, depots[depots.len()-i-1], AIOrder.OF_NON_STOP_INTERMEDIATE );
+			}
 		}
 	}
 
@@ -207,7 +211,7 @@ class RoadBuilder {
 		pathfinder._cost_bridge_per_tile = 100;
 		pathfinder._cost_tunnel_per_tile = 100;
 		pathfinder._max_bridge_length = 20;
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 500000) {
+		if(!HogeAI.Get().IsRich()) {
 			pathfinder._max_tunnel_length = 6;
 		}
 		if(IsConsiderSlope()) {
@@ -295,9 +299,9 @@ class RoadBuilder {
 	
 	function RetryBuildRoad(curPath, goals) {
 		HgLog.Warning("RetryBuildRoad");
-		if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 高すぎて失敗した可能性があるため、繰り返さないようにする
+		//if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 高すぎて失敗した可能性があるため、繰り返さないようにする => 失敗したという事はPathFinderのバグの可能性あり。その場合無限ループする
 			ignoreTiles.push(curPath.GetTile());
-		}
+		//}
 		local startPath = this.path.SubPathEnd(curPath.GetTile());
 		if(startPath == null) {
 			HgLog.Warning("No start tiles("+curPath.GetTile()+")");
@@ -366,6 +370,7 @@ class TownBus {
 	}
 	
 	static function CheckTown(authorityTown, ignoreTileList=null, cargo = null) {
+		//HgLog.Info("CheckTown:"+AITown.GetName(authorityTown));
 		if(cargo == null || !AICargo.HasCargoClass(cargo, AICargo.CC_MAIL)) {
 			cargo = HogeAI.GetPassengerCargo();
 		}
@@ -658,7 +663,7 @@ class TownBus {
 		}
 		CheckTransfer();
 		
-		if(!isTransfer && AIBase.RandRange(100) < 5 && AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+		if(!isTransfer && AIBase.RandRange(100) < 5 && HogeAI.Get().IsRich()) {
 			CheckRenewal();
 		}
 	}
@@ -803,7 +808,7 @@ class TownBus {
 		
 		local toHgStation = null;
 		foreach(station in placeStation.stationGroup.hgStations) {
-			if((station instanceof PieceStation || station instanceof RoadStation) && station.cargo == cargo) {
+			if((station instanceof PieceStation || station instanceof RoadStation) && station.cargo == cargo && station != placeStation) {
 				if(AIRoad.HasRoadType(station.platformTile, GetRoadType())) {
 					toHgStation = station;
 					break;

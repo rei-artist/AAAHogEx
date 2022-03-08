@@ -181,8 +181,8 @@ class WaterStation extends HgStation {
 		return AIStation.STATION_DOCK;
 	}
 	
-	function BuildStation(joinStation) {
-		return AIMarine.BuildDock (platformTile, joinStation)
+	function BuildStation(joinStation,isTestMode) {
+		return AIMarine.BuildDock(platformTile, joinStation)
 	}
 	
 	function Build(levelTiles=false,isTestMode=true) {
@@ -323,7 +323,7 @@ class WaterPathFinder {
 			) || AIMarine.IsBuoyTile(tile);
 	}
 	
-	_aystar_class = import("graph.aystar", "", 6);
+	_aystar_class = AyStar;//import("graph.aystar", "", 6);
 	_pathfinder = null;
 	_max_cost = null;
 	_running = null;
@@ -350,7 +350,7 @@ class WaterPathFinder {
 	}
 
 
-	function _Cost(self, path, new_tile, new_direction) {
+	function _Cost(self, path, new_tile, new_direction, mode) {
 		if (path == null) return 0;
 		return path.GetCost() + 100;
 	}

@@ -12,7 +12,7 @@
  */
 class RoadPathFinder
 {
-	_aystar_class = import("graph.aystar", "", 6)
+	_aystar_class = AyStar; //import("graph.aystar", "", 6)
 	_max_cost = null;              ///< The maximum cost for a route.
 	_cost_tile = null;             ///< The cost for a single tile.
 	_cost_no_existing_road = null; ///< The cost that is added to _cost_tile if no road exists yet.
@@ -165,7 +165,7 @@ function RoadPathFinder::_GetBridgeNumSlopes(end_a, end_b)
 	return slopes;
 }
 
-function RoadPathFinder::_Cost(self, path, new_tile, new_direction)
+function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
@@ -277,9 +277,9 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile)) &&
 					AIRoad.BuildRoad(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			} else if (self._CheckTunnelBridge(cur_node, next_tile)) {
+			}/* else if (self._CheckTunnelBridge(cur_node, next_tile)) { すでに2行前のBuildRoadによってチェックさている。逆にここまで来るという事は次のタイルへ接続できない
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
-			}
+			}*/
 		}
 		if (path.GetParent() != null) {
 			local bridges = self._GetTunnelsBridges(path.GetParent().GetTile(), cur_node, self._GetDirection(path.GetParent().GetTile(), cur_node, true) << 4);

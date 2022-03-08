@@ -143,7 +143,7 @@ class PlaceDictionary {
 		}
 		local routes = GetRoutesBySource(place);
 		foreach(route in routes) {
-			if(route.cargo == cargo && (route instanceof TrainRoute) && !route.IsOverflow() && !route.IsClosed()) {
+			if(route.cargo == cargo && route.GetVehicleType() == AIVehicle.VT_RAIL && !route.IsOverflow() && !route.IsClosed()) {
 				return false;
 			}
 		}
@@ -362,7 +362,7 @@ class Place {
 			}
 		} else if(HogeAI.Get().IsAvoidSecondaryIndustryStealing()) {
 			if(facility instanceof HgIndustry && facility.IsProcessing()) {
-				if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1 && facility.GetRoutes().len() == 0) {
+				if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1 && facility.GetRoutes().len() == 0) { //TODO: これでは範囲内にある別施設用の自分のstationに反応してしまう
 					HgLog.Info("Detect SecondaryIndustryStealing:"+facility.GetName());
 					return true;
 				}
@@ -451,7 +451,7 @@ class Place {
 	}
 	
 
-	static function SearchSrcAdditionalPlaces(src, destTile, cargo, minDistance=20, maxDistance=200, minProduction=60, maxCost=100, minScore=200, vehicleType=AIVehicle.VT_RAIL) {
+	static function SearchSrcAdditionalPlaces(src, destTile, cargo, minDistance=20, maxDistance=200, minProduction=60, vehicleType=AIVehicle.VT_RAIL) {
 		local middleTile;
 		if(src instanceof HgStation && src.place != null) {
 			middleTile = src.place.GetLocation(); // srcとdestが同じになるのを防ぐため
@@ -478,11 +478,11 @@ class Place {
 			if(vehicleType == AIVehicle.VT_WATER && !t.place.IsNearWater(cargo)) {
 				t.score = -1;
 			}
-			t.production = Place.AdjustProduction(t.place, t.production);
+			//t.production = Place.AdjustProduction(t.place, t.production);
 			return t;
-		}).Filter(function(t):(maxCost, minScore) {
+		}).Filter(function(t) {
 //			HgLog.Info("place:"+t.place.GetName()+" cost:"+t.cost+" dist:"+t.distance+" score:"+t.score);
-			return t.cost <= maxCost// && minScore <= t.score 
+			return t.cost <= 300// && minScore <= t.score 
 		}).Sort(function(a,b) {
 			return b.score * b.production - a.score * a.production;
 		}).array;
@@ -569,16 +569,17 @@ class Place {
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
 			t.cost <- HgTile(lastAcceptingTile).GetPathFindCost(HgTile(t.place.GetLocation()));
+			
 			local score = 0;
 			foreach(tileScore in srcTilesScores) {
-				score += (t.place.DistanceManhattan(tileScore[0]) - tileScore[1]) * 10000 / t.cost;
+				score += (t.place.DistanceManhattan(tileScore[0]) - tileScore[1]);// * 10000 / t.cost;
 			}
 			t.score <- score;
 			return t;
 		}).Filter(function(t):(lastAcceptingTile) {
-			return 40 <= t.distance && t.cost < 200 && 10000 <= t.score && !Place.IsNgPathFindPair(t.place,lastAcceptingTile,AIVehicle.VT_RAIL) && t.place.IsAccepting();
+			return 40 <= t.distance && 50 <= t.score && t.cost < 300 && !Place.IsNgPathFindPair(t.place,lastAcceptingTile,AIVehicle.VT_RAIL) && t.place.IsAccepting();
 		}).Map(function(t) {
-			return [t.place,Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo)];
+			return [t.place,t.score/*Place.AdjustAcceptingPlaceScore(t.score,t.place,t.cargo)*/];
 		});
 		return hgArray.Sort(function(a,b) {
 				return b[1] - a[1];
@@ -662,9 +663,10 @@ class Place {
 	}
 	
 	function CanUseTransferRoute(cargo, vehicleType) {
+		/*
 		if(vehicleType == AIVehicle.VT_RAIL) { // 今のところreturn route用のみなので無条件でOK
 			return true;
-		}
+		}*/
 		foreach(route in GetRoutesUsingSource(cargo)) {
 			if(route.IsOverflowPlace(this)) {
 				continue;
@@ -1108,7 +1110,7 @@ class TownCargo extends Place {
 		if(RoadRoute.IsTooManyVehiclesForSupportRoute(RoadRoute)) {
 			return min(200, AITown.GetLastMonthProduction( town, cargo ) / 3);
 		} else {
-			return AITown.GetLastMonthProduction( town, cargo ) * 2 / 3;
+			return AITown.GetLastMonthProduction( town, cargo ) * 2 / 5;
 		}
 	}
 	
