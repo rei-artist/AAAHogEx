@@ -271,6 +271,9 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 			 * 1) There already is a connections between the current tile and the next tile.
 			 * 2) We can build a road to the next tile.
 			 * 3) The next tile is the entrance of a tunnel / bridge in the correct direction. */
+			if (AITile.HasTransportType(next_tile, AITile.TRANSPORT_RAIL) && AICompany.IsMine (AITile.GetOwner(next_tile))) {
+				continue;
+			}
 			if (AIRoad.AreRoadTilesConnected(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 			} else if (/*(AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&*/

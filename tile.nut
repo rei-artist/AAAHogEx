@@ -12,6 +12,9 @@ class HgTile {
 	static DIR4Index = [AIMap.GetTileIndex(-1, 0), AIMap.GetTileIndex(0, -1),
 	                 AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
 
+	static CornerAroundTileIndex = [AIMap.GetTileIndex(0, 0), AIMap.GetTileIndex(-1, 0),
+	                 AIMap.GetTileIndex(0, -1), AIMap.GetTileIndex(-1, -1)];
+					 
 	static DIR8Index = [
 		AIMap.GetTileIndex(-1, -1),
 	    AIMap.GetTileIndex(-1, 0),
@@ -123,6 +126,19 @@ class HgTile {
 		}
 	}
 	
+	function GetCornerTile(tile, corner) {
+		switch(corner) {
+			case AITile.CORNER_N:
+				return tile;
+			case AITile.CORNER_W:
+				return tile + 1;
+			case AITile.CORNER_E:
+				return tile + AIMap.GetMapSizeX();
+			case AITile.CORNER_S:
+				return tile + AIMap.GetMapSizeX() + 1;
+		}
+	}
+	
 	function GetConnectionCorners(hgTile) {
 		return HgTile.GetCorners(this.GetDirection(hgTile));
 	}
@@ -147,6 +163,9 @@ class HgTile {
 				return false;
 			}
 			if(currentLevel > level) {
+				if(level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
+					return false;
+				}
 				if(!AITile.LowerTile(t1, HgTile.GetSlopeFromCorner(c))) {
 					return false;
 				}
@@ -163,6 +182,9 @@ class HgTile {
 		foreach(c in HgTile(t1).GetConnectionCorners(HgTile(t2))) {
 			local currentLevel = AITile.GetCornerHeight( t1 ,c );
 			if(currentLevel > level) {
+				if(level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
+					continue;
+				}
 				if(!AITile.LowerTile(t1, HgTile.GetSlopeFromCorner(c))) {
 					continue;
 				}
@@ -301,13 +323,21 @@ class HgTile {
 	
 	static function IsAroundCoast(tile) {
 		foreach(d in HgTile.DIR4Index) {
-			if(AITile.IsCoastTile(tile+d)) {
+			if(AITile.IsCoastTile(tile+d) || AITile.IsSeaTile(tile+d)) {
 				return true;
 			}
 		}
 		return false;
 	}
 	
+	static function IsAroundCoastCorner(tile) {
+		foreach(d in HgTile.CornerAroundTileIndex) {
+			if(AITile.IsCoastTile(tile+d) || AITile.IsSeaTile(tile+d)) {
+				return true;
+			}
+		}
+		return false;
+	}
 	
 	function GetPathFindCost(hgTile, notAllowLandFill = false) {
 		local t1 = min( tile, hgTile.tile );
@@ -467,6 +497,18 @@ class HgTile {
 		return false;
 	}
 	
+	function RemoveDepot() {
+		local depotTile = this.tile;
+		local frontTile = AIRail.GetRailDepotFrontTile(depotTile);
+		foreach(d in HgTile.DIR4Index) {
+			local from = frontTile + d;
+			if(AIRail.AreTilesConnected(from, frontTile, depotTile)) {
+				RailBuilder.RemoveRailUntilFree(from, frontTile, depotTile);
+			}
+		}
+		AITile.DemolishTile(depotTile);
+	}
+	
 	function BuildCommonDepot(depotTile,front,vehicleType) {
 		switch(vehicleType) {
 		case AIVehicle.VT_ROAD:
@@ -549,7 +591,13 @@ class Rectangle {
 	rightbottom = null;
 	
 	static function Center(centerHgTile, radius) {
-		return Rectangle(centerHgTile - HgTile.XY(radius,radius), centerHgTile + HgTile.XY(radius,radius));
+		local x = centerHgTile.X();
+		local y = centerHgTile.Y();
+		local left = max(1,x - radius);
+		local top_ = max(1,y - radius);
+		local right = min(AIMap.GetMapSizeX(),x + radius + 1);
+		local bottom = min(AIMap.GetMapSizeY(),y + radius + 1);
+		return Rectangle(HgTile.XY(left,top_), HgTile.XY(right,bottom));
 	}
 	
 		
@@ -628,8 +676,10 @@ class Rectangle {
 		local result = AIList();
 		for(local y=Top(); y<Bottom(); y++) {
 			for(local x=Left(); x<Right(); x++) {
-				local v = AIMap.GetTileIndex (x,y)
-				result.AddItem(v,v);
+				local tile = AIMap.GetTileIndex (x,y)
+				if(AIMap.IsValidTile(tile)) {
+					result.AddItem(tile,tile);
+				}
 			}
 		}
 		return result;
@@ -639,8 +689,10 @@ class Rectangle {
 		local result = [];
 		for(local y=Top(); y<Bottom(); y++) {
 			for(local x=Left(); x<Right(); x++) {
-				local v = AIMap.GetTileIndex (x,y)
-				result.push(v);
+				local tile = AIMap.GetTileIndex (x,y)
+				if(AIMap.IsValidTile(tile)) {
+					result.push(tile);
+				}
 			}
 		}
 		return result;
@@ -786,13 +838,13 @@ class TileListUtil {
 			}
 		}			
 		
-		local raiseTileMap = TileListUtil.CalculateRaiseTileMap(HgArray.AIListKey(tileList).GetArray(), track);
+		local raiseTileMap = track != null ? TileListUtil.CalculateRaiseTileMap(HgArray.AIListKey(tileList).GetArray(), track) : null;
 		
 		local around = [AIMap.GetTileIndex(-1,-1),AIMap.GetTileIndex(-1,0),AIMap.GetTileIndex(0,-1),0];
 		local lowerTiles = [];
 		foreach(tile,level in tileList) {
 			if(level < average) {
-				if(raiseTileMap.rawin(tile)) {
+				if(raiseTileMap == null || raiseTileMap.rawin(tile)) {
 					foreach(d in around) {
 						local t = tile + d;
 						if(AITile.IsSeaTile(t) /*level <= 0 たんなる穴の場合がある */) {

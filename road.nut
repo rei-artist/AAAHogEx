@@ -60,7 +60,7 @@ class RoadRoute extends CommonRoute {
 	}
 
 	function GetThresholdVehicleNumRateForNewRoute() {
-		return 0.8;
+		return CommonRoute.IsSupportModeVt(AIVehicle.VT_ROAD) ? 0.8 : 0.95;
 	}
 
 	function GetThresholdVehicleNumRateForSupportRoute() {
@@ -125,6 +125,14 @@ class RoadRoute extends CommonRoute {
 			}
 		}
 	}
+	
+	function IsSrcFullLoadOrder() {
+		if(!HogeAI.Get().IsDistantJoinStations() && CargoUtils.IsPaxOrMail(cargo) && IsBiDirectional() && srcHgStation.place != null && srcHgStation.place instanceof TownCargo) {
+			return false;
+		} else {
+			return true;
+		}
+	}
 
 	function OnVehicleLost(vehicle) {
 		HgLog.Warning("RoadRoute OnVehicleLost  "+this); //TODO 連続で来るのを抑制
@@ -162,7 +170,7 @@ class RoadRouteBuilder extends CommonRouteBuilder {
 	}
 	
 	function CreateStationFactory() { 
-		return RoadStationFactory(AICargo.HasCargoClass(cargo,AICargo.CC_PASSENGERS) ? AIStation.STATION_BUS_STOP : AIStation.STATION_TRUCK_STOP);
+		return RoadStationFactory(cargo);
 	}
 	
 	function CreatePathBuilder(engine, cargo) {
@@ -316,6 +324,10 @@ class RoadBuilder {
 		}
 		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 100000 && Route.GetAllRoutes().len()>=1) {
 			return false;
+		}
+		local speed = AIEngine.GetMaxSpeed(engine);
+		if(speed == 0) {
+			HgLog.Warning("IsConsiderSlope speed == 0 "+AIEngine.GetName(engine));
 		}
 		local weight = VehicleUtils.GetCargoWeight(cargo, AIEngine.GetCapacity(engine));
 		return VehicleUtils.GetForce(AIEngine.GetMaxTractiveEffort(engine), AIEngine.GetPower(engine), AIEngine.GetMaxSpeed(engine)/2) 
@@ -817,8 +829,10 @@ class TownBus {
 		}
 		AIRoad.SetCurrentRoadType(GetRoadType());
 		if(toHgStation == null) {
-			local stationFactory = RoadStationFactory(AICargo.HasCargoClass(cargo,AICargo.CC_PASSENGERS) ? AIStation.STATION_BUS_STOP : AIStation.STATION_TRUCK_STOP);
-			toHgStation = stationFactory.CreateBestOnStationGroup( placeStation.stationGroup, cargo, GetPlace().GetLocation() );
+			toHgStation = RoadStationFactory(cargo).CreateBestOnStationGroup( placeStation.stationGroup, cargo, GetPlace().GetLocation() );
+			if(toHgStation == null) {
+				toHgStation = RoadStationFactory(cargo,true/*isPieceStation*/).CreateBestOnStationGroup( placeStation.stationGroup, cargo, GetPlace().GetLocation() );
+			}
 			
 			local execMode = AIExecMode();
 			if(toHgStation == null || !toHgStation.BuildExec()) {

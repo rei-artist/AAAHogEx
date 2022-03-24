@@ -125,7 +125,19 @@ class HgArray {
 		}
 		return false;
 	}
+	
+	function _tostring() {
+		local result = "";
+		foreach(e in array) {
+			if(result.len()>=1) {
+				result += ",";
+			}
+			result += e.tostring();
+		}
+		return result;
+	}
 }
+
 class ArrayUtils {
 	function Find(array_, element) {
 		foreach(i,e in array_) {
@@ -483,6 +495,10 @@ class VehicleUtils {
 	}
 	
 	static function GetForce(maxTractiveEffort, power, requestSpeed) {
+		if(requestSpeed == 0) {
+			HgLog.Warning("GetForce requestSpeed == 0");
+			requestSpeed = 1;
+		}
 		return min((maxTractiveEffort * 1000), power * 746 * 18 / requestSpeed / 5);
 	}
 	
@@ -490,6 +506,7 @@ class VehicleUtils {
 
 class CargoUtils {
 
+	// 年間の予想収益
 	// waitingDays: 積み下ろし時間
 	static function GetCargoIncome(distance, cargo, speed, waitingDays=0, isBidirectional=false) {
 		if(speed<=0) {
