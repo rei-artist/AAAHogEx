@@ -71,6 +71,22 @@ class HgTile {
 		return HgTile(AIMap.GetTileIndex(x,y));
 	}
 	
+	static function InMapXY(x,y) {
+		if(x <= 1) {
+			x = 1;
+		}
+		if(y <= 1) {
+			y = 1;
+		}
+		if(x >= AIMap.GetMapSizeX()-2) {
+			x = AIMap.GetMapSizeX()-2;
+		}
+		if( y >= AIMap.GetMapSizeY()-2) {
+			y = AIMap.GetMapSizeY()-2;
+		}
+		return HgTile(AIMap.GetTileIndex(x,y));
+	}
+	
 	function GetTileIndex() {
 		return tile;
 	}
@@ -196,6 +212,21 @@ class HgTile {
 		}
 	}
 	
+	static function LevelWaterBound( t1, t2 ) {
+		foreach(c in HgTile(t1).GetConnectionCorners(HgTile(t2))) {
+			local currentLevel = AITile.GetCornerHeight( t1 ,c );
+			if(currentLevel >= 2) {
+				return false;
+			}
+			if(currentLevel == 1) {
+				if(!AITile.LowerTile(t1, HgTile.GetSlopeFromCorner(c))) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 	function GetMaxHeight() {
 		return AITile.GetMaxHeight(tile);
 	}
@@ -451,7 +482,11 @@ class HgTile {
 	
 	function BuildDoubleDepot(p1,p2,from,to) {
 		if(AITile.IsBuildable(p1) && AITile.IsBuildable(p2) && !RailPathFinder._IsSlopedRail(from,tile,to)) {
-			TileListUtil.LevelHeightTiles([p1,p2,tile],AITile.GetMaxHeight(tile));
+			local level = AITile.GetMaxHeight(tile);
+			if(level == 0) { // 水没する事があるので
+				return null;
+			}
+			TileListUtil.LevelHeightTiles([p1,p2,tile],level);
 			AIRail.RemoveSignal(tile, from);
 			AIRail.RemoveSignal(tile, to);
 			if(BuildDepot(p1,from,to)) {
@@ -614,6 +649,7 @@ class Rectangle {
 		this.rightbottom = rightbottom;
 	}
 	
+	
 	function Include(rectangle) {
 		return Rectangle(this.lefttop.Min(rectangle.lefttop), this.rightbottom.Max(rectangle.rightbottom));
 	}
@@ -642,9 +678,22 @@ class Rectangle {
 		return rightbottom.Y();
 	}
 	
+	function GetLeftBottom() {
+		return HgTile.XY(Left(),Bottom());
+	}
+
+	function GetRightTop() {
+		return HgTile.XY(Right(),Top());
+	}
+	
+	function GetCorners() {
+		return [lefttop,GetRightTop(),rightbottom,GetLeftBottom()];
+	}
+	
 	function GetCenter() {
 		return HgTile.XY((Left()+Right())/2,(Top()+Bottom())/2);
 	}
+	
 	
 	function IsInclude(rectangle) {
 		if(Left() < rectangle.Left()) {
@@ -701,7 +750,7 @@ class Rectangle {
 	function GetAroundTiles() {
 		local result = [];
 		for(local y=Top()-1; y<Bottom()+1; y++) {
-			result.push(AIMap.GetTileIndex(Left()+1,y));
+			result.push(AIMap.GetTileIndex(Left()-1,y));
 			result.push(AIMap.GetTileIndex(Right(),y));
 		}
 		for(local x=Left(); x<Right(); x++) {

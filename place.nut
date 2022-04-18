@@ -296,6 +296,17 @@ class PlaceDictionary {
 		return false;
 	}
 	
+	function GetUsedAsSourceCargoByRail(place,cargo) {
+		local result = [];
+		foreach(route in GetRoutesBySource(place)) {
+			local vehicleType = route.GetVehicleType();
+			if((vehicleType == AIVehicle.VT_RAIL) && route.HasCargo(cargo)) {
+				result.push(route);
+			}
+		}
+		return result;
+	}
+	
 	function GetUsedAsSourceCargoByRailOrAir(place,cargo) {
 		local result = [];
 		foreach(route in GetRoutesBySource(place)) {
@@ -361,6 +372,7 @@ class Place {
 	static needUsedPlaceCargo = [];
 	static ngPlaces = {};
 	static placeStationDictionary = {};
+	static canBuildAirportCache = {};
 	
 	static function SaveStatics(data) {
 		local array = [];
@@ -464,8 +476,10 @@ class Place {
 		return false;
 	}
 	
-	static function AddNgPlace(facility, cargo, vehicleType) {
-		local limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 300; 
+	static function AddNgPlace(facility, cargo, vehicleType, limit = null) {
+		if(limit == null) {
+			limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 300; 
+		}
 		Place.ngPlaces.rawset(facility.GetLocation() + ":" + cargo +":" + vehicleType, limit);
 		HgLog.Info("AddNgPlace:"+facility.GetName()+"["+AICargo.GetName(cargo)+"] vt:"+vehicleType+" limit:"+DateUtils.ToString(limit));
 	}
@@ -550,7 +564,7 @@ class Place {
 	
 	static function GetProducingPlaceDistance( cargo, fromTile, maxDistance = 200) {
 		return Place.GetNotUsedProducingPlaces( cargo ).Map(function(place):(fromTile) {
-			return [place,place.DistanceManhattan( fromTile )];
+			return [place, place.DistanceManhattan( fromTile )];
 		}).Filter(function(placeDistance):(maxDistance) {
 			return placeDistance[1] < maxDistance;
 		})
@@ -578,12 +592,12 @@ class Place {
 			middleTile = src.GetLocation();
 		}
 		local existingDistance = destTile == null ? 0 : AIMap.DistanceManhattan(destTile, middleTile);
-		return Place.GetProducingPlaceDistance(cargo, middleTile, maxDistance).Map(function(placeDistance):(cargo, destTile) {
+		return Place.GetProducingPlaceDistance(cargo, middleTile, maxDistance).Map(function(placeDistance):(cargo, destTile, vehicleType) {
 			local t = {};
 			t.place <- placeDistance[0];
 			t.distance <- placeDistance[1];
 			t.totalDistance <- destTile == null ? t.distance : AIMap.DistanceManhattan(destTile, t.place.GetLocation());
-			t.production <- t.place.GetLastMonthProduction(cargo);
+			t.production <- t.place.GetExpectedProduction(cargo, vehicleType);
 			return t;
 		}).Filter(function(t):(middleTile, minDistance, minDistance, minProduction, existingDistance, vehicleType){
 			return minDistance <= t.distance 
@@ -779,10 +793,10 @@ class Place {
 			return true;
 		}
 		foreach(route in GetRoutesUsingSource(cargo)) {
-			if(route.IsOverflowPlace(this)) {
+			if(vehicleType != AIVehicle.VT_ROAD && route.GetVehicleType() == AIVehicle.VT_ROAD) {
 				continue;
 			}
-			if(route.GetVehicleType() == AIVehicle.VT_ROAD && vehicleType != AIVehicle.VT_ROAD) {
+			if(route.IsOverflowPlace(this)) {
 				continue;
 			}
 			return false;
@@ -828,6 +842,29 @@ class Place {
 		return result;
 	}
 	
+	function GetRouteCountUsingSource(cargo = null) {
+		local result = 0;
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(!route.IsTownTransferRoute()) {
+				result ++;
+			}
+		}
+		return result;
+	}
+	
+	function GetSourceStationGroups(cargo = null) {
+		local table = {};
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(route.srcHgStation.place.IsSamePlace(this)) {
+				table.rawset(route.srcHgStation.stationGroup,0);
+			}
+			if(route.destHgStation.place.IsSamePlace(this)) {
+				table.rawset(route.destHgStation.stationGroup,0);
+			}
+		}
+		return HgTable.Keys(table);
+	}
+	
 	function GetRoutesUsingDest(cargo = null) {
 		if(cargo == null) {
 			return PlaceDictionary.Get().GetRoutesByDest(this);
@@ -850,35 +887,7 @@ class Place {
 		}
 	}
 	
-	function IsNearWater(cargo) {
-		local placeDictionary = PlaceDictionary.Get();
-		local id = Id()+":"+cargo;
-		local result;
-		if(!placeDictionary.nearWaters.rawin(id)) {
-			result = CheckNearWater(cargo);
-			placeDictionary.nearWaters[id] <- result;
-			return result;
-		} else {
-			return placeDictionary.nearWaters[id];
-		}
-	}
 	
-	function CheckNearWater(cargo) {		
-		//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
-		if(IsBuiltOnWater()) {
-			return true;
-		}
-
-		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
-		local tile;
-		local gen = GetTiles(dockRadius,cargo)
-		while((tile = resume gen) != null) {
-			if(AITile.IsCoastTile (tile)) {
-				return true;
-			}
-		}
-		return false;
-	}
 	
 	function IsCargoNotAcceptedRecently(cargo) {
 		if(!IsCargoAccepted(cargo)) {
@@ -917,11 +926,8 @@ class Place {
 	
 	function GetExpectedProduction(cargo, vehicleType) {
 		local production = GetLastMonthProduction(cargo);
-		if(HogeAI.Get().roiBase) {
-			return production;
-		}
 		local placeProduction = PlaceProduction.Get();
-		if(HogeAI.Get().firs && vehicleType == AIVehicle.VT_RAIL) {
+		if(!HogeAI.Get().roiBase && HogeAI.Get().firs && vehicleType == AIVehicle.VT_RAIL) {
 			local inputableProduction = 0;
 			local allCargosAvailable = true;
 			local acceptingCargos = GetAccepting().GetCargos();
@@ -944,7 +950,7 @@ class Place {
 				production = inputableProduction >= 1 ? production * 3 : production;
 			}
 		}
-		if(!HogeAI.Get().ecs && !HogeAI.Get().firs && IsProcessing() && vehicleType == AIVehicle.VT_RAIL) {
+		if(!HogeAI.Get().roiBase && !HogeAI.Get().ecs && !HogeAI.Get().firs && IsProcessing() && vehicleType == AIVehicle.VT_RAIL) {
 			local inputableProduction = 0;
 			foreach(acceptingCargo in GetAccepting().GetCargos()) {
 				inputableProduction += placeProduction.GetArroundProductionCargo(GetLocation(), acceptingCargo);
@@ -960,6 +966,7 @@ class Place {
 			local cargoLabel = AICargo.GetCargoLabel(cargo);
 			local industryTraits = GetIndustryTraits();
 			local industryType = AIIndustry.GetIndustryType(this.industry);
+			local ecsRaw = true;
 			if(industryTraits == "COAL,/VEHI," /*industryType == AIIndustryType.ResolveNewGRFID(0x4d656f9f, 0x00)*/) {
 				production = max(300, production);
 			} else if(industryTraits == "SAND,/VEHI,") {
@@ -986,9 +993,20 @@ class Place {
 				if(cargoLabel == "FISH") {
 					production = max(350, production);
 				}
+			} else {
+				ecsRaw = false;
 			}
-		
-			
+			if(ecsRaw) {
+				if(vehicleType == AIVehicle.VT_RAIL) {
+					production *= 2;
+				}
+				if(vehicleType == AIVehicle.VT_ROAD)  {
+					production /= 2;
+				}
+				if(HogeAI.Get().roiBase) {
+					production /= 3;
+				}
+			}
 		}
 		/*
 		local productionInfo = placeProduction.GetCargoProductionInfos()[cargo].pieceInfos[placeProduction.GetPieceIndex(GetLocation())];
@@ -1006,6 +1024,89 @@ class Place {
 			result = max(300, result);
 		}*/
 		return production;
+	}
+	
+	function IsEcsHardNewRouteDest() {
+		if(HogeAI.Get().ecs && this instanceof HgIndustry && this.GetCargos().len() >= 2) { // ecsのマルチで受け入れるindustryは生産条件を満たすのが困難な事が多い。
+			local traits = this.GetIndustryTraits();
+			if(!(traits == "WOOL,LVST,/FICR,FISH,CERE," || traits=="FERT,FOOD,/OLSD,FRUT,CERE," || traits=="/OIL_,COAL," || traits=="GOOD,/DYES,GLAS,STEL,")) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	function IsNearWater(cargo) {
+		local placeDictionary = PlaceDictionary.Get();
+		local id = Id()+":"+cargo;
+		local result;
+		if(!placeDictionary.nearWaters.rawin(id)) {
+			result = CheckNearWater(cargo);
+			placeDictionary.nearWaters[id] <- result;
+			return result;
+		} else {
+			return placeDictionary.nearWaters[id];
+		}
+	}
+	
+	function CheckNearWater(cargo) {		
+		//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
+		if(IsBuiltOnWater()) {
+			return true;
+		}
+
+		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
+		local tile;
+		local gen = GetTiles(dockRadius,cargo)
+		while((tile = resume gen) != null) {
+			if(AITile.IsCoastTile(tile) || AITile.IsSeaTile(tile)) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	
+	function GetAllowedAirportLevel(airportType/*必要最小限のaiportType*/, cargo) {
+		local location = GetNoiseLevelLocation();
+		local allowedNoise = GetAllowedNoise(airportType);
+		local result = 0;
+		foreach(airportTraints in Air.Get().GetAvailableAiportTraits()) {
+			if(allowedNoise >= AIAirport.GetNoiseLevelIncrease(location, airportTraints.airportType)) {
+				result = max(airportTraints.level, result);
+			}
+		}
+		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
+			if(station.CanShareByMultiRoute(airportType)) {
+				result = max(station.GetAirportTraits().level, result)
+			}
+		}
+		return result;
+	}
+
+	function CanBuildAirport(airportType, cargo) {
+		local key = Id() + "-" + airportType + "-" + cargo;
+		local cache = Place.canBuildAirportCache;
+		if(cache.rawin(key)) {
+			return cache[key];
+		}
+		local result = _CanBuildAirport(airportType, cargo);
+		cache[key] <- result;
+		return result;
+	}
+	
+	function _CanBuildAirport(airportType, cargo) {
+		local location = GetNoiseLevelLocation();
+		local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease(location, airportType);
+		if( GetAllowedNoise(airportType) >= noiseLevelIncrease ) {
+			return true;
+		}
+		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
+			if(station.CanShareByMultiRoute(airportType) && Air.Get().IsCoverAiportType(station.GetAirportType(),airportType)) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	function _tostring() {
@@ -1096,7 +1197,7 @@ class HgIndustry extends Place {
 	}
 	
 	function IsClosed() {
-		return closedIndustries.rawin(industry);
+		return closedIndustries.rawin(industry); // Closeしてすぐに同一IDで新しいのが立つことがあるので信用できない
 	}
 	
 	function GetCargos() {
@@ -1220,23 +1321,16 @@ class HgIndustry extends Place {
 		}
 		return s;
 	}
-
-	function CanBuildAirport(airportType, cargo) {
-		local town = AIAirport.GetNearestTown(GetLocation(), airportType);
-		local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease(GetLocation(),airportType);
-		if(AITown.GetAllowedNoise(town) >= noiseLevelIncrease) {
-			return true;
-		}
-		
-		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			if(station.CanShareByMultiRoute()) {
-				return station;
-			}
-		}
-		
-		return false;
+	
+	function GetNoiseLevelLocation() {
+		return GetLocation();
 	}
 	
+	function GetAllowedNoise(airportType) {
+		local town = AIAirport.GetNearestTown(GetNoiseLevelLocation(), airportType);
+		return AITown.GetAllowedNoise(town);
+	}
+
 	function _tostring() {
 		return "Industry:" + GetName() + ":" + isProducing;
 	}
@@ -1293,7 +1387,8 @@ class TownCargo extends Place {
 	}
 	
 	function GetRadius() {
-		return (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
+		return max(3,(pow(AITown.GetPopulation(town), 0.33) * 0.67).tointeger());
+//		return (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
 	}
 	
 	function GetTiles(coverageRadius,cargo) {
@@ -1302,12 +1397,13 @@ class TownCargo extends Place {
 			return null;
 		}
 		
-		local maxRadius = GetRadius();
+		local maxRadius = GetRadius() + coverageRadius;
 		local tiles = Rectangle.Center(HgTile(GetLocation()),maxRadius).GetTilesOrderByOutside();
 		if(IsProducing()) {
 			tiles.reverse();
+			local bottom = CargoUtils.IsPaxOrMail(cargo) ? 8 : 1;
 			foreach(tile in tiles) {
-				if(AITile.GetCargoProduction(tile, cargo, 1, 1, coverageRadius) >= 8) {
+				if(AITile.GetCargoProduction(tile, cargo, 1, 1, coverageRadius) >= bottom) {
 					yield tile;
 				}
 			}
@@ -1328,14 +1424,91 @@ class TownCargo extends Place {
 		return result;*/
 	}
 	
+	function GetRectangle() {
+		return Rectangle.Center(HgTile(GetLocation()),GetRadius());
+	}
+	
+	
+	function GetNotUsedProductionMap(exceptPlatformTiles) {
+		local result = {};
+		local railRadius = AIStation.GetCoverageRadius(AIStation.STATION_TRAIN);
+		local roadRadius = AIStation.GetCoverageRadius(AIStation.STATION_TRUCK_STOP);
+		local waterRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
+	
+		local used = {};
+		local exceptPlatformMap = {};
+		foreach(t in exceptPlatformTiles) {
+			exceptPlatformMap.rawset(t,0);
+		}
+		
+		foreach(tile in Rectangle.Center(HgTile(GetLocation()),GetRadius()).GetTiles()) {
+			if(!AITile.IsStationTile(tile)) {
+				continue;
+			}
+			if(!AICompany.IsMine(AITile.GetOwner(tile))) { // ライバル企業を避ける場合はこのチェックは不要
+				continue;
+			}
+			local statoinId = AIStation.GetStationID(tile);
+			if(!exceptPlatformMap.rawin(tile)) { // 作ったばかりでまだ評価が無いplatformを除外する
+				if(!AIStation.HasCargoRating(statoinId, cargo)) {
+					continue;
+				}
+				if(AIStation.GetCargoRating(statoinId, cargo) < 40) {
+					continue;
+				}
+			}
+			local radius;
+			if(AIRail.IsRailStationTile(tile)) {
+				radius = railRadius;
+			} else if(AIRoad.IsRoadStationTile(tile)) {
+				radius = roadRadius;
+			} else if(AIAirport.IsAirportTile(tile)) {
+				local airportType = AIAirport.GetAirportType(tile)
+				radius = AIAirport.GetAirportCoverageRadius(airportType);
+			} else if(AIMarine.IsDockTile(tile)) {
+				radius = waterRadius;
+			} else {
+				continue; // unknown station
+			}
+			foreach(t in Rectangle.Center(HgTile(tile),radius).GetTiles()) {
+				used.rawset(t,0);
+			}
+		}
+		foreach(tile in Rectangle.Center(HgTile(GetLocation()),max(6, GetRadius() - 6)).GetTiles()) {
+			if(used.rawin(tile)) {
+				continue;
+			}
+			if(AITile.GetCargoProduction(tile, cargo, 1, 1, 0) >= 1) {
+				result.rawset(tile,AITile.GetCargoAcceptance(tile, cargo, 1, 1, 0));
+			}
+		}
+		return result;
+	}
+
+	function GetExpectedProduction(cargo, vehicleType) {
+		local production = GetLastMonthProduction(cargo);
+		
+		switch(vehicleType) {
+			case AIVehicle.VT_RAIL:
+				return production * 3 / 2;
+			case AIVehicle.VT_ROAD:
+				return production;
+			case AIVehicle.VT_AIR:
+				return production * 3 / 2;
+			case AIVehicle.VT_WATER:
+				return production * 3 / 2;
+		}
+		HgLog.Error("unknown vt:"+vehicleType);
+	}
+	
 	function GetLastMonthProduction(cargo) {
 		//if(RoadRoute.IsTooManyVehiclesForSupportRoute(RoadRoute)) {
-		return min(200, AITown.GetLastMonthProduction( town, cargo ) / 3);
+		local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 600 : 300;
+		return min(minValue, AITown.GetLastMonthProduction( town, cargo ) / 3);
 		/*} else {
 			return AITown.GetLastMonthProduction( town, cargo ) * 2 / 5;
 		}*/
 	}
-	
 	
 	function GetLastMonthTransportedPercentage(cargo) {
 		return AITown.GetLastMonthTransportedPercentage(town, cargo);
@@ -1422,23 +1595,19 @@ class TownCargo extends Place {
 		return null;
 	}
 	
-	function CanBuildAirport(airportType, cargo) {
-		local location = GetLocation() + GetRadius();
-		local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease(location, airportType);
-		if( AITown.GetAllowedNoise(town) >= noiseLevelIncrease ) {
-			return true;
-		}
-		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			if(station.CanShareByMultiRoute()) {
-				return true;
-			}
-		}
-		return false;
+	function GetNoiseLevelLocation() {
+		return GetLocation() + GetRadius();
 	}
+	
+	function GetAllowedNoise(airportType/*HgIndustryで使う*/) {
+		return AITown.GetAllowedNoise(town) + (HogeAI.Get().isUseAirportNoise ? 1 : 0)/*離れれば空港建設できる事があるのでその分のバッファ*/;
+	}
+	
 	
 	function GetIndustryTraits() {
 		return "";
 	}
+	
 	
 	function _tostring() {
 		return "TownCargo:" + GetName() + ":" + AICargo.GetName(cargo) + ":" + isProducing;

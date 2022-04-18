@@ -218,7 +218,7 @@ class HgLog {
 
 	static function Error(s) {
 		AILog.Error(HgLog.GetDateString()+" "+s);
-		AIController.Break(s);
+		//AIController.Break(s);
 	}
 }
 

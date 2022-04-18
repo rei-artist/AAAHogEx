@@ -23,7 +23,7 @@ class Air {
 			population = 1000
 			maxPlanes = 5
 			runways = 1
-			stationDateSpan = 25
+			stationDateSpan = 16
 		},{
 			level = 3
 			airportType = AIAirport.AT_LARGE
@@ -31,7 +31,7 @@ class Air {
 			population = 2000
 			maxPlanes = 5
 			runways = 1
-			stationDateSpan = 14
+			stationDateSpan = 10
 		},{
 			level = 4
 			airportType = AIAirport.AT_METROPOLITAN
@@ -39,7 +39,7 @@ class Air {
 			population = 4000
 			maxPlanes = 10
 			runways = 2
-			stationDateSpan = 10
+			stationDateSpan = 7
 		},{
 			level = 5
 			airportType = AIAirport.AT_INTERNATIONAL
@@ -47,7 +47,7 @@ class Air {
 			population = 10000
 			maxPlanes = 12			
 			runways = 2
-			stationDateSpan = 7
+			stationDateSpan = 5
 		},{
 			level = 6
 			airportType = AIAirport.AT_INTERCON
@@ -55,7 +55,7 @@ class Air {
 			population = 20000
 			maxPlanes = 20
 			runways = 4
-			stationDateSpan = 4
+			stationDateSpan = 3
 		}
 	];
 	static allAirportTypes = [
@@ -72,12 +72,21 @@ class Air {
 		return result;
 	}
 	
-	function GetMinimumAiportType() {
+	function GetMinimumAiportType(isBigPlane=false) {
 		local a = GetAvailableAiportTraits();
 		if(a.len()==0) {
 			return null;
 		}
-		return a[0].airportType;
+		if(isBigPlane) {
+			foreach(t in Air.airportTraits) {
+				if(t.supportBigPlane) {
+					return t.airportType;
+				}
+			}
+			return null;
+		} else {
+			return a[0].airportType;
+		}
 	}
 	
 	function GetAiportTraits(airportType) {
@@ -87,6 +96,10 @@ class Air {
 			}
 		}
 		HgLog.Error("Unknown aiportType(GetAiportTraits):"+airportType);
+	}
+	
+	function IsCoverAiportType(airportType1,airportType2) {
+		return GetAiportTraits(airportType1).level >= GetAiportTraits(airportType2).level;
 	}
 }
 
@@ -141,7 +154,7 @@ class AirRoute extends CommonRoute {
 	}
 	
 	function GetThresholdVehicleNumRateForNewRoute() {
-		return 0.95;
+		return TrainRoute.instances.len() >= 1 ? 0.8 : 0.95;
 	}
 
 	function GetThresholdVehicleNumRateForSupportRoute() {
@@ -156,14 +169,52 @@ class AirRoute extends CommonRoute {
 		return AirRouteBuilder;
 	}
 	
-	function GetBuildingCost(distance) {
-		return HogeAI.Get().GetInflatedMoney(13000); // TODO 空港のタイプによって異なる
+	function GetBuildingCost(infrastractureType, distance, cargo) {
+		return HogeAI.Get().GetInflatedMoney(13000 + (CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0)); // TODO 空港のタイプによって異なる
 	}
 	
 	function GetBuildingTime(distance) {
-		return 400;
+		return 1300;
 	}
 	
+	function GetDefaultInfrastractureType() {
+		local result = Air.Get().GetMinimumAiportType(true);
+		if(result == null) {
+			result = Air.Get().GetMinimumAiportType(false);
+		}
+		return result;
+	}
+
+	function GetInfrastractureTypes(engine) {
+		return [Air.Get().GetMinimumAiportType(AIEngine.GetPlaneType(engine) == AIAirport.PT_BIG_PLANE)];
+	}
+	
+	function GetSuitableInfrastractureType(placeSrc, placeDest, cargo) { //TODO: 何度も呼ばれるのでキャッシュなりを検討
+		local result = null;
+		foreach(traints in Air.Get().GetAvailableAiportTraits()) {
+			if(placeSrc.CanBuildAirport(traints.airportType, cargo) && placeDest.CanBuildAirport(traints.airportType, cargo)) {
+				result = traints.airportType;
+			} else {
+				break;
+			}
+		}
+		return result;
+	}
+	
+	function GetMaxRouteCapacity(infrastractureType, engineCapacity) {
+		if(infrastractureType == null) {
+			return 0;
+		}
+		return 30 * engineCapacity / Air.Get().GetAiportTraits(infrastractureType).stationDateSpan;
+	}
+	
+	function GetInfrastractureCost(infrastractureType, distance) {
+		if(!HogeAI.Get().IsInfrastructureMaintenance()) {
+			return 0;
+		}
+		return max(InfrastructureCost.Get().GetCostPerAirport() * 2, HogeAI.Get().GetInflatedMoney(150000));
+	}
+
 	function GetPathDistance() {
 		local p1 = srcHgStation.platformTile;
 		local p2 = destHgStation.platformTile;
@@ -183,6 +234,17 @@ class AirRoute extends CommonRoute {
 	function AppendDestToSrcOrder(vehicle) {
 	}
 	
+	
+	function CanCreateNewRoute() {
+		return true;
+
+		if(HogeAI.Get().IsInfrastructureMaintenance()) {
+			return HogeAI.Get().IsRich() /*&& InfrastructureCost.Get().CanExtendAirport()*/;
+		} else {
+			return true;
+		}
+	}
+	
 	function BuildDepot(path) {
 		depot = AIAirport.GetHangarOfAirport(srcHgStation.platformTile);
 		return true;
@@ -197,10 +259,19 @@ class AirRoute extends CommonRoute {
 		} else {
 			local traits = Air.Get().GetAvailableAiportTraits();
 			if(traits.len() >= 1) {
-				return traits[0].stationDateSpan;
+				return traits[traits.len()-1].stationDateSpan;
 			} else {
 				return 30;
 			}
+		}
+	}
+	
+	function IsBigPlane() {
+		local vehicle = GetLatestVehicle();
+		if(vehicle == null) {
+			return false;
+		} else {
+			return AIEngine.GetPlaneType(AIVehicle.GetEngineType(vehicle)) == AIAirport.PT_BIG_PLANE;
 		}
 	}
 	/*
@@ -234,12 +305,21 @@ class AirRouteBuilder extends CommonRouteBuilder {
 	constructor(dest, srcPlace, cargo) {
 		CommonRouteBuilder.constructor(dest, srcPlace, cargo);
 		makeReverseRoute = false;
-		isNotRemoveStation = true;
+		isNotRemoveStation = HogeAI.Get().IsInfrastructureMaintenance() == false;
+		checkSharableStationFirst = true;
 	}
 
 	function GetRouteClass() {
 		return AirRoute;
 	}
+	/*
+	function Build() {
+		if(!InfrastructureCost.Get().CanExtendAirport()) {
+			HgLog.Warning("CanExtendAirport false."+this);
+			return null;
+		}
+		return CommonRouteBuilder.Build();
+	}*/
 	
 	function CreateStationFactory() { 
 		local airportTypes = GetUsingAirportTypes();
@@ -502,7 +582,12 @@ class AirStation extends HgStation {
 		return 0;
 	}
 	
-	function CanShareByMultiRoute() {
+	function CanShareByMultiRoute(infrastractureType = null) {
+		if(infrastractureType != null) {
+			if( GetAirportTraits().level < Air.Get().GetAiportTraits(infrastractureType).level ) {
+				return false;
+			}
+		}
 		usingRoutes = GetUsingRoutes();
 		if(usingRoutes.len() >= 3) { // 最低数1のルートが大量にシェアされて小型空港が溢れかえるので
 			return false;
@@ -513,6 +598,10 @@ class AirStation extends HgStation {
 			}
 		}
 		return true;
+	}
+	
+	function GetAirportTraits() {
+		return Air.Get().GetAiportTraits(airportType);
 	}
 }
 

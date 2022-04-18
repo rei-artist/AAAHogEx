@@ -72,14 +72,18 @@ class WaterRoute extends CommonRoute {
 		return WaterRouteBuilder;
 	}
 	
-	function GetBuildingCost(distance) {
+	function GetBuildingCost(infrastractureType, distance, cargo) {
 		return HogeAI.Get().GetInflatedMoney(10000); // TODO 適当。土地成型すると高額だが、ただのdockは激安(292)
 	}
 	
 	function GetBuildingTime(distance) {
-		return 400;
+		return 1800;
 	}
 	
+	function GetMaxRouteCapacity(infrastractureType, engineCapacity) {
+		return 10 * engineCapacity;
+	}
+
 	function SetPath(path) {
 		local execMode = AIExecMode();
 		local count = 0;
@@ -185,8 +189,13 @@ class WaterStation extends HgStation {
 		return AIMarine.BuildDock(platformTile, joinStation)
 	}
 	
+	function IsBuildablePreCheck() {
+		return AITile.IsCoastTile(platformTile) || AITile.IsSeaTile(platformTile);
+	}
+	
 	function Build(levelTiles=false,isTestMode=true) {
-		if(!AITile.IsCoastTile(platformTile)) {
+		local water = AITile.IsWaterTile(platformTile)
+		if(!AITile.IsCoastTile(platformTile) && !water) {
 			return false;
 		}
 		if(BuildPlatform(isTestMode,true)) {
@@ -195,43 +204,60 @@ class WaterStation extends HgStation {
 		if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
 			return false;
 		}
+		local waterRemovable = true; //別にそんなに費用かからない。AICompany.GetBankBalance(AICompany.COMPANY_SELF) > GetInflatedMoney(2000000);
 		local hgTile = HgTile(platformTile);
-		if(hgTile.GetMaxHeightCount() != 3) {
-			return false;
+		if(!waterRemovable) {
+			if(water) {
+				return false;
+			}
+			if(hgTile.GetMaxHeightCount() != 3) {
+				return false;
+			}
 		}
 		foreach(next in hgTile.GetDir4()) {
 			//HgLog.Warning("WaterStation step3 "+next+" "+AITile.IsWaterTile(next.tile)+" "+(AITile.GetSlope(next.tile) != AITile.SLOPE_FLAT)+" "+AIMarine.IsWaterDepotTile(next.tile));
-			if(!(AITile.IsCoastTile(next.tile) && next.GetMaxHeightCount() == 1)) {
-				continue;
-			}
-			//HgLog.Warning("WaterStation hgTile("+hgTile+").GetConnectionCorners:"+next);
-			local success = false;
-			foreach(corner in hgTile.GetConnectionCorners(next)) {
-				//HgLog.Warning("WaterStation GetCornerHeight("+hgTile+" "+next+" "+corner+"):"+AITile.GetCornerHeight(hgTile.tile, corner));
-				if(AITile.GetCornerHeight(hgTile.tile, corner) == 1) {
-					if(!AITile.LowerTile (hgTile.tile, HgTile.GetSlopeFromCorner(corner))) {
-						//HgLog.Info("WaterStation AITile.LowerTile failed:" + hgTile+" corner:"+corner+" isTest"+isTestMode);
-						continue;
-					} else {
-						if(!isTestMode) {
-							for(local i=0; !AITile.IsWaterTile(next.tile) && i<100; i++) {
-								AIController.Sleep(3); // 少し待たないと海にならない
-							}
+			if(waterRemovable) {
+				local back = platformTile - (next.tile - platformTile);
+				local edge = platformTile + (next.tile - platformTile);
+				if(!AITile.IsWaterTile(edge)) { // ここのlowerはやらない。たぶん地面に池ができるだけ
+					continue;
+				}
+				if(!HgTile.LevelBound(platformTile, next.tile, 0)) {
+					continue;
+				}
+				if(!HgTile.LevelBound(platformTile, back, 1)) {
+					continue;
+				}
+			} else {
+				if(!(AITile.IsCoastTile(next.tile) && next.GetMaxHeightCount() == 1)) {
+					continue;
+				}
+				//HgLog.Warning("WaterStation hgTile("+hgTile+").GetConnectionCorners:"+next);
+				local success = false;
+				foreach(corner in hgTile.GetConnectionCorners(next)) {
+					//HgLog.Warning("WaterStation GetCornerHeight("+hgTile+" "+next+" "+corner+"):"+AITile.GetCornerHeight(hgTile.tile, corner));
+					if(AITile.GetCornerHeight(hgTile.tile, corner) == 1) {
+						if(!AITile.LowerTile (hgTile.tile, HgTile.GetSlopeFromCorner(corner))) {
+							//HgLog.Info("WaterStation AITile.LowerTile failed:" + hgTile+" corner:"+corner+" isTest"+isTestMode);
+							continue;
+						} else {
+							success = true;
+							break;
 						}
-						success = true;
-						break;
 					}
 				}
+				if(!success) {
+					continue;
+				}
+				if(!AITile.IsWaterTile(platformTile + (next.tile - platformTile))){
+					continue;
+				}
 			}
-			if(!success) {
-				continue;
-			}
-			if(!AITile.IsWaterTile(platformTile + (next.tile - platformTile))){
-				continue;
-			}
-			
 			if(isTestMode) {
 				return true;
+			}
+			for(local i=0; !AITile.IsWaterTile(next.tile) && i<100; i++) {
+				AIController.Sleep(3); // 少し待たないと海にならない
 			}
 			if(BuildPlatform(isTestMode)) {
 				//HgLog.Info("WaterStation.BuildPlatform succeeded:"+hgTile);
@@ -270,7 +296,11 @@ class WaterStation extends HgStation {
 	}
 	
 	function GetBuildableScore() {
-		return 0;
+		if(AITile.IsCoastTile(platformTile)) {
+			return 10;
+		} else {
+			return 0;
+		}
 	}
 }
 

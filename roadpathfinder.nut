@@ -28,9 +28,12 @@ class RoadPathFinder
 	_max_tunnel_length = null;     ///< The maximum length of a tunnel that will be build.
 	_estimate_rate = null;
 
+	engine = null;
 	cost = null;                   ///< Used to change the costs.
 	_running = null;
 	_goals = null;
+	
+	runnableRoadTypes = null;
 
 	constructor()
 	{
@@ -72,8 +75,17 @@ class RoadPathFinder
 		for (local i = 0; i < goals.len(); i++) {
 			_goals.AddItem(goals[i], 0);
 		}
+		
+		CheckRunnableRoadTypes();
 	}
-
+	
+	function CheckRunnableRoadTypes() {
+		runnableRoadTypes = RoadRouteBuilder.GetHasPowerRoadTypes(engine);
+		foreach(roadType in runnableRoadTypes) {
+			HgLog.Info("runnableRoadType:"+AIRoad.GetName(roadType)+" "+AIEngine.GetName(engine));
+		}
+	}
+	
 	/**
 	 * Try to find the path as indicated with InitializePath with the lowest cost.
 	 * @param iterations After how many iterations it should abort for a moment.
@@ -185,13 +197,14 @@ function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 
 	/* If the two tiles are more then 1 tile apart, the pathfinder wants a bridge or tunnel
 	 * to be build. It isn't an existing bridge / tunnel, as that case is already handled. */
-	if (AIMap.DistanceManhattan(new_tile, prev_tile) > 1) {
+	local d = AIMap.DistanceManhattan(new_tile, prev_tile);
+	if (d > 1) {
 		/* Check if we should build a bridge or a tunnel. */
-		if (AITunnel.GetOtherTunnelEnd(new_tile) == prev_tile) {
-			return path.GetCost() + AIMap.DistanceManhattan(new_tile, prev_tile) * (self._cost_tile + self._cost_tunnel_per_tile);
-		} else {
-			return path.GetCost() + AIMap.DistanceManhattan(new_tile, prev_tile) * (self._cost_tile + self._cost_bridge_per_tile) + self._GetBridgeNumSlopes(new_tile, prev_tile) * self._cost_slope;
+		local cost = path.GetCost() + d * (self._cost_tile + self._cost_no_existing_road + self._cost_tunnel_per_tile);
+		if (AITunnel.GetOtherTunnelEnd(new_tile) != prev_tile) {
+			cost += self._GetBridgeNumSlopes(new_tile, prev_tile) * self._cost_slope;
 		}
+		return cost;
 	}
 
 	/* Check for a turn. We do this by substracting the TileID of the current node from
@@ -250,7 +263,7 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 	     AITile.HasTransportType(cur_node, AITile.TRANSPORT_ROAD)) {
 		local other_end = AIBridge.IsBridgeTile(cur_node) ? AIBridge.GetOtherBridgeEnd(cur_node) : AITunnel.GetOtherTunnelEnd(cur_node);
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
-		if (AIRoad.AreRoadTilesConnected(cur_node, next_tile) || AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) {
+		if (self._AreRoadTilesConnected(cur_node, next_tile) || AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) {
 			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 		}
 		/* The other end of the bridge / tunnel is a neighbour. */
@@ -258,7 +271,7 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 	} else if (path.GetParent() != null && AIMap.DistanceManhattan(cur_node, path.GetParent().GetTile()) > 1) {
 		local other_end = path.GetParent().GetTile();
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
-		if (AIRoad.AreRoadTilesConnected(cur_node, next_tile) || AIRoad.BuildRoad(cur_node, next_tile)) {
+		if (self._AreRoadTilesConnected(cur_node, next_tile) || AIRoad.BuildRoad(cur_node, next_tile)) {
 			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 		}
 	} else {
@@ -274,7 +287,7 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 			if (AITile.HasTransportType(next_tile, AITile.TRANSPORT_RAIL) && AICompany.IsMine (AITile.GetOwner(next_tile))) {
 				continue;
 			}
-			if (AIRoad.AreRoadTilesConnected(cur_node, next_tile)) {
+			if (self._AreRoadTilesConnected(cur_node, next_tile)) {
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 			} else if (/*(AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&*/
 					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile)) &&
@@ -292,6 +305,27 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 		}
 	}
 	return tiles;
+}
+
+
+function RoadPathFinder::_AreRoadTilesConnected(cur, next) {
+	if(!AIRoad.AreRoadTilesConnected(cur, next)) {
+		return false;
+	}
+	foreach(roadType in runnableRoadTypes) {
+		local r = AIRoad.ConvertRoadType(next,next,roadType);
+		//HgLog.Info("ConvertRoadType("+HgTile(next)+","+AIRoad.GetName(roadType)+")="+r+" "+AIError.GetLastErrorString());
+		if(r || AIError.GetLastError() == AIRoad.ERR_UNSUITABLE_ROAD/* || AIError.GetLastError() == AIError.ERR_ALREADY_BUILT*/) {
+			return true;
+		}
+		
+/*	通れなくてもtrueが返る
+		if(AIRoad.HasRoadType(next, roadType)) { // TODO: 速度低下を起こす場合のコスト
+			HgLog.Info("HasRoadType("+HgTile(next)+","+AIRoad.GetName(roadType)+")=true");
+			return true;
+		}*/
+	}
+	return false;
 }
 /*
 function RoadPathFinder::_BuildRoad(a,b) {

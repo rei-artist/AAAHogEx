@@ -89,9 +89,16 @@ function AyStar::InitializePath(sources, goals, ignored_tiles = [])
 			this._open.Insert(new_path, new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], goals));
 			
 		} else {
-			this._open.Insert(node, node.GetCost());
+			local cost = node.GetCost() + this._estimate_callback(this._pf_instance, node._tile, node._prev._tile, goals);
+			//HgLog.Info("InitializePath cost:"+cost+" "+HgTile(node._tile)+(node._prev != null ? " "+HgTile(node._prev._tile) : ""));
+			this._open.Insert(node, cost);
 		}
 	}
+
+/*
+	foreach(goal in goals) {
+		HgLog.Info("InitializePath goal:"+HgTile(goal[0])+" "+HgTile(goal[1])+(goal.len()>=3 ? " "+goal[2] : ""));
+	}*/
 
 	this._goals = goals;
 
@@ -168,7 +175,6 @@ function AyStar::FindPath(iterations)
 			local new_path = this.Path(path, node[0],node[1],  mode, this._cost_callback, this._pf_instance);
 			local cost = new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
 			//HgLog.Info("cost:"+cost+" "+HgTile(node[0])+" par:"+HgTile(path.GetTile())+(path.GetParent()!=null ? " parpar:"+HgTile(path.GetParent().GetTile()) : ""));
-			
 			this._open.Insert(new_path, cost);
 		}
 	}

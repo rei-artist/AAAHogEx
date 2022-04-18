@@ -185,7 +185,7 @@ class Path {
 		return result;
 	}
 	
-	function RemoveRails(isTest=false) {
+	function RemoveRails(isTest=false, doInterval=false) {
 		local path = this;
 		local prev = null;
 		local prevprev = null;
@@ -213,6 +213,9 @@ class Path {
 							result = false;
 						}
 					}
+				}
+				if(doInterval) {
+					HogeAI.DoInterval();
 				}
 			}
 			if (path != null) {
@@ -696,9 +699,9 @@ class BuildedPath {
 		BuildedPath.AddTiles(array_);
 	}
 
-	function Remove(removeRails = true) {
+	function Remove(removeRails = true, doInterval = false) {
 		if(removeRails) {
-			path.RemoveRails();
+			path.RemoveRails(false/*isTest*/, doInterval);
 		}
 		BuildedPath.instances.rawdelete(this);
 		//BuildedPath.RemoveTiles(path.GetTiles()); 連結部分など他と重複している箇所があるので残す。残っていても実害はほとんど無い
@@ -783,6 +786,18 @@ class RailBuilder {
 		});
 	}
 	
+	static RailTracks = [AIRail.RAILTRACK_NE_SW,AIRail.RAILTRACK_NW_SE ,AIRail.RAILTRACK_NW_NE ,AIRail.RAILTRACK_SW_SE ,AIRail.RAILTRACK_NW_SW ,AIRail.RAILTRACK_NE_SE];
+
+	static function RemoveRailTracksAll(tile) {
+		local tracks = AIRail.GetRailTracks(tile);
+		foreach(railTrack in RailBuilder.RailTracks) {
+			if(tracks & railTrack) {
+				AIRail.RemoveRailTrack(tile,railTrack); // 失敗しても気にせず他を消す
+			}
+		}
+		return true;
+	}
+	
 	pathSrcToDest = null;
 	isReverse = false;
 	isOutward = false;
@@ -790,6 +805,8 @@ class RailBuilder {
 	eventPoller = null;
 	buildedPath = null;
 	
+	cargo = null;
+	distance = null;
 
 	constructor(pathSrcToDest,isReverse,ignoreTiles,eventPoller) {
 		this.pathSrcToDest = pathSrcToDest;
@@ -800,7 +817,10 @@ class RailBuilder {
 
 	
 	function CreatePathFinder() {
-		return RailPathFinder();
+		local result = RailPathFinder();
+		result.cargo = cargo;
+		result.distance = distance;
+		return result;
 	}
 	
 	function FindPath(pathFinder,limitCount,eventPoller) {
@@ -1010,7 +1030,8 @@ class RailBuilder {
 		local goalsArray = [[endAndPrev[1],endAndPrev[0]]];
 		local startPath = pathSrcToDest.SubPathEnd(tile);
 		local tmpBuildedPath = BuildedPath(startPath);
-		local railBuilder = RailToAnyRailBuilder(isReverse?startPath.Reverse():startPath, goalsArray, ignoreTiles, !isReverse, 150, eventPoller);
+		local railBuilder = RailToAnyRailBuilder(isReverse?startPath.Reverse():startPath, 
+			goalsArray, ignoreTiles, !isReverse, 150, eventPoller, null, cargo, distance);
 		local result = railBuilder.Build();
 		tmpBuildedPath.Remove(false);
 		if(result) {
@@ -1570,13 +1591,28 @@ class TailedRailBuilder {
 		local result = [];
 		local prevprev = null;
 		local prev = null;
-		while(path != null) {
-			if(prev != null && prevprev != null) {
-				result.push([path.GetTile(), prev, prevprev]);
+		for(;path != null; prevprev = prev, prev = path.GetTile(), path = path.GetParent()) {
+			local next = path.GetParent() != null ? path.GetParent().GetTile() : null;
+			if(next == null || prev == null || prevprev == null) {
+				continue;
 			}
-			prevprev = prev;
-			prev = path.GetTile();
-			path = path.GetParent();
+			local cur = path.GetTile(); // 分岐ポイント
+			if(AIBridge.IsBridgeTile(cur) || AITunnel.IsTunnelTile(cur)) {
+				continue;
+			}
+			if(RailPathFinder._IsSlopedRail(next,cur,prev)) {
+				continue;
+			}
+			local d1 = AIMap.DistanceManhattan(cur,next);
+			local d2 = AIMap.DistanceManhattan(cur,prev);
+			local d3 = AIMap.DistanceManhattan(prev,prevprev);
+			if(d1==1 && d2==1 && !AIRail.AreTilesConnected(next,cur,prev)) { /*double depots地点からは分岐不可*/
+				continue;
+			}
+			if(d2==1 && d3==1 && !AIRail.AreTilesConnected(cur,prev,prevprev)) { /*double depots地点からは分岐不可*/
+				continue;
+			}
+			result.push([cur, prev, prevprev]);
 		}
 		return result;
 		
@@ -1708,6 +1744,8 @@ class TailedRailBuilder {
 		}
 		local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,eventPoller);
 		railBuilder1.isOutward = reversePath == null ? true : false;
+		railBuilder1.cargo = cargo;
+		railBuilder1.distance = distance;
 		if(!railBuilder1.Build()) {
 			HgLog.Warning("TrainRoute: TailedRailBuilder.railBuilder1.Build failed.");
 			return false;
@@ -1745,6 +1783,8 @@ class TailedRailBuilder {
 			return false;
 		}
 		local railBuilder2 = RailBuilder(path2.Reverse(),isReverse,ignoreTiles,eventPoller);
+		railBuilder2.cargo = cargo;
+		railBuilder2.distance = distance;
 		railBuilder2.isOutward = reversePath == null ? true : false;
 		if(!railBuilder2.Build()) {
 			HgLog.Warning("TrainRoute: TailedRailBuilder.railBuilder2.Build failed.");
@@ -1923,9 +1963,11 @@ class RailToAnyRailBuilder extends RailBuilder {
 	originalPath = null;
 	buildPointsSuceeded = false;
 	
-	constructor(railPath, goalsArray, ignoreTiles, isReverse, limitCount, eventPoller, reversePath=null) {
+	constructor(railPath, goalsArray, ignoreTiles, isReverse, limitCount, eventPoller, reversePath=null, cargo=null, distance=null) {
 		this.originalPath = railPath;
 		this.isReverse = isReverse;
+		this.cargo = cargo;
+		this.distance = distance;
 
 		local startArray = /*TailedRailBuilder.*/GetStartArray(railPath);
 		local path;
@@ -1976,35 +2018,5 @@ class RailToAnyRailBuilder extends RailBuilder {
 
 	function IterateRailroadPoints(path,func) {
 		(!isReverse ? path.Reverse() : path).IterateRailroadPoints(func);
-	}
-}
-
-class RailToStationRailBuilder extends RailToAnyRailBuilder {
-	destHgStation = null;
-	hoge = null;
-	
-	constructor(railPath, destHgStation, isStationDepature, limitCount, hoge, reversePath=null) {
-		this.destHgStation = destHgStation;
-		this.hoge = hoge;
-		local goalArrays;
-		local ignoreTiles;
-		if(isStationDepature) {
-			goalArrays = destHgStation.GetDeparturesTiles();
-			ignoreTiles = destHgStation.GetArrivalsTile();
-		} else {
-			goalArrays = destHgStation.GetArrivalsTiles();
-			ignoreTiles = destHgStation.GetDeparturesTile();
-		}
-		ignoreTiles.extend(destHgStation.GetIgnoreTiles());
-		RailToAnyRailBuilder.constructor(railPath, goalArrays, ignoreTiles, isStationDepature, limitCount, this, reversePath);
-	}
-	
-	function OnPathFindingInterval() {
-		local place = destHgStation.place;
-		if(place != null && place instanceof HgIndustry && place.IsClosed()) {
-			HgLog.Warning("place Closed(OnPathFindingInterval)");
-			return false;
-		}
-		return hoge.OnPathFindingInterval();
 	}
 }
