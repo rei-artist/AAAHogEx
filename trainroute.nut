@@ -624,7 +624,7 @@ class TrainPlanner {
 					}
 					local loadingTime = CargoUtils.IsPaxOrMail(cargo) ? 10 : 2;
 					local days = (distance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
-					local maxVehicles = days / 5;
+					local maxVehicles = max(1, days / 5);
 					local stationDay = 0;//platformLength * 5 / 7; // 入れ替わりの"間"
 					local income = 0;
 					local minWaitingInStationTime = 10000;
