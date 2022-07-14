@@ -368,8 +368,8 @@ class RoadBuilder {
 					if (!isBridgeOrTunnel && AIRoad.IsRoadTile(path.GetTile())) {
 						AITile.DemolishTile(path.GetTile());
 					}
-					HogeAI.WaitForMoney(50000);
 					if (AITunnel.GetOtherTunnelEnd(path.GetTile()) == par.GetTile()) {
+						HogeAI.WaitForMoney(50000);
 						if (!AITunnel.BuildTunnel(AIVehicle.VT_ROAD, path.GetTile())) {
 							HgLog.Warning("BuildTunnel(Road) failed."+HgTile(path.GetTile())+" "+HgTile(par.GetTile())+" "+AIError.GetLastErrorString());
 							return RetryBuildRoad(path, starts);
@@ -378,7 +378,7 @@ class RoadBuilder {
 						local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(path.GetTile(), par.GetTile()) + 1);
 						bridge_list.Valuate(AIBridge.GetMaxSpeed);
 						bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-						if (!AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), path.GetTile(), par.GetTile())) {
+						if (!BuildUtils.BuildBridgeSafe(AIVehicle.VT_ROAD, bridge_list.Begin(), path.GetTile(), par.GetTile())) {
 							HgLog.Warning("BuildBridge(Road) failed."+HgTile(path.GetTile())+" "+HgTile(par.GetTile())+" "+AIError.GetLastErrorString());
 							return RetryBuildRoad(path, starts);
 						}
@@ -457,10 +457,8 @@ class TownBus {
 	
 	
 	static function Check(tile, ignoreTileList=null, cargo = null) {
-	/*
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 200000) {
-			return;
-		}*/ //TODO busの採算性のチェック
+	
+
 		local authorityTown = AITile.GetTownAuthority (tile);
 		if(!AITown.IsValidTown(authorityTown)) {
 			return;
@@ -469,6 +467,11 @@ class TownBus {
 	}
 	
 	static function CheckTown(authorityTown, ignoreTileList=null, cargo = null) {
+		if(HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(200000) && !HogeAI.Get().HasIncome(50000)) {
+			return;
+		}
+	
+	
 		//HgLog.Info("CheckTown:"+AITown.GetName(authorityTown));
 		if(cargo == null || !AICargo.HasCargoClass(cargo, AICargo.CC_MAIL)) {
 			cargo = HogeAI.GetPassengerCargo();

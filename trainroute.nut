@@ -388,7 +388,6 @@ class TrainPlanner {
 			production /= 4; // フィーダーのサポートが無いと著しく収益性が落ちる placeでやる
 		}*/
 
-		local buildingCost = TrainRoute.GetBuildingCost(null, distance, cargo); // TODO: railType
 	
 		local railSpeed = 10000;
 		if(railType != null) {
@@ -397,6 +396,8 @@ class TrainPlanner {
 				railSpeed = 10000;
 			}
 		}
+		
+		local maxBuildingCost = !checkRailType ? 0 : HogeAI.Get().GetUsableMoney() + HogeAI.Get().GetQuarterlyIncome() * 4;
 		
 		local wagonEngines = AIEngineList(AIVehicle.VT_RAIL);
 		wagonEngines.Valuate(AIEngine.IsWagon);
@@ -499,6 +500,7 @@ class TrainPlanner {
 				if(!AIEngine.CanRunOnRail(wagonEngine, trainRailType)) {
 					continue;
 				}
+				local buildingCost = TrainRoute.GetBuildingCost(trainRailType, distance, cargo);
 				local trainInfo = TrainInfoDictionary.Get().GetTrainInfo(trainEngine);
 				if(trainInfo == null) {
 					continue;
@@ -653,6 +655,12 @@ class TrainPlanner {
 					}
 					local infrastractureCost = InfrastructureCost.Get().GetCostPerDistanceRail(trainRailType) * distance;
 					local vehiclesPerRoute = min(maxVehicles, days / minWaitingInStationTime + 1);
+					if(maxBuildingCost > 0) {
+						vehiclesPerRoute = min(vehiclesPerRoute, (maxBuildingCost - buildingCost) / price);
+						if(vehiclesPerRoute == 0) {
+							continue;
+						}
+					}
 					local routeIncome = income * vehiclesPerRoute - infrastractureCost;
 					local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
 					local incomePerVehicle = routeIncome / vehiclesPerRoute; 
@@ -686,6 +694,7 @@ class TrainPlanner {
 						vehiclesPerRoute = vehiclesPerRoute
 						lengthWeights = lengthWeights
 						cruiseSpeed = cruiseSpeed
+						buildingCost = buildingCost
 					});
 					if(cruiseSpeed < maxSpeed * 0.8) {
 						//HgLog.Warning("acceleration:"+acceleration);
@@ -716,6 +725,9 @@ class TrainPlanner {
 					continue;
 				}
 			}*/
+			
+			//HgLog.Info("AIRail.GetBuildCost:"+ AIRail.GetBuildCost(railType, AIRail.BT_TRACK)+" "+AIRail.GetName(railType));
+			
 			if(AIEngine.HasPowerOnRail(trainEngine, railType)) {
 				local railSpeed = AIRail.GetMaxSpeed (railType);
 				railSpeed = railSpeed == 0 ? 10000 : railSpeed;
@@ -1197,7 +1209,9 @@ class TrainRoute extends Route {
 	}
 
 	function GetBuildingCost(infrastractureType, distance, cargo) {
-		return distance * HogeAI.Get().GetInflatedMoney(720) +HogeAI.Get().GetInflatedMoney( CargoUtils.IsPaxOrMail(cargo) ? 20000 : 10000);
+		local railCost = (AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) - 75 + 450) * 2;
+	
+		return distance * railCost/*HogeAI.Get().GetInflatedMoney(720)*/ +HogeAI.Get().GetInflatedMoney( CargoUtils.IsPaxOrMail(cargo) ? 20000 : 10000);
 	}
 	
 	function GetBuildingTime(distance) {

@@ -73,7 +73,9 @@ class WaterRoute extends CommonRoute {
 	}
 	
 	function GetBuildingCost(infrastractureType, distance, cargo) {
-		return HogeAI.Get().GetInflatedMoney(10000); // TODO 適当。土地成型すると高額だが、ただのdockは激安(292)
+		local cost = HogeAI.Get().GetInflatedMoney(10000); // TODO 適当。土地成型すると高額だが、ただのdockは激安(292)
+		cost += CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0;
+		return cost;
 	}
 	
 	function GetBuildingTime(distance) {

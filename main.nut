@@ -561,7 +561,9 @@ class HogeAI extends AIController {
 			if(newRoute != null) {
 				dirtyPlaces.rawset(t.destPlace.Id()+":"+t.cargo, true);
 				dirtyPlaces.rawset(t.place.Id()+":"+t.cargo, true);
-				if(!HasIncome(20000) && GetUsableMoney() < GetInflatedMoney(300000)) {
+				if(!HasIncome(20000) && GetUsableMoney() < GetInflatedMoney(50000)) {
+					WaitDays(180); // 建設にコストを掛けすぎて車両が作れなくなる事を防ぐ為に、車両作成の為の時間を空ける
+				} else if(!HasIncome(20000) && GetUsableMoney() < GetInflatedMoney(300000)) {
 					WaitDays(60); // 建設にコストを掛けすぎて車両が作れなくなる事を防ぐ為に、車両作成の為の時間を空ける
 				}
 				if(newRoute instanceof TrainRoute) {
@@ -638,16 +640,13 @@ class HogeAI extends AIController {
 	
 	function GetRouteCandidatesGen() {
 		local considerSlope = !IsRich();
-		local maxDistance = !HasIncome(1000) ? (GetUsableMoney() * 100 / GetInflatedMoney(200000)) : 1000;
 		foreach(i, src in GetMaxCargoPlaces()) {
 			//src.production = Place.AdjustProduction(src.place, src.production);
 			local count = 0;
 			HgLog.Info("src.place:"+src.place.GetName()+" src.cargo:"+AICargo.GetName(src.cargo));
 			foreach(dest in CreateRouteCandidates(src.cargo, src.place, 
 					Place.GetAcceptingPlaceDistance(src.cargo, src.place.GetLocation()))) {
-				if((dest.vehicleType == AIVehicle.VT_ROAD || dest.vehicleType == AIVehicle.VT_RAIL) && dest.distance > maxDistance) {
-					continue;
-				}
+				
 				local routeClass = Route.GetRouteClassFromVehicleType(dest.vehicleType);
 				if(routeClass.IsTooManyVehiclesForNewRoute(routeClass)) {
 					continue;
@@ -860,6 +859,7 @@ class HogeAI extends AIController {
 		local isNgAir = !orgPlace.CanBuildAirport(minimumAiportType, cargo);
 		local isNgWater = !orgPlace.IsNearWater(cargo);
 		local maxVehicleTable = {};
+		//local maxBuildingCost = HogeAI.Get().GetUsableMoney() / 2/*最初期の安全バッファ*/ + HogeAI.Get().GetQuarterlyIncome();
 		
 		local candidates = placeDistances.Map(function(placeDistance)
 				: (cargo,orgTile,orgPlace,orgPlaceAcceptingRaw, orgPlaceTraits, orgPlaceProductionTable, orgPlaceUsing, 
@@ -946,7 +946,7 @@ class HogeAI extends AIController {
 				local estimate = Route.Estimate( vt, cargo, pathDistance, production + additionalProduction, isBidirectional, infrastractureType );
 				
 				
-				if(estimate != null && estimate.value > 0) {
+				if(estimate != null && estimate.value > 0 /*&& estimate.buildingCost <= maxBuildingCost Estimate内ではじいている*/) {
 					local candidate = clone t;
 					
 					candidate.estimate <- estimate;

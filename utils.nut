@@ -287,6 +287,14 @@ class BuildUtils {
 		return false;*/
 	}
 	
+	
+	static function BuildBridgeSafe(a,b,c,d) {
+		return BuildUtils.WaitForMoney( function():(a,b,c,d) {
+			return AIBridge.BuildBridge(a,b,c,d);
+		});
+		
+	}
+	
 	static function IsTooExpensiveClearWaterCost() {
 		local testMode = AITestMode();
 		local accounting = AIAccounting();
@@ -297,6 +305,8 @@ class BuildUtils {
 		}
 		return false; //TODO 他のタイルも調べる
 	}
+	
+
 }
 
 class RailUtils {

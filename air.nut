@@ -16,6 +16,7 @@ class Air {
 			maxPlanes = 4
 			runways = 1
 			stationDateSpan = 20
+			cost = 5500
 		},{
 			level = 2
 			airportType = AIAirport.AT_COMMUTER
@@ -24,6 +25,7 @@ class Air {
 			maxPlanes = 5
 			runways = 1
 			stationDateSpan = 16
+			cost = 10000
 		},{
 			level = 3
 			airportType = AIAirport.AT_LARGE
@@ -32,6 +34,7 @@ class Air {
 			maxPlanes = 5
 			runways = 1
 			stationDateSpan = 10
+			cost = 16000
 		},{
 			level = 4
 			airportType = AIAirport.AT_METROPOLITAN
@@ -40,6 +43,7 @@ class Air {
 			maxPlanes = 10
 			runways = 2
 			stationDateSpan = 7
+			cost = 17000
 		},{
 			level = 5
 			airportType = AIAirport.AT_INTERNATIONAL
@@ -48,6 +52,7 @@ class Air {
 			maxPlanes = 12			
 			runways = 2
 			stationDateSpan = 5
+			cost = 22000
 		},{
 			level = 6
 			airportType = AIAirport.AT_INTERCON
@@ -56,6 +61,7 @@ class Air {
 			maxPlanes = 20
 			runways = 4
 			stationDateSpan = 3
+			cost = 46000
 		}
 	];
 	static allAirportTypes = [
@@ -170,7 +176,8 @@ class AirRoute extends CommonRoute {
 	}
 	
 	function GetBuildingCost(infrastractureType, distance, cargo) {
-		return HogeAI.Get().GetInflatedMoney(13000 + (CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0)); // TODO 空港のタイプによって異なる
+		local airportTraints = Air.Get().GetAiportTraits(infrastractureType);
+		return HogeAI.Get().GetInflatedMoney(airportTraints.cost * 2/*整地とかの分*/ + (CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0));
 	}
 	
 	function GetBuildingTime(distance) {
@@ -366,7 +373,11 @@ class AirRouteBuilder extends CommonRouteBuilder {
 	function GetUsableAirportTypes(placeOrGroup) {
 		local result = [];
 		local distanceCorrection = HogeAI.Get().isUseAirportNoise ? 1 : 0;
+		local limitCost = HogeAI.Get().GetUsableMoney() / 4;
 		foreach(traits in Air.Get().GetAvailableAiportTraits()) {
+			if(traits.cost * 2 > limitCost) {
+				continue;
+			}
 			if(placeOrGroup instanceof Place) {
 				if(placeOrGroup.CanBuildAirport(traits.airportType, cargo)) {
 					result.push(traits.airportType);

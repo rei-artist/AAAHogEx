@@ -130,6 +130,8 @@ class RailPathFinder
 		
 		if(HogeAI.Get().IsRich()) {
 			cost.max_tunnel_length = 14; //platformLength == null ? 14 : max( 7, platformLength * 2 );
+		} else if(!HogeAI.Get().HasIncome(50000)) {
+			cost.max_tunnel_length = 0;
 		}
 		if(HogeAI.Get().CanRemoveWater()) {
 			_can_build_water = true;
@@ -816,11 +818,13 @@ function RailPathFinder::__Neighbours(self, path, cur_node) {
 			/* Disallow 90 degree turns */
 			if (par != null && par.GetParent() != null &&
 				next_tile - cur_node == par.GetParent().GetTile() - par_tile) continue;
+			if (par != null && par.GetParent() == null &&
+				self._IsInclude90DegreeTrack(par_tile, next_tile, cur_node)) continue;			
 			/* We add them to the to the neighbours-list if we can build a rail to
 			 *  them and no rail exists there. */
 			if (par == null 
 					|| (goal2 == null && self._BuildRail(par_tile, cur_node, next_tile))
-					|| (goal2 == null && fork && !AIRail.AreTilesConnected(par_tile, cur_node, next_tile) 
+					|| (goal2 == null && fork && !AIRail.AreTilesConnected(par_tile, cur_node, next_tile)
 						&& (AITile.GetMaxHeight(cur_node) <= AITile.GetMaxHeight(next_tile) || AITile.IsSeaTile(next_tile))) //分岐の場合。信号、或いは通行中の列車のせいでBuildRailが失敗する事があるが成功
 					|| (underBridge && self._IsSlopedRail(par_tile, cur_node, next_tile)) // 橋の下の垂直方向スロープは成功
 					|| (goal2 == next_tile 

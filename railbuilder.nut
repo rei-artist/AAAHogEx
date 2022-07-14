@@ -786,6 +786,13 @@ class RailBuilder {
 		});
 	}
 	
+	static function BuildRailSafe(a,b,c) {
+		return BuildUtils.WaitForMoney( function():(a,b,c) {
+			return AIRail.BuildRail(a,b,c);
+		});
+		
+	}
+	
 	static RailTracks = [AIRail.RAILTRACK_NE_SW,AIRail.RAILTRACK_NW_SE ,AIRail.RAILTRACK_NW_NE ,AIRail.RAILTRACK_SW_SE ,AIRail.RAILTRACK_NW_SW ,AIRail.RAILTRACK_NE_SE];
 
 	static function RemoveRailTracksAll(tile) {
@@ -883,8 +890,7 @@ class RailBuilder {
 						local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(path.GetTile(), prev) + 1);
 						bridge_list.Valuate(AIBridge.GetMaxSpeed);
 						bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-						HogeAI.WaitForMoney(20000);
-						if(!AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), prev, path.GetTile())) {
+						if(!BuildUtils.BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), prev, path.GetTile())) {
 							HgLog.Warning("BuildBridge failed("+HgTile(prev)+"-"+HgTile(path.GetTile())+":"+AIError.GetLastErrorString()+").");
 							return RetryToBuild(path,prev);
 						}
@@ -899,8 +905,9 @@ class RailBuilder {
 						path = RaiseTileIfNeeded(prevPath,prevprev);
 					}
 				} else {
-					TownBus.Check(prev);
-					
+					if(HogeAI.Get().HasIncome(1000)) {
+						TownBus.Check(prev);
+					}
 					if(RailPathFinder.CanDemolishRail(prev)) {
 						HgLog.Warning("demolish tile for buildrail:"+HgTile(prev));
 						DemolishTile(prev);

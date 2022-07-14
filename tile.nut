@@ -178,6 +178,9 @@ class HgTile {
 			if(abs(currentLevel-level) >= 2) {
 				return false;
 			}
+			if(currentLevel != level && HogeAI.Get().IsAvoidRemovingWater() && HgTile.IsAroundRiverCorner(HgTile.GetCornerTile(t1,c))) {
+				return false;
+			}
 			if(currentLevel > level) {
 				if(level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
 					return false;
@@ -197,6 +200,9 @@ class HgTile {
 		local lowerOnly = options.rawin("options") ? options["lowerOnly"] : false;
 		foreach(c in HgTile(t1).GetConnectionCorners(HgTile(t2))) {
 			local currentLevel = AITile.GetCornerHeight( t1 ,c );
+			if(currentLevel != level && HogeAI.Get().IsAvoidRemovingWater() && HgTile.IsAroundRiverCorner(HgTile.GetCornerTile(t1,c))) {
+				continue;
+			}
 			if(currentLevel > level) {
 				if(level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
 					continue;
@@ -369,6 +375,14 @@ class HgTile {
 		}
 		return false;
 	}
+	static function IsAroundRiverCorner(tile) {
+		foreach(d in HgTile.CornerAroundTileIndex) {
+			if(AITile.IsRiverTile(tile+d)) {
+				return true;
+			}
+		}
+		return false;
+	}
 	
 	function GetPathFindCost(hgTile, notAllowLandFill = false) {
 		local t1 = min( tile, hgTile.tile );
@@ -507,7 +521,7 @@ class HgTile {
 		local aiTest = AITestMode();
 		if(AIRail.BuildRailDepot (depotTile, tile)) {
 			local aiExec = AIExecMode();
-			HogeAI.WaitForMoney(10000);
+			HogeAI.WaitForMoney(5000);
 			if(!AIRail.AreTilesConnected(from, tile, depotTile) && !RailBuilder.BuildRailUntilFree(from, tile, depotTile)) {
 //				HgLog.Info("AreTilesConnected1:"+HgTile(from)+","+HgTile(tile)+","+HgTile(depotTile)+" "+AIError.GetLastErrorString());
 				return false;

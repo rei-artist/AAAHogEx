@@ -1213,7 +1213,7 @@ class HgStation {
 		}
 			
 		if(!builded) {
-			HogeAI.WaitForMoney(40000);
+			HogeAI.WaitForMoney(GetNeedMoney());
 			if(!Build(levelTiles,false)) {
 				return false;
 			}
@@ -1252,6 +1252,10 @@ class HgStation {
 		HgLog.Info("HgStation.BuildExec succeeded."+this+" accepters:"+stationGroup.GetAccepters(cargo)+" cargo:"+AICargo.GetName(cargo));
 
 		return true;
+	}
+	
+	function GetNeedMoney() {
+		return 40000;
 	}
 	
 	
@@ -1635,6 +1639,10 @@ class RoadStation extends HgStation {
 		}
 	}
 	
+	function GetNeedMoney() {
+		return 10000;
+	}
+	
 	function BuildStation(joinStation,isTestMode) {
 		if(isTestMode) {
 			local result = AIRoad.BuildDriveThroughRoadStation(At(1,0), At(0,0), RoadStation.GetRoadVehicleType(GetStationType()), joinStation);
@@ -1897,6 +1905,10 @@ class PieceStation extends HgStation {
 		return BuildPlatform(isTestMode);
 	}
 	
+	function GetNeedMoney() {
+		return 10000;
+	}
+
 	function BuildStation(joinStation,isTestMode) {
 		local currentRoadType = AIRoad.GetCurrentRoadType();
 		AIRoad.SetCurrentRoadType(TownBus.GetRoadType());
@@ -2153,7 +2165,7 @@ class TransferStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -2446,7 +2458,7 @@ class SmartStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -2642,7 +2654,7 @@ class DestRailStation extends RailStation {
 		
 		
 		foreach(rail in rails) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -3025,7 +3037,7 @@ class TerminalStation extends DestRailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -3151,7 +3163,7 @@ class SrcRailStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -3423,7 +3435,7 @@ class RealSrcRailStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {
@@ -3715,7 +3727,7 @@ class SimpleRailStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.BuildRail(
+			if(!RailBuilder.BuildRailSafe(
 				At(rail[0][0],rail[0][1]),
 				At(rail[1][0],rail[1][1]),
 				At(rail[2][0],rail[2][1]))) {

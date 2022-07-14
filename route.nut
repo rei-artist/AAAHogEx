@@ -660,7 +660,6 @@ class CommonRoute extends Route {
 		production = max(20, production);
 		
 		local result = [];
-		local limitCost = HogeAI.Get().GetUsableMoney() / 2/*最初期の安全バッファ*/ + HogeAI.Get().GetQuarterlyIncome();
 		foreach(e,_ in engineList) {
 			local capacity = self.GetEngineCapacity(self,e,cargo);
 			if(capacity == 0) {
@@ -729,8 +728,18 @@ class CommonRoute extends Route {
 				}
 				days = max(days,1);
 				
+				local isBuildingEstimate = !isTownBus && !((typeof self) == "instance" && self instanceof Route)/*建設前の見積*/
+				local maxBuildingCost = isBuildingEstimate ? HogeAI.Get().GetUsableMoney() + HogeAI.Get().GetQuarterlyIncome() * 4 : 0;
+				local buildingCost = isBuildingEstimate ? self.GetBuildingCost(engineInfrastractureType, distance, cargo) : 0;
 				local deliverableProduction = min(production , self.GetMaxRouteCapacity( engineInfrastractureType, capacity ) );
 				local vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) ), 1 ); // TODO 往復に1年以上かかる場合計算が狂う
+				local price = AIEngine.GetPrice(e);
+				if(maxBuildingCost > 0) {
+					vehiclesPerRoute = min(vehiclesPerRoute, (maxBuildingCost - buildingCost) / price);
+					if(vehiclesPerRoute == 0) {
+						continue;
+					}
+				}
 				local inputProduction = production;
 				/*
 				if(vehiclesPerRoute < (isBidirectional ? 3 : 2)) {
@@ -746,12 +755,7 @@ class CommonRoute extends Route {
 				if(!ignoreIncome && income <= 0) {
 					continue;
 				}
-				local price = AIEngine.GetPrice(e);
 				local infraCost = self.GetInfrastractureCost(engineInfrastractureType, distance);
-				local buildingCost = !isTownBus && !((typeof self) == "instance" && self instanceof Route)/*建設前の見積*/ ? self.GetBuildingCost(engineInfrastractureType, distance, cargo) : 0;
-				if(buildingCost > limitCost) {
-					continue;
-				}
 				local routeIncome = income * vehiclesPerRoute - infraCost;
 				local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
 				local incomePerVehicle = routeIncome / vehiclesPerRoute;
@@ -782,6 +786,7 @@ class CommonRoute extends Route {
 					value = value
 					capacity = capacity
 					vehiclesPerRoute = vehiclesPerRoute
+					buildingCost = buildingCost
 				} );
 			}
 		}
