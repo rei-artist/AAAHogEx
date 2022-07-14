@@ -179,7 +179,7 @@ class TrainInfoDictionary {
 			return null;
 		}
 		HgLog.Info("BuildVehicle "+AIEngine.GetName(engine)+" usableMoney:"+HogeAI.GetUsableMoney());
-		HogeAI.WaitForPrice(price);
+		HogeAI.WaitForPrice(price,0);
 		local vehicle = AIVehicle.BuildVehicle(depot, engine);
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
 			HgLog.Warning("BuildVehicle failed (TrainInfoDictionary.CreateTrainInfo) "+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString()+" depot:"+HgTile(depot));
@@ -396,8 +396,8 @@ class TrainPlanner {
 				railSpeed = 10000;
 			}
 		}
-		
-		local maxBuildingCost = !checkRailType ? 0 : HogeAI.Get().GetUsableMoney() + HogeAI.Get().GetQuarterlyIncome() * 4;
+		local quaterlyIncome = HogeAI.Get().GetQuarterlyIncome();
+		local maxBuildingCost = !checkRailType ? 0 : HogeAI.Get().GetUsableMoney() + quaterlyIncome * 8;
 		
 		local wagonEngines = AIEngineList(AIVehicle.VT_RAIL);
 		wagonEngines.Valuate(AIEngine.IsWagon);
@@ -660,6 +660,9 @@ class TrainPlanner {
 						if(vehiclesPerRoute == 0) {
 							continue;
 						}
+					}
+					if(price > HogeAI.Get().GetUsableMoney() + quaterlyIncome * 16) {
+						continue; //　買えない
 					}
 					local routeIncome = income * vehiclesPerRoute - infrastractureCost;
 					local roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost);
@@ -2515,6 +2518,10 @@ class TrainRoute extends Route {
 		}
 		
 		engineSet = ChooseEngineSet();
+		if(engineSet.price > HogeAI.Get().GetUsableMoney()) {
+			return; // すぐに買えない場合はリニューアルしない。車庫に列車が入って収益性が著しく悪化する場合がある
+		}
+		
 		if(engineSet == null) {
 			HgLog.Warning("No usable engineSet ("+AIRail.GetName(GetRailType())+") "+this);
 			return;

@@ -729,7 +729,7 @@ class CommonRoute extends Route {
 				days = max(days,1);
 				
 				local isBuildingEstimate = !isTownBus && !((typeof self) == "instance" && self instanceof Route)/*建設前の見積*/
-				local maxBuildingCost = isBuildingEstimate ? HogeAI.Get().GetUsableMoney() + HogeAI.Get().GetQuarterlyIncome() * 4 : 0;
+				local maxBuildingCost = isBuildingEstimate ? HogeAI.Get().GetUsableMoney() + HogeAI.Get().GetQuarterlyIncome() * 8 : 0;
 				local buildingCost = isBuildingEstimate ? self.GetBuildingCost(engineInfrastractureType, distance, cargo) : 0;
 				local deliverableProduction = min(production , self.GetMaxRouteCapacity( engineInfrastractureType, capacity ) );
 				local vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) ), 1 ); // TODO 往復に1年以上かかる場合計算が狂う

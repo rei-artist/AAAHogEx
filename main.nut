@@ -3138,13 +3138,13 @@ class HogeAI extends AIController {
 		return (money * inflationRate).tointeger();
 	}
 	
-	function WaitForPrice(needMoney) {
+	function WaitForPrice(needMoney, buffer = 10000) {
 		local execMode = AIExecMode();
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF)-needMoney > AICompany.GetLoanAmount() + 10000) {
+		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF)-needMoney > AICompany.GetLoanAmount() + buffer) {
 			AICompany.SetMinimumLoanAmount(0);
 		}
 		local first = true;
-		while(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < needMoney + 5000) {
+		while(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < needMoney + buffer) {
 			if(first) {
 				first = false;
 			} else {
@@ -3152,7 +3152,7 @@ class HogeAI extends AIController {
 				AIController.Sleep(100);
 			}
 			local minimamLoan = min(AICompany.GetMaxLoanAmount(), 
-					AICompany.GetLoanAmount() + needMoney - AICompany.GetBankBalance(AICompany.COMPANY_SELF) + 10000);
+					AICompany.GetLoanAmount() + needMoney - AICompany.GetBankBalance(AICompany.COMPANY_SELF) + buffer);
 			//HgLog.Info("minimamLoan:"+minimamLoan);
 			AICompany.SetMinimumLoanAmount(minimamLoan);
 		}
