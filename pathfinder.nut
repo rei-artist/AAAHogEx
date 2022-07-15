@@ -130,7 +130,7 @@ class RailPathFinder
 		
 		if(HogeAI.Get().IsRich()) {
 			cost.max_tunnel_length = 14; //platformLength == null ? 14 : max( 7, platformLength * 2 );
-		} else if(!HogeAI.Get().HasIncome(50000)) {
+		} else if(!HogeAI.Get().HasIncome(100000)) {
 			cost.max_tunnel_length = 0;
 		}
 		if(HogeAI.Get().CanRemoveWater()) {

@@ -780,14 +780,18 @@ class RoadStationFactory extends StationFactory {
 
 class SrcRailStationFactory extends RailStationFactory {
 	useSimple = null;
+	useSingle = null;
 	
 	constructor() {
 		RailStationFactory.constructor();
 		useSimple = false;
+		useSingle = false;
 	}
 
 	function GetPlatformNum() {
-		if(useSimple) {
+		if(useSingle) {
+			return 1;
+		} else if(useSimple) {
 			return 2;
 		} else {
 			return 3;
@@ -797,8 +801,8 @@ class SrcRailStationFactory extends RailStationFactory {
 		return platformLength;
 	}
 	function Create(platformTile,stationDirection) {
-		if(useSimple) {
-			local result = SimpleRailStation(platformTile, GetPlatformLength(), stationDirection);
+		if(useSimple || useSingle) {
+			local result = SimpleRailStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
 			result.useDepot = true;
 			return result;
 		} else {
@@ -844,22 +848,30 @@ class TransferStationFactory extends RailStationFactory {
 
 class TerminalStationFactory extends RailStationFactory {
 	useSimple = null;
+	useSingle = null;
 	platformNum = null;
 	
 	constructor(platformNum=2) {
 		RailStationFactory.constructor();
 		this.platformNum = platformNum;
 		this.useSimple = false;
+		this.useSingle = false;
 	}
 	function GetPlatformNum() {
-		return platformNum;
+		if(useSingle) {
+			return 1;
+		} else if(useSimple) {
+			return 2;
+		} else {
+			return platformNum;
+		}
 	}
 	function GetPlatformLength() {
 		return platformLength;
 	}
 	function Create(platformTile,stationDirection) {
-		if(useSimple) {
-			return SimpleRailStation(platformTile, GetPlatformLength(), stationDirection);
+		if(useSimple || useSingle) {
+			return SimpleRailStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
 		} else {
 			return SmartStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
 		}
@@ -918,7 +930,7 @@ class HgStation {
 					station = RealSrcRailStation(t.platformTile, t.platformLength, t.stationDirection);
 					break;
 				case "SimpleRailStation":
-					station = SimpleRailStation(t.platformTile, t.platformLength, t.stationDirection);
+					station = SimpleRailStation(t.platformTile, t.platformNum, t.platformLength, t.stationDirection);
 					if(t.rawin("useDepot")) {
 						station.useDepot = t.useDepot;
 					}
@@ -3660,10 +3672,10 @@ class RealSrcRailStation extends RailStation {
 class SimpleRailStation extends RailStation {
 	useDepot = null;
 
-	constructor(platformTile, platformLength, stationDirection) {
+	constructor(platformTile, platformNum, platformLength, stationDirection) {
 		HgStation.constructor(platformTile,stationDirection);
 
-		platformNum = 2;
+		this.platformNum = platformNum;
 		this.platformLength = platformLength;
 
 		if(stationDirection == HgStation.STATION_SE) {
@@ -3685,6 +3697,10 @@ class SimpleRailStation extends RailStation {
 		local t = HgStation.Save();
 		t.useDepot <- useDepot; // rail updateの時に使う
 		return t;
+	}
+	
+	function GetNeedMoney() {
+		return 15000;
 	}
 	
 	function Build(levelTiles=false, isTestMode=true) {
@@ -3818,11 +3834,19 @@ class SimpleRailStation extends RailStation {
 	
 	
 	function GetArrivalsTiles() {
-		return [[At(0,platformLength+1),At(0,platformLength+0)]];
+		if(platformNum == 1 && !useDepot) {
+			return [[At(0,platformLength+0),At(0,platformLength-1)]];
+		} else {
+			return [[At(0,platformLength+1),At(0,platformLength+0)]];
+		}
 	}
 	
 	function GetDeparturesTiles() {
-		return [[At(1,platformLength+1),At(1,platformLength+0)]];
+		if(platformNum == 1) {
+			return GetArrivalsTiles();
+		} else {
+			return [[At(1,platformLength+1),At(1,platformLength+0)]];
+		}
 	}
 	
 	function GetArrivalDangerTiles() {
@@ -3837,19 +3861,25 @@ class SimpleRailStation extends RailStation {
 		local result = [];
 		local a = [];
 		
-		a.push([[0,-1],[0,0],[0,1]]);
-		a.push([[1,-1],[1,0],[1,1]]);
+		if(platformNum >= 2) {
+			a.push([[0,-1],[0,0],[0,1]]);
+			a.push([[1,-1],[1,0],[1,1]]);
 
-		a.push([[0,-1],[0,0],[1,0]]);
-		a.push([[1,-1],[1,0],[0,0]]);
+			a.push([[0,-1],[0,0],[1,0]]);
+			a.push([[1,-1],[1,0],[0,0]]);
 
-		a.push([[0,1],[0,0],[1,0]]);
-		a.push([[1,1],[1,0],[0,0]]);
-		
+			a.push([[0,1],[0,0],[1,0]]);
+			a.push([[1,1],[1,0],[0,0]]);
+		}
 		if(useDepot) {
 			a.push([[0,-1],[0,0],[-1,0]]);
 			a.push([[0,1],[0,0],[-1,0]]);
-			a.push([[-1,0],[0,0],[1,0]]);
+			
+			if(platformNum == 1) {
+				a.push([[0,-1],[0,0],[0,1]]);
+			} else if(platformNum >= 2) {
+				a.push([[-1,0],[0,0],[1,0]]);
+			}
 		}
 		foreach(r in a) {
 			result.push([

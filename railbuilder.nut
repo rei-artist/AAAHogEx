@@ -686,6 +686,7 @@ class BuildedPath {
 
 	path = null;
 	array_ = null; // saveを高速にするためのキャッシュ TODO: pathが書き変わったときにかきかえないといけない。
+	route = null;
 	
 	constructor(path) {
 		this.path = path;
@@ -808,6 +809,7 @@ class RailBuilder {
 	pathSrcToDest = null;
 	isReverse = false;
 	isOutward = false;
+	isNoSignal = false;
 	ignoreTiles = null;
 	eventPoller = null;
 	buildedPath = null;
@@ -1002,6 +1004,7 @@ class RailBuilder {
 		local goalPath = Path(endAndPrev[1],Path(endAndPrev[0]],null));
 		local startPath = pathSrcToDest.SubPathEnd(tile);
 		local builder = TailedRailBuilder.PathToPath(Container(isReverse?goalPath:startPath), Container(isReverse?startPath:goalPath), ignoreTiles, 150, eventPoller);
+		builder.isSingle = isNoSignal;
 		if(!builder.BuildTails()) {
 			HgLog.Warning("RetryToBuild failed");
 			return false;
@@ -1039,6 +1042,7 @@ class RailBuilder {
 		local tmpBuildedPath = BuildedPath(startPath);
 		local railBuilder = RailToAnyRailBuilder(isReverse?startPath.Reverse():startPath, 
 			goalsArray, ignoreTiles, !isReverse, 150, eventPoller, null, cargo, distance);
+		railBuilder.isNoSignal = isNoSignal;
 		local result = railBuilder.Build();
 		tmpBuildedPath.Remove(false);
 		if(result) {
@@ -1136,16 +1140,20 @@ class RailBuilder {
 				HogeAI.WaitForMoney(1000);
 				RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile());
 				if(signalCount % 7 == 0 ) {
-					AIRail.RemoveSignal (prev, path.GetTile());
-					if(AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY)) {
-						signalCount ++;
+					if(!isNoSignal) {
+						AIRail.RemoveSignal (prev, path.GetTile());
+						if(AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY)) {
+							signalCount ++;
+						}
 					}
 				} else {
 					signalCount ++;
 				}
 				if(prev == sameLevelTile) {
-					AIRail.RemoveSignal (prev, path.GetTile());
-					AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY);
+					if(!isNoSignal) {
+						AIRail.RemoveSignal (prev, path.GetTile());
+						AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY);
+					}
 					break;
 				}
 			}
@@ -1190,6 +1198,9 @@ class RailBuilder {
 	}
 
 	function BuildSignal(prevprev,prev,next) {
+		if(isNoSignal) {
+			return true;
+		}
 		if(prevprev==null) {
 			return false;
 		}
@@ -1459,7 +1470,7 @@ class RailBuilder {
 	function ChangeBridgeBuildedPath(startTile, endTile) {
 		local succeeded = false;
 		foreach(path,v in BuildedPath.instances) {
-			if(ChangeBridgePath(path.path, startTile, endTile)) {
+			if(ChangeBridgePath(path, startTile, endTile)) {
 				path.ChangePath();
 				succeeded = true;
 			}
@@ -1469,19 +1480,23 @@ class RailBuilder {
 		}
 	}
 	
-	function ChangeBridgePath(path, startTile, endTile) {
+	function ChangeBridgePath(buildedPath, startTile, endTile) {
+		local path = buildedPath.path;
+		local buildSignal = buildedPath.route != null && !buildedPath.route.IsSingle();
 		local prevprev = null;
 		local prev = null;
 		while(path != null) {
 			if(prev != null && (path.GetTile() == startTile || path.GetTile() == endTile)) {
-				AIRail.RemoveSignal (prev, path.GetTile());
-				AIRail.BuildSignal(prev, path.GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
+				if(buildSignal) {
+					AIRail.RemoveSignal (prev, path.GetTile());
+					AIRail.BuildSignal(prev, path.GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
+				}
 				local startPath = path;
 				path = path.GetParent();
 				while(path != null) {
 					if(path.GetTile() == endTile || path.GetTile() == startTile) {
 						startPath.parent_ = path;
-						if(path.GetParent()!=null && path.GetParent().GetParent()!=null) {
+						if(buildSignal && path.GetParent()!=null && path.GetParent().GetParent()!=null) {
 							AIRail.RemoveSignal (path.GetParent().GetTile(), path.GetParent().GetParent().GetTile());
 							AIRail.BuildSignal( path.GetParent().GetTile(), path.GetParent().GetParent().GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
 						}
@@ -1539,6 +1554,19 @@ class TailedRailBuilder {
 			Container(destStation.GetDeparturesTiles()),
 			ignoreTiles, limitCount, eventPoller, reversePath);
 		result.isReverse = true;
+		return result;
+	}
+	static function StationToStationSingle(srcStation, destStation, limitCount, eventPoller, reversePath = null) {
+		local ignoreTiles = [];
+		ignoreTiles.extend(srcStation.GetIgnoreTiles());
+		ignoreTiles.extend(destStation.GetIgnoreTiles());
+		local result = TailedRailBuilder(
+			Container(srcStation.GetDeparturesTiles()), 
+			Container(destStation.GetArrivalsTiles()),
+			ignoreTiles, limitCount, eventPoller, reversePath);
+		result.isSingle = true;
+		local dangerTiles = [];
+		result.dangerTiles = dangerTiles;
 		return result;
 	}
 	static function ReverseArrayTiles(a) {
@@ -1702,6 +1730,7 @@ class TailedRailBuilder {
 	
 	reversePath = null;
 	isReverse = null;
+	isSingle = null;
 	cargo = null;
 	platformLength = null;
 	distance = null;
@@ -1723,6 +1752,7 @@ class TailedRailBuilder {
 		this.eventPoller = eventPoller;
 		this.reversePath = reversePath;
 		this.isReverse = false;
+		this.isSingle = false;
 	}
 	
 	function BuildTails() {
@@ -1750,7 +1780,12 @@ class TailedRailBuilder {
 			return false;
 		}
 		local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,eventPoller);
-		railBuilder1.isOutward = reversePath == null ? true : false;
+		if(isSingle) {
+			railBuilder1.isOutward = false;
+			railBuilder1.isNoSignal = true;
+		} else {
+			railBuilder1.isOutward = reversePath == null ? true : false;
+		}
 		railBuilder1.cargo = cargo;
 		railBuilder1.distance = distance;
 		if(!railBuilder1.Build()) {
@@ -1792,7 +1827,12 @@ class TailedRailBuilder {
 		local railBuilder2 = RailBuilder(path2.Reverse(),isReverse,ignoreTiles,eventPoller);
 		railBuilder2.cargo = cargo;
 		railBuilder2.distance = distance;
-		railBuilder2.isOutward = reversePath == null ? true : false;
+		if(isSingle) {
+			railBuilder2.isOutward = false;
+			railBuilder2.isNoSignal = true;
+		} else {
+			railBuilder2.isOutward = reversePath == null ? true : false;
+		}
 		if(!railBuilder2.Build()) {
 			HgLog.Warning("TrainRoute: TailedRailBuilder.railBuilder2.Build failed.");
 			buildedPath1.Remove();
@@ -1960,6 +2000,50 @@ class TwoWayStationRailBuilder {
 		}
 		
 		buildedPath1 = b2.buildedPath;
+		return true;
+	}
+	
+}
+
+
+class SingleStationRailBuilder {
+	srcHgStation = null;
+	destHgStation = null;
+	limitCount = null;
+	eventPoller = null;
+	
+	cargo = null;
+	platformLength = null;
+	distance = null;
+	
+	buildedPath = null;
+	depots = null;
+	
+	constructor(srcHgStation, destHgStation, limitCount, eventPoller) {
+		this.srcHgStation = srcHgStation;
+		this.destHgStation = destHgStation;
+		this.limitCount = limitCount;
+		this.eventPoller = eventPoller;
+		this.depots = [];
+	}
+	
+	function Build() {
+		local b1 = TailedRailBuilder.StationToStationSingle(destHgStation, srcHgStation, limitCount, eventPoller );
+		b1.cargo = cargo;
+		b1.platformLength = platformLength;
+		b1.distance = distance;
+		if(!b1.BuildTails()) {
+			return false;
+		}
+		if(!b1.IsFoundGoal()) {
+			if(!b1.Build()) {
+				b1.Remove();
+				return false;
+			}
+		}
+		buildedPath = b1.buildedPath;
+
+	
 		return true;
 	}
 	

@@ -1063,7 +1063,9 @@ class HogeAI extends AIController {
 			Place.AddNgPathFindPair(destPlaceOrStationGroup,srcPlace,AIVehicle.VT_RAIL);
 			return null;
 		}
-		
+		if(route.IsSingle()) {
+			return route;
+		}
 		
 		route.isBuilding = true;
 		if(!route.IsTransfer()) {
@@ -1150,7 +1152,7 @@ class HogeAI extends AIController {
 			} else {
 				switch(route.GetVehicleType()) {
 					case AIVehicle.VT_RAIL:
-						ok = true;
+						ok = !route.IsSingle();
 						break;
 					case AIVehicle.VT_ROAD:
 						ok = vehicleType == AIVehicle.VT_ROAD && route.GetDistance() >= 200 && HogeAI.Get().IsInfrastructureMaintenance()/*メンテコストがかかる場合、長距離道路の転送は認める*/;
@@ -1491,7 +1493,7 @@ class HogeAI extends AIController {
 							cargoScore.explain += "+2(stockpile==0)"
 						}
 					} else {
-						if(cargoScores["FRUT"].stockpiled == 0 && cargoScores["CERE"].stockpiled == 0) {
+						if((cargoScores.rawin("FRUT") && cargoScores["FRUT"].stockpiled == 0) && (cargoScores.rawin("CERE") && cargoScores["CERE"].stockpiled == 0)) {
 							cargoScore.score += 2;
 							cargoScore.explain += "+2(stockpile==0)"
 						} else if(cargoScore.stockpiled == 0) {
@@ -1898,6 +1900,9 @@ class HogeAI extends AIController {
 		/*if(TrainRoute.instances.len() <= 1) { // 最初の1本目は危険なので伸ばさない
 			return null;
 		}*/
+		if(route.IsSingle()) {
+			return null;
+		}
 		if(route.cannotChangeDest) {
 			return null;
 		}
@@ -2040,7 +2045,7 @@ class HogeAI extends AIController {
 		
 		local trainPlanner = TrainPlanner();
 		trainPlanner.cargo = cargo;
-		trainPlanner.productions = [TrainRoute.GetRoundedProduction(max(50,srcPlace.GetLastMonthProduction(cargo)))]; // 生産0でのルート作成が失敗しないようにする
+		trainPlanner.productions = [TrainRoute.GetRoundedProduction(max(50,srcPlace.GetExpectedProduction(cargo, AIVehicle.VT_RAIL)))]; // 生産0でのルート作成が失敗しないようにする
 		trainPlanner.distance = distance;
 		trainPlanner.checkRailType = true;
 
@@ -2057,8 +2062,10 @@ class HogeAI extends AIController {
 		local destTile = null;
 		local destHgStation = null;
 		destTile = destPlaceOrStationGroup.GetLocation();
+		local useSingle = engineSets[0].isSingle; //HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(100000) && !HogeAI.Get().HasIncome(20000);
 		local destStationFactory = TerminalStationFactory(2);
 		destStationFactory.distance = distance;
+		destStationFactory.useSingle = useSingle;
 		if(destPlaceOrStationGroup instanceof Place) {
 			local destPlace = destPlaceOrStationGroup;
 			if(destPlace.GetProducing().IsTreatCargo(cargo)) { // bidirectional
@@ -2079,6 +2086,7 @@ class HogeAI extends AIController {
 		local srcStatoinFactory = SrcRailStationFactory();
 		srcStatoinFactory.platformLength = destHgStation.platformLength;
 		srcStatoinFactory.useSimple = destStationFactory.useSimple;
+		srcStatoinFactory.useSingle = useSingle;
 		local srcHgStation = srcStatoinFactory.CreateBest(srcPlace, cargo, destTile);
 		if(srcHgStation == null) {
 			HgLog.Warning("TrainRoute: No srcStation."+explain);
@@ -2107,11 +2115,16 @@ class HogeAI extends AIController {
 			pathfinding.industries.push(destPlaceOrStationGroup.industry);
 		}
 		this.pathfindings.rawset(pathfinding,0);
-		local railBuilder = TwoWayStationRailBuilder(srcHgStation, destHgStation, !HasIncome(10000) ? pathFindLimit * 3 /*無収入で失敗は命取りになりかねない*/: pathFindLimit, pathfinding);
+		local railBuilder;
+		if(useSingle) {
+			railBuilder = SingleStationRailBuilder(srcHgStation, destHgStation, !HasIncome(10000) ? pathFindLimit * 3 /*無収入で失敗は命取りになりかねない*/: pathFindLimit, pathfinding);
+		} else {
+			railBuilder = TwoWayStationRailBuilder(srcHgStation, destHgStation, !HasIncome(10000) ? pathFindLimit * 3 /*無収入で失敗は命取りになりかねない*/: pathFindLimit, pathfinding);
+		}
 		railBuilder.cargo = cargo;
 		railBuilder.platformLength = destHgStation.platformLength;
 		railBuilder.distance = distance;
-		if(destPlaceOrStationGroup instanceof Place) {
+		if(!useSingle && destPlaceOrStationGroup instanceof Place) {
 			if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
 				railBuilder.isBuildDepotsDestToSrc = true;
 			} else {
@@ -2126,10 +2139,18 @@ class HogeAI extends AIController {
 			destHgStation.Remove();
 			return null;
 		}
-		local route = TrainRoute(
-			TrainRoute.RT_ROOT, cargo,
-			srcHgStation, destHgStation,
-			railBuilder.buildedPath1, railBuilder.buildedPath2);
+		local route
+		if(useSingle) {
+			route = TrainRoute(
+				TrainRoute.RT_ROOT, cargo,
+				srcHgStation, destHgStation,
+				railBuilder.buildedPath, null);
+		} else {
+			route = TrainRoute(
+				TrainRoute.RT_ROOT, cargo,
+				srcHgStation, destHgStation,
+				railBuilder.buildedPath1, railBuilder.buildedPath2);
+		}
 		route.isTransfer = destPlaceOrStationGroup instanceof StationGroup;
 		route.AddDepots(railBuilder.depots);
 		route.Initialize();
@@ -2303,7 +2324,7 @@ class HogeAI extends AIController {
 			return;
 		}*/
 	
-		if(route.returnRoute == null && route.GetDistance() >= 250 && !route.IsBiDirectional()) {
+		if(route.returnRoute == null && route.GetDistance() >= 250 && !route.IsBiDirectional() && !route.IsSingle()) {
 			HgLog.Info("SearchReturnPlacePairs route:"+route);
 			local t = SearchReturnPlacePairs(route.GetPathAllDestToSrc(), route.cargo);
 			if(t.pairs.len() >= 1) {
@@ -3138,7 +3159,7 @@ class HogeAI extends AIController {
 		return (money * inflationRate).tointeger();
 	}
 	
-	function WaitForPrice(needMoney, buffer = 10000) {
+	function WaitForPrice(needMoney, buffer = 1000) {
 		local execMode = AIExecMode();
 		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF)-needMoney > AICompany.GetLoanAmount() + buffer) {
 			AICompany.SetMinimumLoanAmount(0);
@@ -3178,9 +3199,13 @@ class HogeAI extends AIController {
 		return HogeAI.GetQuarterlyIncome() >= HogeAI.GetInflatedMoney(money);
 	}
 	
-	function GetQuarterlyIncome() {
-		local quarterlyIncome = AICompany.GetQuarterlyIncome(AICompany.COMPANY_SELF, AICompany.CURRENT_QUARTER + 1);
-		local quarterlyExpnse = AICompany.GetQuarterlyExpenses (AICompany.COMPANY_SELF, AICompany.CURRENT_QUARTER + 1);
+	function GetQuarterlyIncome(n=1) {
+		local quarterlyIncome = 0;
+		local quarterlyExpnse = 0;
+		for(local i=AICompany.CURRENT_QUARTER+1; i<AICompany.CURRENT_QUARTER+1+n && i<AICompany.EARLIEST_QUARTER ; i++) {
+			quarterlyIncome += AICompany.GetQuarterlyIncome(AICompany.COMPANY_SELF, i);
+			quarterlyExpnse += AICompany.GetQuarterlyExpenses (AICompany.COMPANY_SELF, i);
+		}
 		return quarterlyIncome + quarterlyExpnse;
 	}
 	
