@@ -683,7 +683,7 @@ class HogeAI extends AIController {
 					if(isDestBi) {
 						slopeLevel = max( slopeLevel, HgTile(route.destPlace.GetLocation()).GetSlopeLevel(HgTile(route.place.GetLocation())));
 					}
-					route.score = route.score * 8 / (8 + slopeLevel);
+					route.score = route.score * 8 / (8 + slopeLevel * 10 / route.distance);
 				}
 				if(ecs && route.destPlace.IsEcsHardNewRouteDest()) {
 					route.score = route.score / route.destPlace.GetCargos().len();
@@ -3170,6 +3170,12 @@ class HogeAI extends AIController {
 				first = false;
 			} else {
 				HgLog.Info("wait for money:"+needMoney);
+				foreach(route in Route.GetAllRoutes()) {
+					if(route instanceof CommonRoute) {
+						route.SellVehiclesStoppedInDepots();
+						route.CheckNotProfitableOrStopVehicle();
+					}
+				}
 				AIController.Sleep(100);
 			}
 			local minimamLoan = min(AICompany.GetMaxLoanAmount(), 
@@ -3212,6 +3218,11 @@ class HogeAI extends AIController {
 	function IsRich() {
 		local usableMoney = HogeAI.GetUsableMoney();
 		return usableMoney > HogeAI.GetInflatedMoney(1000000) || (usableMoney > HogeAI.GetInflatedMoney(500000) && HasIncome(50000));
+	}
+	
+	function IsPoor() {
+		local usableMoney = HogeAI.GetUsableMoney();
+		return usableMoney < HogeAI.GetInflatedMoney(100000) && !HasIncome(25000);
 	}
 
 

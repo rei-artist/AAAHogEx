@@ -420,6 +420,7 @@ class StationFactory {
 				local distance = min(AIMap.DistanceManhattan(platformRect.lefttop.tile, nearestFor), AIMap.DistanceManhattan(platformRect.rightbottom.tile, nearestFor));
 				station.score -= distance;
 			}
+			
 			if(considerAcceptance) {
 				local acceptance = AITile.GetCargoAcceptance(station.platformTile, cargo, platformRect.Width(), platformRect.Height(), radius);
 				if(acceptance < 8) {
@@ -1236,7 +1237,8 @@ class HgStation {
 		if(place != null && cargo != null && place instanceof TownCargo && !(this instanceof PieceStation)) {
 			if(place.IsProducing() && !RoadRoute.IsTooManyVehiclesForSupportRoute(RoadRoute)) {
 				TownBus.CheckTown(place.town, null, AICargo.HasCargoClass(cargo, AICargo.CC_MAIL) ? cargo : null); // 駅が町から遠くてTownBusが作られない場合がある
-			} else if(HogeAI.Get().IsDistantJoinStations()){
+			} // else 両方やる 
+			if(HogeAI.Get().IsDistantJoinStations()){
 				local success = false;
 				if(pieceStationTile != null) {
 					success = BuildPieceStation(pieceStationTile);

@@ -40,10 +40,12 @@ class RoadRoute extends CommonRoute {
 	
 	depots = null;
 	roadType = null;
+	lastRebuildDate = null;
 	
 	constructor() {
 		CommonRoute.constructor();
 		depots = [];
+		isDestFullLoadOrder = true;
 	}
 	
 	function Save() {
@@ -90,6 +92,14 @@ class RoadRoute extends CommonRoute {
 	}
 	
 	function GetInfrastractureTypes(engine) {
+		if((typeof this) == "instance" && this instanceof Route) {
+			foreach(i in RoadRouteBuilder.GetHasPowerRoadTypes(engine)) {
+				if(i == roadType) {
+					return [roadType];
+				}
+			}
+			return [];
+		}
 		return RoadRouteBuilder.GetHasPowerRoadTypes(engine);
 	}
 	
@@ -107,9 +117,9 @@ class RoadRoute extends CommonRoute {
 
 	function GetBuildingCost(infrastractureType, distance, cargo) {
 		local cost = AIRoad.GetBuildCost(infrastractureType, AIRoad.BT_ROAD);
-		cost = (cost - 71) + 450;
-		cost += CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0;
-		 return distance * HogeAI.Get().GetInflatedMoney(cost);
+		cost = ((cost - 71) + 350) * distance;
+		cost += CargoUtils.IsPaxOrMail(cargo) ? 15000 + (!HogeAI.Get().IsDistantJoinStations() ? 10000 : 0) : 5000;
+		 return  HogeAI.Get().GetInflatedMoney(cost);
 	}
 
 	function GetBuildingTime(distance) {
@@ -175,7 +185,12 @@ class RoadRoute extends CommonRoute {
 	}
 
 	function OnVehicleLost(vehicle) {
-		HgLog.Warning("RoadRoute OnVehicleLost  "+this); //TODO 連続で来るのを抑制
+		HgLog.Warning("RoadRoute OnVehicleLost  "+this);
+		if(lastRebuildDate != null && lastRebuildDate + 30 > AIDate.GetCurrentDate()) {
+			return;
+		}
+		lastRebuildDate = AIDate.GetCurrentDate();
+		
 		local execMode = AIExecMode();
 		local roadBuilder = RoadBuilder();
 		roadBuilder.engine = AIVehicle.GetEngineType(vehicle);
@@ -466,8 +481,8 @@ class TownBus {
 		TownBus.CheckTown(authorityTown, ignoreTileList, cargo);
 	}
 	
-	static function CheckTown(authorityTown, ignoreTileList=null, cargo = null) {
-		if(HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(200000) && !HogeAI.Get().HasIncome(50000)) {
+	static function CheckTown(authorityTown, ignoreTileList=null, cargo = null, force = false) {
+		if(!force && (HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(200000) || !HogeAI.Get().HasIncome(50000))) {
 			return;
 		}
 	
