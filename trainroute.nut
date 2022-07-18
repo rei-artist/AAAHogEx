@@ -332,6 +332,7 @@ class TrainPlanner {
 			}
 		}
 		local averageCapacity = totalCapacity.tofloat() / count;
+		local maxWagons = max(1, totalNumWagon - subCargos.len() + 1);
 		
 		result.push(clone wagonEngineInfos[0]);
 		foreach(index, cargo in subCargos) {
@@ -339,6 +340,7 @@ class TrainPlanner {
 			if(wagonEngineInfos[index+1].rawin("engine")) {
 				local capacityRate = wagonEngineInfos[index+1].capacity / averageCapacity;
 				numWagon = (totalNumWagon.tofloat() * productions[index+1] / totalProduction / capacityRate).tointeger();
+				numWagon = max(0,min(numWagon, maxWagons));
 				if(productions[index+1] !=0 && totalNumWagon >= subCargos.len() + 1) {
 					numWagon = max(1,numWagon);
 				}
@@ -350,7 +352,7 @@ class TrainPlanner {
 			}
 			sum += numWagon;
 		}
-		result[0].numWagon <- totalNumWagon - sum;
+		result[0].numWagon <- max(0,totalNumWagon - sum);
 		return result;
 	}
 
