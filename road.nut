@@ -224,8 +224,10 @@ class RoadRoute extends CommonRoute {
 class RoadRouteBuilder extends CommonRouteBuilder {
 	
 	static function BuildRoadUntilFree(p1,p2) {
-		return BuildUtils.RetryUntilFree( function():(p1,p2) {
-			return AIRoad.BuildRoad(p1,p2);
+		return BuildUtils.WaitForMoney( function():(p1,p2) {
+			return BuildUtils.RetryUntilFree( function():(p1,p2) {
+				return AIRoad.BuildRoad(p1,p2);
+			});
 		});
 	}
 	

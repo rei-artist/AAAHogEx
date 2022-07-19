@@ -815,14 +815,16 @@ class CommonRoute extends Route {
 	
 	function GetEngineCapacity(self, engine, cargo) {
 		local result;
+		if(self.GetVehicleType() == AIVehicle.VT_ROAD && AIEngine.IsArticulated(engine)) {
+			return  AIEngine.GetCapacity(engine); // ArticulatedだとなぜかGetBuildWithRefitCapacityの値がとても小さい
+		}
+		
 		if(self.instances.len() >= 1) {
 			foreach(route in self.instances) {
 				result = AIVehicle.GetBuildWithRefitCapacity(route.depot, engine, cargo);
-				if(result != -1 && result != 1) { // eGVRTSではなぜか誤った値1が返る
-					/*if( self.GetVehicleType() == AIVehicle.VT_ROAD) {
-						HgLog.Info("capacity:"+result+" engine:"+AIEngine.GetName(engine)+" cargo:"+AICargo.GetName(cargo)+" depot:"+HgTile(route.depot)
-							+" GetCapacity:"+ AIEngine.GetCapacity(engine)+" CanPullCargo:"+AIEngine.CanPullCargo(engine,cargo));
-					}*/
+				if(result != -1) {
+					/*HgLog.Info("capacity:"+result+" engine:"+AIEngine.GetName(engine)+" cargo:"+AICargo.GetName(cargo)+" depot:"+HgTile(route.depot)
+							+" GetCapacity:"+ AIEngine.GetCapacity(engine)+" CanPullCargo:"+AIEngine.CanPullCargo(engine,cargo));*/
 					return result;
 				}
 			}
@@ -1034,12 +1036,18 @@ class CommonRoute extends Route {
 			return null;
 		}
 		HogeAI.WaitForPrice(AIEngine.GetPrice(engine));
-		local vehicle = AIVehicle.BuildVehicle(depot, engine);
+		local vehicle = AIVehicle.BuildVehicleWithRefit(depot, engine, cargo);
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
-			HgLog.Warning("BuildVehicle failed "+AIError.GetLastErrorString()+" "+this);
+			HgLog.Warning("BuildVehicleWithRefit failed. engine:"+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString()+" "+this);
 			return null;
 		}
-		AIVehicle.RefitVehicle(vehicle, cargo);
+		if(AIVehicle.GetCapacity(vehicle, cargo) == 0) {
+			HgLog.Warning("BuildVehicle failed (capacity==0) engine:"+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString()+" "+this);
+			AIVehicle.SellVehicle(vehicle);
+			return null;
+		}
+		
+		
 		AIGroup.MoveVehicle(vehicleGroup, vehicle);
 		
 		local nonstopIntermediate = GetVehicleType() == AIVehicle.VT_ROAD ? AIOrder.OF_NON_STOP_INTERMEDIATE : 0;
@@ -1484,6 +1492,10 @@ class CommonRoute extends Route {
 					}
 					if(latestVehicle != null) {
 						local capacity = AIVehicle.GetCapacity(latestVehicle, cargo);
+						if(capacity == 0) {
+							HgLog.Warning("AIVehicle.GetCapacity("+AIVehicle.GetName(latestVehicle)+":"+AIEngine.GetName(AIVehicle.GetEngineType(latestVehicle))+")==0."+this);
+							return; // capacity0の乗り物を増やしてもしょうがない
+						}
 						local cargoWaiting = max(0, AIStation.GetCargoWaiting(srcHgStation.GetAIStation(),cargo)/* - bottomWaiting*/);
 						if(showLog) {
 							HgLog.Info("cargoWaiting:"+cargoWaiting+" capacity:"+capacity+" "+this);
