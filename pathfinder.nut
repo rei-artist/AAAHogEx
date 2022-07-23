@@ -163,10 +163,9 @@ class RailPathFinder
 			counter++;
 //			HgLog.Info("counter:"+counter);
 			local intervalStartDate = AIDate.GetCurrentDate();
-			if(eventPoller.OnPathFindingInterval()==false) {
+			if(eventPoller != null && eventPoller.OnPathFindingInterval()==false) {
 				HgLog.Warning("TrainRoute: FindPath break by OnPathFindingInterval");
-				path = null;
-				break;
+				return null;
 			}
 			totalInterval += AIDate.GetCurrentDate() - intervalStartDate;
 		}
@@ -202,7 +201,7 @@ class RailPathFinder
 		local lastPath = path;
 		while(path != null) {
 			if(prev != null && prevprev != null) {
-				if(AIRail.AreTilesConnected (prevprev.GetTile(),prev.GetTile(),path.GetTile())
+				if(RailPathFinder.AreTilesConnectedAndMine(prevprev.GetTile(),prev.GetTile(),path.GetTile())
 						|| (AIBridge.IsBridgeTile(prevprev.GetTile()) && AIBridge.GetOtherBridgeEnd(prevprev.GetTile()) == prev.GetTile())
 						|| (AITunnel.IsTunnelTile(prevprev.GetTile()) && AITunnel.GetOtherTunnelEnd(prevprev.GetTile()) == prev.GetTile())) {
 					lastPath = prev;
@@ -215,6 +214,10 @@ class RailPathFinder
 			path = path.GetParent();
 		}
 		return lastPath;
+	}
+	
+	function AreTilesConnectedAndMine(a,b,c) {
+		return AIRail.AreTilesConnected(a,b,c) && AICompany.IsMine(AITile.GetOwner(b));
 	}
 		
 	function IsFoundGoal() {
@@ -571,7 +574,7 @@ function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 	}
 	
 	if(self.dangerTiles.rawin(new_tile)) {
-		HgLog.Info("danger tile:"+HgTile(new_tile));
+		//HgLog.Info("danger tile:"+HgTile(new_tile));
 		cost += self._cost_danger;
 	}
 
@@ -697,7 +700,7 @@ function RailPathFinder::_IsGoal2(node) {
 
 function RailPathFinder::_IsInclude90DegreeTrack(target, parTile, curTile) {
 	if(AIBridge.IsBridgeTile(target) || AITunnel.IsTunnelTile(target)) {
-		HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" false (tunnel or bridge)");
+		//HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" false (tunnel or bridge)");
 		return false;
 	}
 	foreach(neighbor in HgTile.GetConnectionTiles(target, AIRail.GetRailTracks (target))) {
@@ -705,11 +708,11 @@ function RailPathFinder::_IsInclude90DegreeTrack(target, parTile, curTile) {
 			continue;
 		}
 		if(AIMap.DistanceManhattan(parTile,neighbor)==1) {
-			HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" true");
+			//HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" true");
 			return true;
 		}
 	}
-	HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" false");
+	//HgLog.Info("_IsInclude90DegreeTrack"+HgTile(target)+" "+HgTile(parTile)+" "+HgTile(curTile)+" false");
 	return false;
 }
 
@@ -757,7 +760,7 @@ function RailPathFinder::__Neighbours(self, path, cur_node) {
 	}
 	
 	local fork = false;
-	if (AITile.HasTransportType(cur_node, AITile.TRANSPORT_RAIL)) {
+	if (AITile.HasTransportType(cur_node, AITile.TRANSPORT_RAIL) && AICompany.IsMine(AITile.GetOwner(cur_node))) {
 		if(goal2 != null || par==null || par.GetParent()==null || (self.useInitializePath2 && par.GetParent().GetParent() == null) /*これのせいでナナメに横切れない???*/) { // start or goal tile
 			fork = true;
 		} else if(BuildedPath.Contains(cur_node)) {
@@ -768,7 +771,7 @@ function RailPathFinder::__Neighbours(self, path, cur_node) {
 				//HgLog.Info("_CanChangeBridge:"+HgTile(cur_node));
 				underBridge = true;
 			} else {
-				if(self._reverseNears != null && AICompany.IsMine(AITile.GetOwner(cur_node)) && self._reverseNears.rawin(cur_node) && self._reverseNears[cur_node]==0) {
+				if(self._reverseNears != null && self._reverseNears.rawin(cur_node) && self._reverseNears[cur_node]==0) {
 					offsets = self._PermitedDiagonalOffset(AIRail.GetRailTracks(cur_node));
 					if(offsets==null) {
 						return [];
@@ -824,11 +827,11 @@ function RailPathFinder::__Neighbours(self, path, cur_node) {
 			 *  them and no rail exists there. */
 			if (par == null 
 					|| (goal2 == null && self._BuildRail(par_tile, cur_node, next_tile))
-					|| (goal2 == null && fork && !AIRail.AreTilesConnected(par_tile, cur_node, next_tile)
+					|| (goal2 == null && fork && !RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile)
 						&& (AITile.GetMaxHeight(cur_node) <= AITile.GetMaxHeight(next_tile) || AITile.IsSeaTile(next_tile))) //分岐の場合。信号、或いは通行中の列車のせいでBuildRailが失敗する事があるが成功
 					|| (underBridge && self._IsSlopedRail(par_tile, cur_node, next_tile)) // 橋の下の垂直方向スロープは成功
 					|| (goal2 == next_tile 
-						&& (AIRail.AreTilesConnected(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile)
+						&& (RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile)
 						&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node)))) {
 				if (par != null) {
 					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
@@ -1055,7 +1058,7 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 	
 	local significant = false;
 	local level = AITile.GetMaxHeight(cur_node);
-	if(!AITile.IsBuildable(next) || level > AITile.GetMaxHeight(next)) {
+	if((!AITile.IsBuildable(next) && !HogeAI.IsPurchasedLand(next)) || level > AITile.GetMaxHeight(next)) {
 		for (local i = 2; i < this._max_bridge_length; i++) {
 			local bridge_list = AIBridgeList_Length(i + 1);
 			local checkTile = cur_node + (i-1) * dir;

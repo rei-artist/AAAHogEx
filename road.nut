@@ -108,7 +108,7 @@ class RoadRoute extends CommonRoute {
 	}
 	
 	function GetInfrastractureSpeed(infrastractureType) {
-		return AIRoad.GetMaxSpeed(infrastractureType) / 2; // なぜか2倍の値が返る
+		return AIRoad.GetMaxSpeed(infrastractureType) / 2; // The speed is in OpenTTD's internal speed unit. This is mph / 0.8, which is roughly 0.5 km/h. To get km/h multiply this number by 2.01168.
 	}
 
 	function GetMaxRouteCapacity(infrastractureType, engineCapacity) {
@@ -275,8 +275,8 @@ class RoadRouteBuilder extends CommonRouteBuilder {
 		}
 		local list = AIList();
 		foreach(roadType in roadTypes) {
-			local roadSpeed = HogeAI.Get().IsDebug() ? AIRoad.GetMaxSpeed(roadType) : AIRoad.GetMaxSpeed(roadType) / 2; // なぜか2倍の値が返る
-			HgLog.Info("roadSpeed:"+roadSpeed+" roadType:"+AIRoad.GetName(roadType)+" maxSpeed:"+maxSpeed);
+			local roadSpeed = AIRoad.GetMaxSpeed(roadType) / 2;// The speed is in OpenTTD's internal speed unit. This is mph / 0.8, which is roughly 0.5 km/h. To get km/h multiply this number by 2.01168.
+			//HgLog.Info("roadSpeed:"+roadSpeed+" roadType:"+AIRoad.GetName(roadType)+" maxSpeed:"+maxSpeed);
 			list.AddItem(roadType, roadSpeed==0 ? maxSpeed : min(roadSpeed,maxSpeed) );
 		}
 		list.Sort(AIList.SORT_BY_VALUE,false);

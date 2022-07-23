@@ -233,6 +233,13 @@ class DateUtils {
 }
 
 class BuildUtils {
+	static function BuildSafe(func, limit=100) {
+		return BuildUtils.WaitForMoney(function():(func,limit) {
+			return BuildUtils.RetryUntilFree(func,limit);
+		});
+	}
+
+
 	static function RetryUntilFree(func, limit=100) {
 		for(local i=0;i<limit;i++) {
 			if(func()) {

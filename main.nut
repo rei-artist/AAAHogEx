@@ -52,6 +52,7 @@ class HogeAI extends AIController {
 	roiBase = null;
 	buildingTimeBase = null;
 	estimateTable = null;
+	maybePurchasedLand = null;
 	pathFindLimit = null;
 	loadData = null;
 	lastIntervalDate = null;
@@ -139,7 +140,36 @@ class HogeAI extends AIController {
 		if(HogeAI.Get().CanRemoveWater() && AITile.IsSeaTile(tile)) {
 			return true;
 		}
+		/*実効性が薄いのでやらない
+		if(HogeAI.IsPurchasedLand(tile)) {
+			return true;
+		}*/
 		return false;
+	}
+	
+	static function IsPurchasedLand(tile) {
+		if(!HogeAI.Get().maybePurchasedLand.rawin(tile)) {
+			return false;
+		}
+		if(!AICompany.IsMine(AITile.GetOwner(tile))) {
+			return false;
+		}
+		if(AITile.IsStationTile(tile)) {
+			return false;
+		}
+		if(AIRail.IsRailTile(tile)) {
+			return false;
+		}
+		if(AIRoad.IsRoadTile(tile)) {
+			return false;
+		}
+		if(AIRail.IsRailDepotTile(tile)) {
+			return false;
+		}
+		if(AIRoad.IsRoadDepotTile(tile)) {
+			return false;
+		}
+		return true;
 	}
 	
 	static function IsBuildableRectangle(tile,w,h) {
@@ -172,9 +202,11 @@ class HogeAI extends AIController {
 		indexPointer = 0;
 		stockpiled = false;
 		pathFindLimit = 150;
+		estimateTable = {};
+		maybePurchasedLand = {};
+		
 		supressInterval = false;
 		supressInterrupt = false;
-		estimateTable = {};
 		yeti = false;
 		ecs = false;
 		firs = false;
@@ -353,7 +385,7 @@ class HogeAI extends AIController {
 		}
 		
 		foreach(cargo,v in AICargoList()) {
-			HgLog.Info("name:"+AICargo.GetName(cargo)+" label:"+AICargo.GetCargoLabel(cargo)+
+			HgLog.Info("id:"+cargo+" name:"+AICargo.GetName(cargo)+" label:"+AICargo.GetCargoLabel(cargo)+
 				" towneffect:"+AICargo.GetTownEffect(cargo)+" IsFreight:"+AICargo.IsFreight(cargo));
 			foreach(cargoClass in [  
 					AICargo.CC_PASSENGERS,
@@ -512,6 +544,7 @@ class HogeAI extends AIController {
 		local routeCandidatesGen = GetRouteCandidatesGen();
 		local candidateNum = TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute) ? 200 : 200;
 		for(local i=0; (candidate=resume routeCandidatesGen) != null && i<candidateNum; i++) {
+			candidate.score += AIBase.RandRange(10); // ほかのHogexとの競合を防ぐ
 			bests.push(candidate);
 		}
 		
@@ -1058,6 +1091,13 @@ class HogeAI extends AIController {
 	
 	function BuildRouteAndAdditional(destPlaceOrStationGroup,srcPlace,cargo) {
 		
+		if(!(destPlaceOrStationGroup instanceof StationGroup)) {
+			local currentProduction = srcPlace.GetLastMonthProduction(cargo);
+			if(currentProduction==0 || currentProduction < srcPlace.GetExpectedProduction(cargo, AIVehicle.VT_RAIL)) {
+				SearchAndBuildToMeetSrcDemandMin(srcPlace);
+			}
+		}
+			
 		local route = BuildRoute(destPlaceOrStationGroup, srcPlace, cargo);
 		if(route == null) {
 			Place.AddNgPathFindPair(destPlaceOrStationGroup,srcPlace,AIVehicle.VT_RAIL);
@@ -1069,10 +1109,6 @@ class HogeAI extends AIController {
 		
 		route.isBuilding = true;
 		if(!route.IsTransfer()) {
-			local currentProduction = srcPlace.GetLastMonthProduction(cargo);
-			if(currentProduction==0 || currentProduction < srcPlace.GetExpectedProduction(cargo, AIVehicle.VT_RAIL)) {
-				SearchAndBuildToMeetSrcDemandMin(srcPlace, route);
-			}
 			SearchAndBuildToMeetSrcDemandTransfer(route, null, {notTreatDest = true}/*このあと延長チェックがあるので*/);
 		}
 		
@@ -2673,7 +2709,7 @@ class HogeAI extends AIController {
 	}
 	
 
-	function SearchAndBuildToMeetSrcDemandMin(srcPlace, forRoute) {
+	function SearchAndBuildToMeetSrcDemandMin(srcPlace, forRoute = null) {
 		if(roiBase) {
 			return;
 		}
@@ -3064,6 +3100,7 @@ class HogeAI extends AIController {
 		table.indexPointer <- indexPointer;
 		table.stockpiled <- stockpiled;
 		table.estimateTable <- estimateTable;
+		table.maybePurchasedLand <- maybePurchasedLand;
 		table.pathFindCostCache <- HgTile.pathFindCostCache;
 		Place.SaveStatics(table);
 
@@ -3124,6 +3161,9 @@ class HogeAI extends AIController {
 		indexPointer = loadData.indexPointer;
 		stockpiled = loadData.stockpiled;
 		estimateTable = loadData.estimateTable;
+		if(loadData.rawin("maybePurchasedLand")) {
+			maybePurchasedLand = loadData.maybePurchasedLand;
+		}
 		if(loadData.rawin("pathFindCostCache")) {
 			HgTable.Extend( HgTile.pathFindCostCache, loadData.pathFindCostCache );
 		}
@@ -3140,16 +3180,19 @@ class HogeAI extends AIController {
 	}
 
 	function SetCompanyName() {
-	   if(!AICompany.SetName("AAAHogEx")) {
-		 local i = 2;
-		 while(!AICompany.SetName("AAAHogEx #" + i)) {
-		   i = i + 1;
-		   if(i > 255) break;
-		 }
-	   }
-	   AICompany.SetPresidentName("R. Ishibashi");
+		AICompany.SetPresidentName("R. Ishibashi");
+		if(AICompany.GetName( AICompany.COMPANY_SELF ).find("AAAHogEx") != null) {
+			return;
+		}
+	    if(!AICompany.SetName("AAAHogEx")) {
+			local i = 2;
+			while(!AICompany.SetName("AAAHogEx #" + i)) {
+				i = i + 1;
+				if(i > 255) break;
+			}
+		}
 	}
-	 
+
 	function WaitForMoney(needMoney) {
 		HogeAI.WaitForPrice(HogeAI.GetInflatedMoney(needMoney));
 	}

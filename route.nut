@@ -815,6 +815,7 @@ class CommonRoute extends Route {
 	
 	function GetEngineCapacity(self, engine, cargo) {
 		local result;
+		
 		if(self.GetVehicleType() == AIVehicle.VT_ROAD && AIEngine.IsArticulated(engine)) {
 			return  AIEngine.GetCapacity(engine); // ArticulatedだとなぜかGetBuildWithRefitCapacityの値がとても小さい
 		}
@@ -822,6 +823,12 @@ class CommonRoute extends Route {
 		if(self.instances.len() >= 1) {
 			foreach(route in self.instances) {
 				result = AIVehicle.GetBuildWithRefitCapacity(route.depot, engine, cargo);
+				/*
+				if(self.GetVehicleType() == AIVehicle.VT_ROAD && AIEngine.IsArticulated(engine)) {
+							HgLog.Warning("capacity:"+result+" engine:"+AIEngine.GetName(engine)+" cargo:"+AICargo.GetName(cargo)+" depot:"+HgTile(route.depot)
+									+" GetCapacity:"+ AIEngine.GetCapacity(engine)+" CanPullCargo:"+AIEngine.CanPullCargo(engine,cargo));
+					return  AIEngine.GetCapacity(engine); // ArticulatedだとなぜかGetBuildWithRefitCapacityの値がとても小さい
+				}*/
 				if(result != -1) {
 					/*HgLog.Info("capacity:"+result+" engine:"+AIEngine.GetName(engine)+" cargo:"+AICargo.GetName(cargo)+" depot:"+HgTile(route.depot)
 							+" GetCapacity:"+ AIEngine.GetCapacity(engine)+" CanPullCargo:"+AIEngine.CanPullCargo(engine,cargo));*/
@@ -1036,11 +1043,15 @@ class CommonRoute extends Route {
 			return null;
 		}
 		HogeAI.WaitForPrice(AIEngine.GetPrice(engine));
+		//local vehicle = AIVehicle.BuildVehicle(depot, engine);
 		local vehicle = AIVehicle.BuildVehicleWithRefit(depot, engine, cargo);
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
 			HgLog.Warning("BuildVehicleWithRefit failed. engine:"+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString()+" "+this);
 			return null;
 		}
+		//HgLog.Warning("GetRefitCapacity:"+AIVehicle.GetRefitCapacity(vehicle, cargo)+" "+AIEngine.GetName(engine)+" "+this);
+		//AIVehicle.RefitVehicle (vehicle, cargo);
+		
 		if(AIVehicle.GetCapacity(vehicle, cargo) == 0) {
 			HgLog.Warning("BuildVehicle failed (capacity==0) engine:"+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString()+" "+this);
 			AIVehicle.SellVehicle(vehicle);
@@ -1330,7 +1341,7 @@ class CommonRoute extends Route {
 					if((stopped || notProfitable) && vehicleType == AIVehicle.VT_ROAD) { //多すぎて赤字の場合は減らしてもNeedsAdditionalProducing==falseのはず。渋滞がひどくて赤字のケースがあるのでROADだけケア
 						maxVehicles = min(vehicleList.Count(), maxVehicles);  // TODO: リセッションで一時的に利益がでていないケースがありうる。継続的に利益が出ていない路線をどうするか
 						maxVehicles = max(0, maxVehicles - 1);
-						HgLog.Warning("maxVehicles:"+maxVehicles+" notProfitable:"+notProfitable+" stopped:"+stopped+" "+this);
+						HgLog.Info("maxVehicles:"+maxVehicles+" notProfitable:"+notProfitable+" stopped:"+stopped+" "+this);
 					}
 					//HgLog.Info("SendVehicleToDepot(road) "+AIVehicle.GetName(vehicle)+" "+this);
 					break;
@@ -2187,7 +2198,7 @@ class InfrastructureCost {
 		local result;
 		local distance = 0;
 		foreach(route in TrainRoute.GetTrainRoutes(railType)) {
-			distance += route.GetDistance();
+			distance += route.GetDistance() / (route.IsSingle() ? 2 : 1);
 		}
 		if(distance == 0) {
 			result = 0;

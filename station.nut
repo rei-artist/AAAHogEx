@@ -341,7 +341,11 @@ class StationFactory {
 		local testMode = AITestMode();
 		
 		this.place = null;
-		this.nearestFor = stationGroup.hgStations[0].platformTile;
+		if(HogeAI.Get().IsDistantJoinStations() == false) {
+			this.nearestFor = toTile;
+		} else {
+			this.nearestFor = stationGroup.hgStations[0].platformTile;
+		}
 		local result = this.SelectBestHgStation( 
 			stationGroup.GetStationCandidatesInSpread(this),
 			this.nearestFor, toTile, cargo, "transfer station on "+stationGroup.hgStations[0].GetName());
@@ -1315,6 +1319,25 @@ class HgStation {
 			return HgStation.STATION_SE;
 		}
 		HgLog.Error("Unknown tileDirection (GetStationDirectionFromTileIndex):"+tileDirection);
+	}
+	
+	function PurchaseLandTile(tile) {
+		if(AIObjectType.BuildObject(3,0,tile)) {
+			HogeAI.Get().maybePurchasedLand.rawset(true,0);
+		}
+	}
+	
+	function PurchaseLand(tile) {
+		return; // 実効性が薄いのでやらない
+		if(!HogeAI.Get().IsDebug() && HogeAI.Get().HasIncome(100000)) {
+			PurchaseLandTile(tile);
+			PurchaseLandTile(MoveTile(tile,0,1));
+			PurchaseLandTile(MoveTile(tile,0,2));
+			PurchaseLandTile(MoveTile(tile,1,0));
+			PurchaseLandTile(MoveTile(tile,1,1));
+			PurchaseLandTile(MoveTile(tile,-1,0));
+			PurchaseLandTile(MoveTile(tile,-1,1));
+		}
 	}
 	
 	function GetFrontTile(tile) {
@@ -2483,6 +2506,9 @@ class SmartStation extends RailStation {
 		
 		BuildSignal();
 		
+		PurchaseLand(GetArrivalsTiles()[0][0]);
+		PurchaseLand(GetDeparturesTiles()[0][0]);
+		
 		return true;
 	}
 	
@@ -3462,6 +3488,11 @@ class RealSrcRailStation extends RailStation {
 		
 			
 		BuildSignal();
+		
+		
+		PurchaseLand(GetArrivalsTiles()[0][0]);
+		PurchaseLand(GetDeparturesTiles()[0][0]);
+		
 		return true;
 	}
 	
@@ -3755,8 +3786,11 @@ class SimpleRailStation extends RailStation {
 				return false;
 			}
 		}			
-		
+		PurchaseLand(GetArrivalsTiles()[0][0]);
+		PurchaseLand(GetDeparturesTiles()[0][0]);
 		return true;
+		
+		
 	}
 	
 	function BuildAfter() {

@@ -906,6 +906,9 @@ class TileListUtil {
 		local around = [AIMap.GetTileIndex(-1,-1),AIMap.GetTileIndex(-1,0),AIMap.GetTileIndex(0,-1),0];
 		local lowerTiles = [];
 		foreach(tile,level in tileList) {
+			if(!isTestMode) {
+				level = AITile.GetCornerHeight(tile, AITile.CORNER_N); // 他プレイヤに変更されている事があるので再取得
+			}
 			if(level < average) {
 				if(raiseTileMap == null || raiseTileMap.rawin(tile)) {
 					foreach(d in around) {
