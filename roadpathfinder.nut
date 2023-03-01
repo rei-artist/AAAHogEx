@@ -23,6 +23,7 @@ class RoadPathFinder
 	_cost_coast = null;            ///< The extra cost for a coast tile.
 	_cost_drivethroughstation = null;
 	_cost_level_crossing = null;
+	_cost_demolish_tile = null;
 	_pathfinder = null;            ///< A reference to the used AyStar object.
 	_max_bridge_length = null;     ///< The maximum length of a bridge that will be build.
 	_max_tunnel_length = null;     ///< The maximum length of a tunnel that will be build.
@@ -47,7 +48,8 @@ class RoadPathFinder
 		this._cost_coast = 20;
 		this._cost_drivethroughstation = 1000;
 		this._cost_level_crossing = 1000;
-		this._max_bridge_length = 10;
+		this._cost_demolish_tile = 2000;
+		this._max_bridge_length = 50; //10;
 		this._max_tunnel_length = 20;
 		this._estimate_rate = 2;
 		this._goals = null;
@@ -229,6 +231,9 @@ function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 
 	if (!AIRoad.AreRoadTilesConnected(prev_tile, new_tile)) {
 		cost += self._cost_no_existing_road;
+		if(!AIRoad.BuildRoad(prev_tile, new_tile)) {
+			cost += self._cost_demolish_tile;
+		}
 	}
 	
 	if (AIRoad.IsDriveThroughRoadStationTile(new_tile)) {
@@ -258,27 +263,29 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 	if (path.GetCost() >= self._max_cost) return [];
 	local tiles = [];
 
+	if(path.mode == null) {
+		path.mode = {};
+	}
+
 	/* Check if the current tile is part of a bridge or tunnel. */
 	if ((AIBridge.IsBridgeTile(cur_node) || AITunnel.IsTunnelTile(cur_node)) &&
-	     AITile.HasTransportType(cur_node, AITile.TRANSPORT_ROAD)) {
+			AITile.HasTransportType(cur_node, AITile.TRANSPORT_ROAD)) {
 		local other_end = AIBridge.IsBridgeTile(cur_node) ? AIBridge.GetOtherBridgeEnd(cur_node) : AITunnel.GetOtherTunnelEnd(cur_node);
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
 		if (self._AreRoadTilesConnected(cur_node, next_tile) || AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) {
-			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
+			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
 		}
 		/* The other end of the bridge / tunnel is a neighbour. */
-		tiles.push([other_end, self._GetDirection(next_tile, cur_node, true) << 4]);
+		tiles.push([other_end, self._GetDirection(next_tile, cur_node, true) << 4, path.mode]);
 	} else if (path.GetParent() != null && AIMap.DistanceManhattan(cur_node, path.GetParent().GetTile()) > 1) {
 		local other_end = path.GetParent().GetTile();
 		local next_tile = cur_node + (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
 		if (self._AreRoadTilesConnected(cur_node, next_tile) || AIRoad.BuildRoad(cur_node, next_tile)) {
-			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
+			tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
 		}
 	} else {
-		local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(0, -1),
-		                 AIMap.GetTileIndex(1, 0), AIMap.GetTileIndex(-1, 0)];
 		/* Check all tiles adjacent to the current tile. */
-		foreach (offset in offsets) {
+		foreach (offset in HgTile.DIR4Index) {
 			local next_tile = cur_node + offset;
 			/* We add them to the to the neighbours-list if one of the following applies:
 			 * 1) There already is a connections between the current tile and the next tile.
@@ -288,23 +295,60 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 				continue;
 			}
 			if (self._AreRoadTilesConnected(cur_node, next_tile)) {
-				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
+				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
 			} else if (/*(AITile.IsBuildable(next_tile) || AIRoad.IsRoadTile(next_tile)) &&*/
-					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile)) &&
-					AIRoad.BuildRoad(cur_node, next_tile)) {
-				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
+					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile))) {
+				if(AIRoad.BuildRoad(cur_node, next_tile)) {
+					tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
+				} else if( !AIRoad.IsRoadDepotTile(cur_node) //接続方向が制限されるので除外
+						&& !AIRoad.IsRoadStationTile(cur_node) 
+						&& !self.IsBusyRoad(cur_node)
+						&& self.IsTownBuilding(next_tile)) {
+					local town = AITile.GetTownAuthority(next_tile);
+					if(AITown.IsValidTown(town)) {
+						local mode = clone path.mode;
+						if(!mode.rawin(town)) {
+							mode.rawset(town, max(0,(AITown.GetRating(town, AICompany.COMPANY_SELF)-2) * 2 / 3));
+						}
+						if(mode[town] >= 1) {
+							mode[town]--;
+							tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), mode]);
+						}
+					}
+				} else if( self.IsTownBuilding(cur_node)
+						&& ((AITile.IsBuildable(next_tile) 
+							|| (AITile.HasTransportType(next_tile,AITile.TRANSPORT_ROAD) && !self.IsBusyRoad(next_tile))))) { 
+					// cur_nodeがDemolish予定のタイルで、next_tileはDemolish要らないケース
+					tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
+				}
 			}/* else if (self._CheckTunnelBridge(cur_node, next_tile)) { すでに2行前のBuildRoadによってチェックさている。逆にここまで来るという事は次のタイルへ接続できない
 				tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false)]);
 			}*/
 		}
 		if (path.GetParent() != null) {
-			local bridges = self._GetTunnelsBridges(path.GetParent().GetTile(), cur_node, self._GetDirection(path.GetParent().GetTile(), cur_node, true) << 4);
+			local bridges = self._GetTunnelsBridges(path.GetParent().GetTile(), cur_node, self._GetDirection(path.GetParent().GetTile(), cur_node, true) << 4, path);
 			foreach (tile in bridges) {
 				tiles.push(tile);
 			}
 		}
 	}
 	return tiles;
+}
+
+function RoadPathFinder::IsTownBuilding(tile) {
+	return !AITile.IsBuildable(tile) 
+		&& AITile.DemolishTile(tile) 
+		&& AITile.GetOwner(tile) == AICompany.COMPANY_INVALID
+		&& !AITile.IsRiverTile(tile)
+		&& !AIBridge.IsBridgeTile(tile) // pathfinderが狂う可能性。実際には壊れていない状態で探索が続くので
+		&& !AITunnel.IsTunnelTile(tile);
+}
+
+function RoadPathFinder::IsBusyRoad(tile) {
+	if(!AIRoad.BuildDriveThroughRoadStation(tile, tile+1, AIRoad.ROADVEHTYPE_BUS, AIStation.STATION_NEW)) {
+		return AIError.GetLastError() == AIError.ERR_VEHICLE_IN_THE_WAY && AITile.HasTransportType( tile, AITile.TRANSPORT_ROAD );
+	}
+	return false;
 }
 
 
@@ -382,7 +426,7 @@ function RoadPathFinder::_GetDirection(from, to, is_bridge)
  * is needed on both ends.
  */
  
-function RoadPathFinder::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
+function RoadPathFinder::_GetTunnelsBridges(last_node, cur_node, bridge_dir, path) {
 	local slope = AITile.GetSlope(cur_node);
 	if (slope == AITile.SLOPE_FLAT && AITile.IsBuildable(cur_node + (cur_node - last_node))) return [];
 	local tiles = [];
@@ -391,7 +435,7 @@ function RoadPathFinder::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
 		local target = cur_node + i * (cur_node - last_node);
 		if (!bridge_list.IsEmpty() && !_goals.HasItem(target) &&
 				AIBridge.BuildBridge(AIVehicle.VT_ROAD, bridge_list.Begin(), cur_node, target)) {
-			tiles.push([target, bridge_dir]);
+			tiles.push([target, bridge_dir, path.mode]);
 		}
 	}
 
@@ -403,7 +447,7 @@ function RoadPathFinder::_GetTunnelsBridges(last_node, cur_node, bridge_dir) {
 	local prev_tile = cur_node + (cur_node - other_tunnel_end) / tunnel_length;
 	if (AITunnel.GetOtherTunnelEnd(other_tunnel_end) == cur_node && tunnel_length >= 2 &&
 			prev_tile == last_node && tunnel_length < _max_tunnel_length && AITunnel.BuildTunnel(AIVehicle.VT_ROAD, cur_node)) {
-		tiles.push([other_tunnel_end, bridge_dir]);
+		tiles.push([other_tunnel_end, bridge_dir, path.mode]);
 	}
 	return tiles;
 }

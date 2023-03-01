@@ -175,40 +175,38 @@ class AirRoute extends CommonRoute {
 		return AirRouteBuilder;
 	}
 	
-	function GetBuildingCost(infrastractureType, distance, cargo) {
-		local airportTraints = Air.Get().GetAiportTraits(infrastractureType);
-		return HogeAI.Get().GetInflatedMoney(airportTraints.cost * 2/*整地とかの分*/ + (CargoUtils.IsPaxOrMail(cargo) ? 10000 : 0));
-	}
 	
-	function GetBuildingTime(distance) {
-		return 1300;
-	}
+	function GetDefaultInfrastractureTypes() {
+		local result = [];
+		foreach(traints in Air.Get().GetAvailableAiportTraits()) {
+			result.push(traints.airportType);
+		}	
 	
-	function GetDefaultInfrastractureType() {
-		local result = Air.Get().GetMinimumAiportType(true);
-		if(result == null) {
-			result = Air.Get().GetMinimumAiportType(false);
-		}
 		return result;
 	}
 
 	function GetInfrastractureTypes(engine) {
-		return [Air.Get().GetMinimumAiportType(AIEngine.GetPlaneType(engine) == AIAirport.PT_BIG_PLANE)];
-	}
-	
-	function GetSuitableInfrastractureType(placeSrc, placeDest, cargo) { //TODO: 何度も呼ばれるのでキャッシュなりを検討
-		local result = null;
+		local result = [];
+		local isBigPlane = AIEngine.GetPlaneType(engine) == AIAirport.PT_BIG_PLANE;
 		foreach(traints in Air.Get().GetAvailableAiportTraits()) {
-			if(placeSrc.CanBuildAirport(traints.airportType, cargo) && placeDest.CanBuildAirport(traints.airportType, cargo)) {
-				result = traints.airportType;
-			} else {
-				break;
+			if(!isBigPlane || traints.supportBigPlane) {
+				result.push(traints.airportType);
 			}
 		}
 		return result;
 	}
 	
-	function GetMaxRouteCapacity(infrastractureType, engineCapacity) {
+	function GetSuitableInfrastractureTypes(src, dest, cargo) { //TODO: 何度も呼ばれるのでキャッシュなりを検討
+		local result = [];
+		foreach(traints in Air.Get().GetAvailableAiportTraits()) {
+			if(src.CanBuildAirport(traints.airportType, cargo) && dest.CanBuildAirport(traints.airportType, cargo)) {
+				result.push(traints.airportType);
+			}
+		}
+		return result;
+	}
+	
+	function EstimateMaxRouteCapacity(infrastractureType, engineCapacity) {
 		if(infrastractureType == null) {
 			return 0;
 		}
@@ -254,6 +252,11 @@ class AirRoute extends CommonRoute {
 	
 	function BuildDepot(path) {
 		depot = AIAirport.GetHangarOfAirport(srcHgStation.platformTile);
+		return true;
+	}
+	
+	function BuildDestDepot(path) {
+		destDepot = AIAirport.GetHangarOfAirport(destHgStation.platformTile);
 		return true;
 	}
 	
@@ -308,11 +311,13 @@ class AirRoute extends CommonRoute {
 
 
 class AirRouteBuilder extends CommonRouteBuilder {
+	infrastractureType = null;
 
-	constructor(dest, srcPlace, cargo) {
-		CommonRouteBuilder.constructor(dest, srcPlace, cargo);
+	constructor(dest, srcPlace, cargo, options = {}) {
+		CommonRouteBuilder.constructor(dest, srcPlace, cargo, options);
 		makeReverseRoute = false;
 		isNotRemoveStation = HogeAI.Get().IsInfrastructureMaintenance() == false;
+		isNotRemoveDepot = true;
 		checkSharableStationFirst = true;
 	}
 
@@ -328,12 +333,14 @@ class AirRouteBuilder extends CommonRouteBuilder {
 		return CommonRouteBuilder.Build();
 	}*/
 	
-	function CreateStationFactory() { 
+	function CreateStationFactory(target) { 
+		return AirportStationFactory([infrastractureType]);
+		/*infrastractureTypeには見積もり結果を使う
 		local airportTypes = GetUsingAirportTypes();
 		if(airportTypes.len() == 0) {
 			return null;
 		}
-		return AirportStationFactory(airportTypes);
+		return AirportStationFactory(airportTypes);*/
 	}
 	
 	function CreatePathBuilder(engine, cargo) {
@@ -400,6 +407,11 @@ class AirRouteBuilder extends CommonRouteBuilder {
 		}
 		return null;
 	}
+	
+	
+	function BuildStart(engineSet) {
+		infrastractureType = engineSet.infrastractureType;
+	}
 }
 
 class AirportStationFactory extends StationFactory {
@@ -447,21 +459,11 @@ class AirportStationFactory extends StationFactory {
 		HgLog.Info("SetAirportType:"+airportType+" "+currentNum+"x"+currentLength);
 	}
 	
-	function CreateBestOnStationGroup( stationGroup, cargo, toTile ) {
-		foreach(airportType in airportTypes) {
-			SetAirportType(airportType);
-			local result = StationFactory.CreateBestOnStationGroup(stationGroup, cargo, toTile);
-			if(result != null) {
-				return result;
-			}
-		}
-		return null;
-	}
 	
-	function CreateBest( place, cargo, toTile ) {
+	function CreateBest( target, cargo, toTile ) {
 		foreach(airportType in airportTypes) {			
 			SetAirportType(airportType);
-			local result = StationFactory.CreateBest(place, cargo, toTile);
+			local result = StationFactory.CreateBest(target, cargo, toTile);
 			if(result != null) {
 				return result;
 			}
@@ -522,7 +524,7 @@ class AirStation extends HgStation {
 	}
 	
 	function BuildStation(joinStation,isTestMode) {
-		HogeAI.WaitForMoney(AIAirport.GetPrice(airportType) + 5000);
+		HogeAI.WaitForPrice(AIAirport.GetPrice(airportType));
 		return AIAirport.BuildAirport (platformTile, airportType, joinStation);
 	}
 	
@@ -566,9 +568,8 @@ class AirStation extends HgStation {
 		return true;
 	}
 
-	function Remove() {
+	function Demolish() {
 		AIAirport.RemoveAirport(platformTile);
-		RemoveWorld();
 		return true;
 	}
 

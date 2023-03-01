@@ -268,6 +268,38 @@ class AyStar.Path
 };
 
 class AyStar.Open {
+	list = null;
+	paths = null;
+
+	constructor() {
+		this.list = AIList();
+		list.Sort( AIList.SORT_BY_VALUE, true );
+		this.paths = [];
+	}
+	
+	function Insert(path, cost) {
+		local index = paths.len();
+		paths.push(path);
+		list.AddItem(index, cost);
+	}
+	
+	function Pop() {
+		local result = paths[list.Begin()];
+		list.RemoveTop(1);
+		return result;
+	}
+	
+	function Peek() {
+		return paths[list.Begin()];
+	}
+	
+	function Count() {
+		return list.Count();
+	}
+	
+}
+/*
+class AyStar.Open {
 	queue = null;
 	costs = null;
 	costsTable = null;
@@ -355,3 +387,4 @@ class AyStar.Open {
 		return queue.len() + graveyard.len() + costsCount;
 	}
 }
+*/

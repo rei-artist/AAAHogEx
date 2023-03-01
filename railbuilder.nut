@@ -127,12 +127,23 @@ class Path {
 		return null;
 	}
 	
-	function GetTiles() {
+	function GetTiles(skip = 1) {
 		local result = [];
 		local path = this;
-		while(path != null) {
-			result.push(path.GetTile());
-			path = path.GetParent();
+		if(skip == 1) {
+			while(path != null) {
+				result.push(path.GetTile());
+				path = path.GetParent();
+			}
+		} else {
+			local count = 0;
+			while(path != null) {
+				if(count % skip == 0) {
+					result.push(path.GetTile());
+				}
+				count ++;
+				path = path.GetParent();
+			}
 		}
 		return result;
 	}
@@ -158,9 +169,13 @@ class Path {
 		}
 		return result;
 	}
-	
+
 	function Combine(path) {
 		return _SubPath(this,null,path);
+	}
+	
+	function CombineTo(endTile,path) {
+		return _SubPath(this,endTile,path);
 	}
 
 	static function _SubPath(path,endTile,combinePath) {
@@ -171,7 +186,18 @@ class Path {
 		}
 	}
 	
-	function GetTotalDistance() {
+	function GetTotalDistance(vehicleType) {
+		switch(vehicleType) {
+			case AIVehicle.VT_RAIL:
+				return GetRailDistance();
+			case AIVehicle.VT_WATER:
+				return GetRailDistance();
+			case AIVehicle.VT_ROAD:
+				return GetRoadDistance();
+		}
+	}
+	
+	function GetRoadDistance() {
 		local path = this;
 		local result = 0;
 		local prev = null;
@@ -183,6 +209,26 @@ class Path {
 			path = path.GetParent();
 		}
 		return result;
+	}
+	
+	function GetRailDistance() {
+		local path = this;
+		local result = 0;
+		local p1 = null;
+		local p2 = null;
+		while(path != null) {
+			if(p1 != null && p2 != null) {
+				if(path.GetTile()-p1 != p1-p2) {
+					result += 7;
+				} else {
+					result += AIMap.DistanceManhattan(p1, p2) * 10;
+				}
+			}
+			p2 = p1;
+			p1 = path.GetTile();
+			path = path.GetParent();
+		}
+		return result / 10;
 	}
 	
 	function RemoveRails(isTest=false, doInterval=false) {
@@ -256,7 +302,6 @@ class Path {
 		
 	}
 	
-	
 	function IterateRailroadPoints(func) {
 		local path = this;
 		local prev = null;
@@ -290,42 +335,6 @@ class Path {
 			}
 		}
 	}
-			
-	/*
-	function IterateRailroadPoints(func,isFork=true) {
-		local path = this;
-		local prev = null;
-		local prevprev = null;
-		while (path != null) {
-			if (prevprev != null) {
-				if (AIMap.DistanceManhattan(prev, path.GetTile()) > 1) {
-					prevprev = prev;
-					prev = path.GetTile();
-					path = path.GetParent();
-				} else {
-					local dirPrevprev = (prevprev - prev) / AIMap.DistanceManhattan(prev, prevprev);
-					local actualPrevprev = isFork ? path.GetTile() : prev + dirPrevprev;
-					local actualNext = !isFork ? path.GetTile() : prevprev;
-					local straightFork = prev + (prev - actualPrevprev);
-					if(straightFork != prevprev && straightFork != path.GetTile()) {
-						func( actualPrevprev,prev,straightFork,actualNext);
-					} else {
-						foreach(p in nsewArray) {
-							p = prev + p;
-							if(p != prevprev && p!=path.GetTile()) {
-								func( actualPrevprev,prev,p,actualNext);
-							}
-						}
-					}
-				}
-			}
-			if (path != null) {
-				prevprev = prev;
-				prev = path.GetTile();
-				path = path.GetParent();
-			}
-		}
-	}*/
 	
 	function BuildRailloadPoints(forkPath,isFork) {
 		local a = forkPath.GetEndTileAndPrev();
@@ -444,9 +453,11 @@ class Path {
 						}
 					}
 				}
-				prevprev = prev;
-				prev = path.GetTile();
-				path = path.GetParent();
+				if(path != null) {
+					prevprev = prev;
+					prev = path.GetTile();
+					path = path.GetParent();
+				}
 			}
 			return null;
 		}
@@ -544,53 +555,11 @@ class Path {
 		}
 		return [];
 	}
-	/*
-	function GetSlopes(length) {
-		length ++;
 	
-		local path = this;
-		local maxSlopes = 0;
-		
-		while(path != null) {
-			local c = path;
-			local endHeight = AITile.GetMaxHeight (c.GetTile());
-			endHeight += AIBridge.IsBridgeTile(c.GetTile()) ? 1 : 0; // TODO: 平らな橋
-			local startTile = c.GetTile();
-			local prev = null;
-			for(local i=0;i<length;) {
-				prev = c.GetTile();
-				c = c.GetParent();
-				if(c==null) {
-					break;
-				}
-				local next = c.GetParent();
-				local d = AIMap.DistanceManhattan(prev, c.GetTile());
-				if(d>1) {
-					i += d;
-				} else {
-					if(next != null && prev-c.GetTile() != c.GetTile()-next.GetTile()) {
-						i += 0.7;
-					} else {
-						i ++;
-					}
-				}
-			}
-			local startHeight = endHeight;
-			if(prev != null) {
-				startHeight = AITile.GetMaxHeight(prev);
-				startHeight += AIBridge.IsBridgeTile(prev) ? 1 : 0;
-			}
-			maxSlopes = max(endHeight - startHeight, maxSlopes);
-			path = path.GetParent();
-		}
-		
-		return maxSlopes;
-		
-	}*/
 	
 	
 	function GetSlopes(length) {
-		length ++;
+		//length ++; // bound heightで取らないと正確には取れない
 	
 		local endPath = this;
 		local startPath = this;
@@ -607,7 +576,7 @@ class Path {
 			for(;startPath != null && endPoint + length > startPoint; 
 					startPrevprev = startPrev, startPrev = startPath.GetTile(), startPath = startPath.GetParent()) {
 				if(startPrevprev != null && startPrev != null) {
-					local d = AIMap.DistanceManhattan(startPrev, startPrevprev);
+					local d = AIMap.DistanceManhattan(startPrev, startPath.GetTile());
 					if(d > 1) {
 						startPoint += d;
 					} else {
@@ -633,7 +602,7 @@ class Path {
 				maxSlopes = max(endHeight - startHeight, maxSlopes);
 			}
 			if(endPrev != null && endPrevprev != null) {
-				local d = AIMap.DistanceManhattan(endPrev, endPrevprev);
+				local d = AIMap.DistanceManhattan(endPrev, endPath.GetTile());
 				if(d > 1) {
 					endPoint += d;
 				} else {
@@ -759,13 +728,13 @@ class BuildedPath {
 class RailBuilder {
 	static function RemoveSignalUntilFree(p1,p2) {
 		return BuildUtils.RetryUntilFree( function():(p1,p2) {
-			return AIRail.RemoveSignal(p1,p2);
+			return BuildUtils.RemoveSignalSafe(p1,p2);
 		});
 	}
 
 	static function BuildSignalUntilFree(p1,p2,t) {
 		return BuildUtils.BuildSafe( function():(p1,p2,t) {
-			return AIRail.BuildSignal(p1,p2,t);
+			return BuildUtils.BuildSignalSafe(p1,p2,t);
 		});
 	}
 
@@ -808,12 +777,13 @@ class RailBuilder {
 	
 	pathSrcToDest = null;
 	isReverse = false;
-	isOutward = false;
+	isRebuildForHomeward = false;
 	isNoSignal = false;
 	ignoreTiles = null;
 	eventPoller = null;
 	buildedPath = null;
 	
+	pathFinder = null;
 	cargo = null;
 	distance = null;
 
@@ -844,14 +814,16 @@ class RailBuilder {
 	function Build() {
 		local execMode = AIExecMode();
 		if(pathSrcToDest == null) {
+			HgLog.Warning("pathSrcToDest == null(RailBuilder.Build)");
 			return false;
 		}
+		HgLog.Info("Start Build:"+HgTile(pathSrcToDest.GetTile()));
 		local path = pathSrcToDest;
 		local prevPath = null;
 		local prev = null;
 		local prevprev = null;
 		local prevprevprev = null;
-		local signalCount = 0;
+		local signalCount = 7;
 		while (path != null) {
 			if (prevprev != null) {
 				path = RaiseTileIfNeeded(prevPath,prevprev);
@@ -874,14 +846,14 @@ class RailBuilder {
 						underground = prevPath.mode;
 					}
 					if(underground != null) {
-						HogeAI.WaitForMoney(50000);
+						HogeAI.WaitForMoney(50000,0,"BuildUnderground");
 						if(!BuildUnderground(path,prev,prevprev,prevprevprev,underground)) {
 							HgLog.Warning("BuildUnderground failed."+HgTile(prev)+"-"+HgTile(path.GetTile())+" level:"+underground.level+" "+AIError.GetLastErrorString());
 							return RetryToBuild(path,prev);
 						}
 					} else if (AITunnel.GetOtherTunnelEnd(prev) == path.GetTile()) {
-						HogeAI.WaitForMoney(50000);
-						if(!AITunnel.BuildTunnel(AIVehicle.VT_RAIL, prev)) {
+						HogeAI.WaitForMoney(50000,0,"BuildTunnel");
+						if(!BuildUtils.BuildTunnelSafe(AIVehicle.VT_RAIL, prev)) {
 							HgLog.Warning("BuildTunnel failed."+HgTile(prev)+" "+AIError.GetLastErrorString());
 							if(AIError.GetLastError() == AITunnel.ERR_TUNNEL_CANNOT_BUILD_ON_WATER) {
 //								AIController.Break("");
@@ -892,12 +864,12 @@ class RailBuilder {
 						local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(path.GetTile(), prev) + 1);
 						bridge_list.Valuate(AIBridge.GetMaxSpeed);
 						bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-						if(!BuildUtils.BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), prev, path.GetTile())) {
+						if(!BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), prev, path.GetTile())) {
 							HgLog.Warning("BuildBridge failed("+HgTile(prev)+"-"+HgTile(path.GetTile())+":"+AIError.GetLastErrorString()+").");
 							return RetryToBuild(path,prev);
 						}
 					}
-					signalCount = 0;
+					signalCount = 7;
 					prevprevprev = prevprev;
 					prevprev = prev;
 					prev = path.GetTile();
@@ -939,9 +911,9 @@ class RailBuilder {
 						}
 						if(!succeeded && isGoalOrStart) {
 							foreach(dir in HgTile.DIR4Index) {
-								RailBuilder.RemoveSignalUntilFree(prev,prev+dir);
+								RailBuilder.RemoveSignalUntilFree( prev, prev+dir );
 							}
-							if(RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
+							if(RailBuilder.BuildRailUntilFree( prevprev, prev, path.GetTile())) {
 								succeeded = true;
 							}
 						}
@@ -950,13 +922,20 @@ class RailBuilder {
 							return RetryToBuild(path,prev);
 						}
 					}
-					if(signalCount % 7 == 0 ) {
-						if(BuildSignal(prevprev,prev,path.GetTile())) {
-							signalCount ++;
+					if(signalCount >= 7 && BuildSignal( prevprev, prev, path.GetTile() ) ) {
+						signalCount = 0;
+					} else if( RailPathFinder._IsSlopedRail( prevprev, prev, path.GetTile() ) ) {
+						local signal = false;
+						if(isReverse) {
+							signal = AITile.GetMaxHeight(prevprev) < AITile.GetMaxHeight(prev);
+						} else {
+							signal = AITile.GetMaxHeight(path.GetTile()) < AITile.GetMaxHeight(prev);
 						}
-					} else {
-						signalCount ++;
+						if(signal && BuildSignal( prevprev, prev, path.GetTile() )) {
+							signalCount = 3;
+						}
 					}
+					signalCount ++;
 				}
 			}
 			if (path != null) {
@@ -971,8 +950,7 @@ class RailBuilder {
 			BuildSignal(prevprevprev,prevprev,prev);
 		}
 		
-		BuildDone();
-		return true;
+		return BuildDone();
 	}
 	
 	function CanTryToDemolish(tile) {
@@ -986,6 +964,43 @@ class RailBuilder {
 			return !BuildedPath.Contains(tile);
 		}
 		return true;
+	}
+	
+	function BuildBridgeSafe(vehicleType, bridge, p1, p2) {
+		if(!BuildUtils.BuildBridgeSafe(vehicleType, bridge, p1, p2)){
+			if( AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR ) {
+				HgLog.Warning("TryDemolishUnderBridge(BuildBridge failed("+HgTile(p1)+"-"+HgTile(p2)+":"+AIError.GetLastErrorString()+")).");
+				TryDemolishUnderBridge(p1,p2);
+				if(BuildUtils.BuildBridgeSafe(vehicleType, bridge, p1, p2)) {
+					return true;
+				}
+			}
+			HgLog.Warning("BuildBridge failed("+HgTile(p1)+"-"+HgTile(p2)+":"+AIError.GetLastErrorString()+").");
+			return false;
+		}
+		return true;
+	}
+	
+	function TryDemolishUnderBridge(p1,p2) {
+		if(AIMap.DistanceManhattan(p1,p2) <= 1) {
+			return;
+		}
+		local offset;
+		if(AIMap.GetTileX(p1) == AIMap.GetTileX(p2)) {
+			offset = AIMap.GetTileIndex(0,1);
+		} else {
+			offset = AIMap.GetTileIndex(1,0);
+		}
+		local t0 = min(p1,p2) + offset;
+		local t1 = max(p1,p2) - offset;
+		while(t0 != t1) {
+			if(AIRoad.IsRoadTile(t0) || AIRail.IsRailTile(t0) || AITile.IsWaterTile(t0) || AIBridge.IsBridgeTile(t0) || AITunnel.IsTunnelTile(t0)) {
+			} else if(!AITile.IsBuildable(t0)) {
+				local r = AITile.DemolishTile(t0);
+				HgLog.Warning("DemolishTile:"+r+" "+HgTile(t0));
+			}
+			t0 += offset;
+		}
 	}
 	
 	function DemolishTile( tile ) {
@@ -1040,7 +1055,7 @@ class RailBuilder {
 		local startPath = pathSrcToDest.SubPathEnd(tile);
 		local tmpBuildedPath = BuildedPath(startPath);
 		local railBuilder = RailToAnyRailBuilder(isReverse?startPath.Reverse():startPath, 
-			goalsArray, ignoreTiles, !isReverse, 150, eventPoller, null, cargo, distance);
+			goalsArray, ignoreTiles, !isReverse, 150, eventPoller, pathFinder);
 		railBuilder.isNoSignal = isNoSignal;
 		local result = railBuilder.Build();
 		tmpBuildedPath.Remove(false);
@@ -1050,7 +1065,10 @@ class RailBuilder {
 			
 			startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-1).RemoveRails();
 			pathSrcToDest = origPath.Combine(newPath);
-			BuildDone();
+			if(!BuildDone()) {
+				HgLog.Warning("retry to build failed");
+				return false;
+			}
 			HgLog.Warning("retry to build succeeded");
 			return true;
 		} else {
@@ -1061,24 +1079,48 @@ class RailBuilder {
 	
 	function BuildDone() {
 		buildedPath = BuildedPath(isReverse?pathSrcToDest.Reverse():pathSrcToDest);
-		FlattenRails(buildedPath);
-		if(isOutward) {
+		if(!FlattenRails(buildedPath)) {
+			return false;
+		}
+		if(isRebuildForHomeward) {
 			RebuildForHomeward(buildedPath);
 		}
+		return true;
 	}
 	
 	function FindLevel(path, level, maxLength) {
 		local prev = null;
 		local length = 0;
+		local includeDiagonal = false;
+		local minLevel = level;
+		local maxLevel = level;
+		local boundTileList = AIList();
 		for(; path != null && length < maxLength ; prev = path.GetTile(), path = path.GetParent(), length ++) {
 			if(prev == null) {
 				continue;
 			}
-			if(AIMap.DistanceManhattan(prev, path.GetTile()) != 1 || !HgTile.IsStraightTrack(AIRail.GetRailTracks(prev))) {
+			if(AIMap.DistanceManhattan(prev, path.GetTile()) != 1) {
 				return null;
 			}
-			if(HgTile.GetBoundMaxHeight(prev, path.GetTile()) == level) {
-				return prev;
+			if(!HgTile.IsStraightTrack(AIRail.GetRailTracks(prev))) {
+				includeDiagonal = true;
+			}
+			local t = HgTile.GetBoundCornerTiles(prev, path.GetTile());
+			local l0 = AITile.GetCornerHeight( t[0], AITile.CORNER_N );
+			local l1 = AITile.GetCornerHeight( t[1], AITile.CORNER_N );
+			local l = max(l0,l1);
+			minLevel = min(l,minLevel);
+			maxLevel = max(l,maxLevel);
+			boundTileList.AddItem(t[0],l0);
+			boundTileList.AddItem(t[1],l1);
+			if(l == level) {
+				return {
+					tile = prev
+					includeDiagonal = includeDiagonal
+					minLevel = minLevel
+					maxLevel = maxLevel
+					boundTileList = boundTileList
+				};
 			}
 		}
 		return null;
@@ -1097,14 +1139,21 @@ class RailBuilder {
 				continue;
 			}
 			local level = HgTile.GetBoundMaxHeight(prev, path.GetTile());
-			local sameLevelTile = FindLevel(path, level, 20);
-			if(sameLevelTile == null || sameLevelTile == path.GetTile()) {
+			local sameLevel = FindLevel(path, level, 20);
+			if(sameLevel == null || sameLevel.tile == path.GetTile()) {
 				continue;
 			}
+			if(sameLevel.includeDiagonal) {
+				if( max( sameLevel.maxLevel - level, level - sameLevel.minLevel ) >= 2 ) {
+					continue;
+				}
+			}
+			
 			if(HogeAI.GetUsableMoney() < HogeAI.GetInflatedMoney(300000)) {
 				break;
 			}
-			HogeAI.WaitForMoney(50000);
+			HogeAI.WaitForMoney(50000,0,"FlattenRails");
+			
 			local orgPath = path;
 			local orgPrev = prev;
 			local prevprev = null;
@@ -1113,19 +1162,27 @@ class RailBuilder {
 					continue;
 				}
 				AIRail.RemoveRail(prevprev, prev, path.GetTile());
-				if(prev == sameLevelTile) {
+				if(prev == sameLevel.tile) {
 					break;
 				}
 			}
-			prev = null;
-			path = orgPath;
-			for(; path != null; prev = path.GetTile(), path = path.GetParent()) {
-				if(prev == null) {
-					continue;
+			if(!sameLevel.includeDiagonal) {
+				prev = null;
+				path = orgPath;
+				for(; path != null; prev = path.GetTile(), path = path.GetParent()) {
+					if(prev == null) {
+						continue;
+					}
+					HgTile.ForceLevelBound(prev, path.GetTile(), level);
+					if(path.GetTile() == sameLevel.tile) {
+						break;
+					}
 				}
-				HgTile.ForceLevelBound(prev, path.GetTile(), level);
-				if(path.GetTile() == sameLevelTile) {
-					break;
+			} else {
+				local testMode = AITestMode();
+				if(TileListUtil.LevelAverage(sameLevel.boundTileList, null, true, level)) {
+					local execMode = AIExecMode();
+					TileListUtil.LevelAverage(sameLevel.boundTileList, null, false, level);
 				}
 			}
 			prev = orgPrev;
@@ -1137,27 +1194,31 @@ class RailBuilder {
 					continue;
 				}
 				HogeAI.WaitForMoney(1000);
-				RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile());
+				if(!RailBuilder.BuildRailUntilFree(prevprev, prev, path.GetTile())) {
+					HgLog.Warning("BuildRail failed:"+HgTile(prevprev)+" "+HgTile(prev)+" "+HgTile(path.GetTile())+" "+AIError.GetLastErrorString()+"(FlattenRails)");
+					// ごくまれに失敗する
+					return false;
+				}
 				if(signalCount % 7 == 0 ) {
 					if(!isNoSignal) {
-						AIRail.RemoveSignal (prev, path.GetTile());
-						if(AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY)) {
+						BuildUtils.RemoveSignalSafe(prev, path.GetTile());
+						if(BuildUtils.BuildSignalSafe(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY)) {
 							signalCount ++;
 						}
 					}
 				} else {
 					signalCount ++;
 				}
-				if(prev == sameLevelTile) {
+				if(prev == sameLevel.tile) {
 					if(!isNoSignal) {
-						AIRail.RemoveSignal (prev, path.GetTile());
-						AIRail.BuildSignal(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY);
+						BuildUtils.RemoveSignalSafe(prev, path.GetTile());
+						BuildUtils.BuildSignalSafe(prev,path.GetTile(),AIRail.SIGNALTYPE_PBS_ONEWAY);
 					}
 					break;
 				}
 			}
 		}
-		
+		return true;
 	}
 	
 	function RebuildForHomeward(buildedPath) {
@@ -1169,6 +1230,9 @@ class RailBuilder {
 				continue;
 			}
 			if(AIMap.DistanceManhattan(prev, path.GetTile()) != 1) {
+				continue;
+			}
+			if(AIBridge.IsBridgeTile(prev) || AIBridge.IsBridgeTile(path.GetTile())) {
 				continue;
 			}
 			local level = HgTile.GetBoundMaxHeight(prev, path.GetTile());
@@ -1185,7 +1249,7 @@ class RailBuilder {
 			if(HogeAI.GetUsableMoney() < HogeAI.GetInflatedMoney(300000)) {
 				break;
 			}
-			HogeAI.WaitForMoney(50000);
+			HogeAI.WaitForMoney(50000,0,"ForceLevelBound(RebuildForHomeward)");
 			local isAroundCoastRevNext = HgTile.IsAroundCoast(revNext);
 			if(!HgTile.IsAroundCoast(revPrev) && !isAroundCoastRevNext) {
 				HgTile.ForceLevelBound(revPrev, revNext, level, { lowerOnly = true });
@@ -1204,11 +1268,11 @@ class RailBuilder {
 			return false;
 		}
 		if(!isReverse) {
-			AIRail.RemoveSignal (prev, next);
-			return AIRail.BuildSignal(prev,next,AIRail.SIGNALTYPE_PBS_ONEWAY);
+			BuildUtils.RemoveSignalSafe(prev, next);
+			return BuildUtils.BuildSignalSafe(prev,next,AIRail.SIGNALTYPE_PBS_ONEWAY);
 		} else {
-			AIRail.RemoveSignal (prev, prevprev);
-			return AIRail.BuildSignal(prev,prevprev,AIRail.SIGNALTYPE_PBS_ONEWAY);
+			BuildUtils.RemoveSignalSafe(prev, prevprev);
+			return BuildUtils.BuildSignalSafe(prev,prevprev,AIRail.SIGNALTYPE_PBS_ONEWAY);
 		}
 	}
 	
@@ -1238,7 +1302,7 @@ class RailBuilder {
 			return false;
 		}
 		if (AITunnel.GetOtherTunnelEnd(A2) == B2) {
-			HogeAI.WaitForMoney(50000);
+			HogeAI.WaitForMoney(50000,0,"BuildTunnel(BuildUnderground)");
 			if (AIRail.BuildRail(A0, A1, A2) && AITunnel.BuildTunnel(AIVehicle.VT_RAIL, A2)) {
 				BuildSignal(A0,A1,A2);
 				return true;
@@ -1261,7 +1325,8 @@ class RailBuilder {
 		if(path.mode != null && path.mode instanceof RailPathFinder.Underground) {
 			return path;
 		}
-		local dir = prev - prevprev;
+		local dir = (prev - prevprev) / AIMap.DistanceManhattan(prev,prevprev);
+		
 		local cur = path;
 		local prevprevcur;
 		local prevcur;
@@ -1279,7 +1344,14 @@ class RailBuilder {
 		} else {
 			while(true) {
 				if(AIMap.DistanceManhattan(t0,t1)>1 || RailPathFinder._IsUnderBridge(t1)) { // 橋の下に橋は作れない
-					notSkip = true;
+					//HgLog.Warning("i:"+i+" D:"+AIMap.DistanceManhattan(t0,t1)+" t0:"+HgTile(t0)+" t1:"+HgTile(t1)+" cur:"+HgTile(cur.GetTile()));
+
+					if(i==0) {
+						notSkip = true;
+					} else {
+						notStraight = true;
+						// i --; prevprevcurとか戻せない
+					}
 					break;
 				}
 				local boundCorner = HgTile.GetCorners( HgTile(t0).GetDirection(HgTile(t1)) );
@@ -1348,7 +1420,7 @@ class RailBuilder {
 				} else {
 					cur = prevcur;
 				}
-			} else if(i>=3) {
+			} else if(i>=2) {
 				if(notStraight) {
 					cur = prevprevcur;
 					t1 = t0;
@@ -1367,6 +1439,7 @@ class RailBuilder {
 		}
 		
 		if(raise) {
+			//HgLog.Warning("Raise i:"+i+" notStraight:"+notStraight+" notSea:"+notSea+" t0:"+HgTile(t0)+" t1:"+HgTile(t1)+" cur:"+HgTile(cur.GetTile()));
 			Raise(t0,t1);
 		}
 		return cur;
@@ -1380,9 +1453,11 @@ class RailBuilder {
 		local result = BuildUtils.RetryUntilFree(function():(t0,boundCorner) {
 			local success = false;
 			if(TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[1]))) {
+				//HgLog.Warning("RaiseTile:"+HgTile(t0)+HgTile.GetCornerString(boundCorner[1]));
 				success = true;
 			}
 			if(!success && TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]))) {
+				//HgLog.Warning("RaiseTile:"+HgTile(t0)+HgTile.GetCornerString(boundCorner[0]));
 				success = true;
 			}
 			return success;
@@ -1422,7 +1497,7 @@ class RailBuilder {
 			n_node = n_node - direction;
 		}
 		
-		HogeAI.WaitForMoney(20000);
+		HogeAI.WaitForMoney(20000,0,"ChangeBridge");
 		local currentRailType = AIRail.GetCurrentRailType();
 		AIRail.SetCurrentRailType(AIRail.GetRailType(n_node));
 		local startTile = n_node;
@@ -1437,7 +1512,9 @@ class RailBuilder {
 			if(!RailBuilder.RemoveRailTrackUntilFree(n_node, tracks)) {
 				HgLog.Warning("fail RemoveRailTrack."+HgTile(n_node)+" "+AIError.GetLastErrorString());
 				foreach(mark in removed) {
-					AIRail.BuildRailTrack(mark[0], mark[1]);
+					if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
+						HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
+					}
 				}
 				AIRail.SetCurrentRailType(currentRailType);
 				return false;
@@ -1450,10 +1527,12 @@ class RailBuilder {
 		local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(startTile, endTile) + 1);
 		bridge_list.Valuate(AIBridge.GetMaxSpeed);
 		bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-		if(!AIBridge.BuildBridge(AIVehicle.VT_RAIL, bridge_list.Begin(), startTile, endTile)) {
+		if(!BuildUtils.BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), startTile, endTile)) {
 			HgLog.Warning("fail BuildBridge "+HgTile(startTile)+"-"+HgTile(endTile)+" "+AIError.GetLastErrorString());
 			foreach(mark in removed) {
-				AIRail.BuildRailTrack(mark[0], mark[1]);
+				if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
+					HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
+				}
 			}
 			AIRail.SetCurrentRailType(currentRailType);
 			return false;
@@ -1487,8 +1566,8 @@ class RailBuilder {
 		while(path != null) {
 			if(prev != null && (path.GetTile() == startTile || path.GetTile() == endTile)) {
 				if(buildSignal) {
-					AIRail.RemoveSignal (prev, path.GetTile());
-					AIRail.BuildSignal(prev, path.GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
+					BuildUtils.RemoveSignalSafe (prev, path.GetTile());
+					BuildUtils.BuildSignalSafe(prev, path.GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
 				}
 				local startPath = path;
 				path = path.GetParent();
@@ -1496,8 +1575,8 @@ class RailBuilder {
 					if(path.GetTile() == endTile || path.GetTile() == startTile) {
 						startPath.parent_ = path;
 						if(buildSignal && path.GetParent()!=null && path.GetParent().GetParent()!=null) {
-							AIRail.RemoveSignal (path.GetParent().GetTile(), path.GetParent().GetParent().GetTile());
-							AIRail.BuildSignal( path.GetParent().GetTile(), path.GetParent().GetParent().GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
+							BuildUtils.RemoveSignalSafe (path.GetParent().GetTile(), path.GetParent().GetParent().GetTile());
+							BuildUtils.BuildSignalSafe( path.GetParent().GetTile(), path.GetParent().GetParent().GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
 						}
 						return true;
 					}
@@ -1538,10 +1617,12 @@ class TailedRailBuilder {
 			Container(srcStation.GetDeparturesTiles()), 
 			Container(destStation.GetArrivalsTiles()),
 			ignoreTiles, limitCount, eventPoller, reversePath);
-		local dangerTiles = [];
-		dangerTiles.extend(destStation.GetDepartureDangerTiles());
-		dangerTiles.extend(srcStation.GetArrivalDangerTiles());
-		result.dangerTiles = dangerTiles;
+		if(reversePath == null) {
+			local dangerTiles = [];
+			dangerTiles.extend(destStation.GetDepartureDangerTiles());
+			dangerTiles.extend(srcStation.GetArrivalDangerTiles());
+			result.dangerTiles = dangerTiles;
+		}
 		return result;
 	}
 	static function StationToStationReverse(srcStation, destStation, limitCount, eventPoller, reversePath = null) {
@@ -1581,45 +1662,18 @@ class TailedRailBuilder {
 		local ignoreTiles = [];
 		ignoreTiles.extend(isArrival ? destStation.GetDeparturesTile() : destStation.GetArrivalsTile());
 		ignoreTiles.extend(destStation.GetIgnoreTiles());
-		return TailedRailBuilder(
+		local result = TailedRailBuilder(
 			GetterFunction(function():(srcPathGetter) {
 				return TailedRailBuilder.GetStartArray(srcPathGetter.Get().Reverse());
 			}),
 			Container(isArrival ? destStation.GetArrivalsTiles() : destStation.GetDeparturesTiles()), 
 			ignoreTiles, limitCount, eventPoller, reversePath);
+		if(reversePath == null) {
+			result.dangerTiles = isArrival ? destStation.GetDepartureDangerTiles() : destStation.GetArrivalDangerTiles();
+		}
+		return result;
 	}
-	/*
-	static function StationToPath(srcStation, destPathGetter, limitCount, eventPoller, reversePath = null) {
-		local ignoreTiles = [];
-		ignoreTiles.extend(srcStation.GetArrivalsTile());
-		ignoreTiles.extend(srcStation.GetIgnoreTiles());
-		return TailedRailBuilder(
-			Container(srcStation.GetDeparturesTiles()), 
-			GetterFunction(function():(destPathGetter){
-				local path = destPathGetter.Get().SubPathIndex(10);
-				if(path == null) {
-					return [];
-				}
-				return TailedRailBuilder.GetGoalArrayByPath(path.Reverse());
-			}), 
-			ignoreTiles, limitCount, eventPoller, reversePath);
-	}
-	*/
-	/*
-	static function PathToPath(srcPathGetter, destPathGetter, ignoreTiles, limitCount, eventPoller, reversePath = null) {
-		return TailedRailBuilder(
-			GetterFunction(function():(srcPathGetter) {
-				return TailedRailBuilder.GetGoalArrayByPath(srcPathGetter.Get(),true);
-			}),
-			GetterFunction(function():(destPathGetter){
-				local path = destPathGetter.Get().SubPathIndex(10);
-				if(path == null) {
-					return [];
-				}
-				return TailedRailBuilder.GetGoalArrayByPath(path.Reverse());
-			}), 
-			ignoreTiles, limitCount, eventPoller, reversePath);
-	}*/
+
 
 	static function GetStartArray(path) {
 		local result = [];
@@ -1686,12 +1740,12 @@ class TailedRailBuilder {
 			if(prev != null) {
 				local d = AIMap.DistanceManhattan(prev, path.GetTile());
 				if(prevprev != null) {
-					if(!RailPathFinder._IsSlopedRail(path.GetTile(), prev, prevprev)) {
+					if(!RailPathFinder._IsSlopedRail(path.GetTile(), prev, prev + (prev - path.GetTile()))) {
 						if(counter >= next && d == 1) {
 							if(!includePrevprev) {
-								result.push([prev, path.GetTile(), 1000000 - counter]);
+								result.push([prev, path.GetTile(), 1000000 - counter * 100]);
 							} else {
-								result.push([prevprev, prev, path.GetTile(), 1000000 - counter]);
+								result.push([prevprev, prev, path.GetTile(), 1000000 - counter * 100]);
 							}
 							next += max(1, next / 2);
 						}
@@ -1699,15 +1753,15 @@ class TailedRailBuilder {
 				} else {
 					if(counter >= next && d == 1) {
 						if(!includePrevprev) {
-							result.push([prev, path.GetTile(), 1000000 - counter]);
+							result.push([prev, path.GetTile(), 1000000 - counter * 100]);
 						}
 						next += max(1, next / 2);
 					}
 				}
 				if(d == 1) {
-					counter += 100;
+					counter ++;
 				} else {
-					counter += d * 100;
+					counter += d;
 				}
 			}
 			prevprev = prev;
@@ -1729,7 +1783,10 @@ class TailedRailBuilder {
 	
 	reversePath = null;
 	isReverse = null;
+	isRevReverse = null;
 	isSingle = null;
+	isTwoway = null;
+	engine = null;
 	cargo = null;
 	platformLength = null;
 	distance = null;
@@ -1744,6 +1801,7 @@ class TailedRailBuilder {
 	
 	foundedRevPath = null;
 	lastRevCheck = null;
+	isNotCheckRevPath = null;
 	
 	
 	constructor(srcTilesGetter, destTilesGetter, ignoreTiles, limitCount, eventPoller, reversePath = null, isReverse = false) {
@@ -1754,53 +1812,70 @@ class TailedRailBuilder {
 		this.eventPoller = eventPoller;
 		this.reversePath = reversePath;
 		this.isReverse = false;
+		this.isRevReverse = false;
 		this.isSingle = false;
+		this.isTwoway = true;
+		this.isNotCheckRevPath = false;
 	}
 	
 	function OnPathFindingInterval() {
-		if(HogeAI.Get().IsDebug()) {
-			return eventPoller.OnPathFindingInterval();
-		}
-	
 		if(!eventPoller.OnPathFindingInterval()) {
 			return false;
+		}
+		if(isNotCheckRevPath) {
+			return true;
 		}
 		if(lastRevCheck != null && AIDate.GetCurrentDate() < lastRevCheck + 30 ) {
 			return true;
 		}
 		lastRevCheck = AIDate.GetCurrentDate();
 		
-		local pathFinder2 = RailPathFinder();
-		pathFinder2.cargo = cargo;
-		pathFinder2.platformLength = platformLength;
-		pathFinder2.distance = distance;
-		pathFinder2.dangerTiles = dangerTiles;
-		pathFinder2.InitializePath(destTilesGetter.Get(), srcTilesGetter.Get(), ignoreTiles, reversePath);
-		local path2 = pathFinder2.FindPathDay(2, null);
-		if(pathFinder2.IsFoundGoal()) {
-			foundedRevPath = path2;
-			return false;
+		local goals = srcTilesGetter.Get();
+		if(goals.len() <= 8) { // ゴールが多いと時間がかかるのでスキップ
+			local pathFinder2 = RailPathFinder();
+			pathFinder2.engine = engine;
+			pathFinder2.cargo = cargo;
+			pathFinder2.platformLength = platformLength;
+			pathFinder2.distance = distance;
+			pathFinder2.isOutward = reversePath == null && !isSingle && isTwoway;
+			pathFinder2.dangerTiles = dangerTiles;
+			pathFinder2.isRevReverse = !isRevReverse;
+			pathFinder2.InitializePath(destTilesGetter.Get(), srcTilesGetter.Get(), ignoreTiles, reversePath);
+			local startDate = AIDate.GetCurrentDate();
+			local path2 = pathFinder2.FindPathDay(2, null);
+			if(pathFinder2.IsFoundGoal()) {
+				foundedRevPath = path2;
+				return false;
+			}
+			if(AIDate.GetCurrentDate() - startDate >= 5) {
+				isNotCheckRevPath = true; // たまにすごく時間がかかる事がある
+			}
+			return path2 != null;
 		}
+		return true;
 		
-		return path2 != null;
 	}
 	
 	function BuildTails() {
 		isFoundGoal = false;
 
+		local isOutward = reversePath == null && !isSingle && isTwoway;
 		local pathFinder1 = RailPathFinder();
+		pathFinder1.engine = engine;
 		pathFinder1.cargo = cargo;
 		pathFinder1.platformLength = platformLength;
 		pathFinder1.distance = distance;
+		pathFinder1.isOutward = isOutward;
+		pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
 		local starts = srcTilesGetter.Get();
 		local goals = destTilesGetter.Get();
 		if(starts.len()==0) {
-			HgLog.Warning("TrainRoute: No start(TailedRailBuilder.pathFinder1)");
+			HgLog.Warning("TailedRailBuilder: No start(pathFinder1)");
 			return false;
 		}
 		if(goals.len()==0) {
-			HgLog.Warning("TrainRoute: No goal(TailedRailBuilder.pathFinder1)");
+			HgLog.Warning("TailedRailBuilder: No goal(pathFinder1)");
 			return false;
 		}
 		pathFinder1.InitializePath(starts, goals, ignoreTiles, reversePath);
@@ -1809,39 +1884,52 @@ class TailedRailBuilder {
 			path1 = foundedRevPath.Reverse();
 		}
 		if(path1==null) {
-			HgLog.Warning("TrainRoute: No path found(TailedRailBuilder.pathFinder1)");
+			HgLog.Warning("TailedRailBuilder: No path found(pathFinder1)");
 			return false;
 		}
-		local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,this);
-		if(isSingle) {
-			railBuilder1.isOutward = false;
-			railBuilder1.isNoSignal = true;
+		if(pathFinder1.IsFoundGoal() || foundedRevPath != null) {
+			// src側から建築
+			local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,this);
+			railBuilder1.pathFinder = pathFinder1;
+			railBuilder1.isRebuildForHomeward = isOutward;
+			if(isSingle) {
+				railBuilder1.isNoSignal = true;
+			}
+			railBuilder1.cargo = cargo;
+			railBuilder1.distance = distance;
+			if(railBuilder1.Build()) {
+				buildedPath1 = railBuilder1.buildedPath; //dest->src方向
+
+				buildedPath = buildedPath1;
+				isFoundGoal = true;
+				return true;
+			} else {
+				HgLog.Warning("TailedRailBuilder: railBuilder1.Build failed.");
+			}
 		} else {
-			railBuilder1.isOutward = reversePath == null ? true : false;
+			HgLog.Warning("TailedRailBuilder: Timed out(pathFinder1)");
 		}
-		railBuilder1.cargo = cargo;
-		railBuilder1.distance = distance;
-		if(!railBuilder1.Build()) {
-			HgLog.Warning("TrainRoute: TailedRailBuilder.railBuilder1.Build failed.");
-			return false;
-		}
-		buildedPath1 = railBuilder1.buildedPath;
-		if(pathFinder1.IsFoundGoal()) {
-			buildedPath = buildedPath1;
-			isFoundGoal = true;
-			return true;
-		}
+		return false; // 結局ほとんど失敗するので再挑戦しない
 		
-		goals = TailedRailBuilder.GetGoalArrayByPath(isReverse ? buildedPath1.path.Reverse() : buildedPath1.path);
+		// 遅いので、スタート地点のみにする
+		//goals = TailedRailBuilder.GetGoalArrayByPath(isReverse ? buildedPath1.path.Reverse() : buildedPath1.path);
 		/*
 		foreach(g in goals) {
 			HgLog.Info("goal:"+HgTile(g[0])+"-"+HgTile(g[1])+","+g[2]);
 		}*/
+		local lastTile = path1.GetTile();
+		HgLog.Warning("TailedRailBuilder: No path found(pathFinder1). Try goal=>start (LastTile:"+HgTile(lastTile)+")");
+		
+		goals = srcTilesGetter.Get();
 		if(goals.len()==0) {
-			HgLog.Warning("TrainRoute: No goal(TailedRailBuilder.pathFinder2)");
+			HgLog.Warning("TailedRailBuilder: No goal(pathFinder2)");
 			return false;
 		}
+		if(reversePath == null) {
+			reversePath = path1; // pathfinder1での探索完了地点までをガイドにする
+		}
 		local pathFinder2 = RailPathFinder();
+		pathFinder2.engine = engine;
 		pathFinder2.cargo = cargo;
 		pathFinder2.platformLength = platformLength;
 		pathFinder2.distance = distance;
@@ -1850,7 +1938,7 @@ class TailedRailBuilder {
 		local path2 = pathFinder2.FindPathDay(limitCount*2, eventPoller);
 		if(path2==null) {
 			HgLog.Warning("TrainRoute: No path found(TailedRailBuilder.pathFinder2)");
-			buildedPath1.Remove();
+			//buildedPath1.Remove();
 			return false;
 		}
 		if(!pathFinder2.IsFoundGoal()) {
@@ -1860,15 +1948,13 @@ class TailedRailBuilder {
 		local railBuilder2 = RailBuilder(path2.Reverse(),isReverse,ignoreTiles,eventPoller);
 		railBuilder2.cargo = cargo;
 		railBuilder2.distance = distance;
+		railBuilder2.isRebuildForHomeward = isOutward;
 		if(isSingle) {
-			railBuilder2.isOutward = false;
 			railBuilder2.isNoSignal = true;
-		} else {
-			railBuilder2.isOutward = reversePath == null ? true : false;
 		}
 		if(!railBuilder2.Build()) {
 			HgLog.Warning("TrainRoute: TailedRailBuilder.railBuilder2.Build failed.");
-			buildedPath1.Remove();
+			//buildedPath1.Remove();
 			return false;
 		}
 		/*
@@ -1876,15 +1962,8 @@ class TailedRailBuilder {
 		railBuilder2.buildedPath.ChangePath();*/
 		buildedPath2 = railBuilder2.buildedPath;
 		
-		if(pathFinder2.IsFoundGoal()) {
-			isFoundGoal = true;
-			buildedPath = buildedPath1.CombineAndRemoveByFork(buildedPath2,isReverse);
-			return true;
-		}
-		if(TailedRailBuilder.GetStartArray(buildedPath2.path).len()==0) {
-			HgLog.Warning("TrainRoute: No start(TailedRailBuilder.pathFinder2)");
-			return false;
-		}
+		isFoundGoal = true;
+		buildedPath = buildedPath2; //buildedPath1.CombineAndRemoveByFork(buildedPath2,isReverse);
 		return true;
 	}
 	
@@ -1903,37 +1982,45 @@ class TailedRailBuilder {
 }
 
 class TwoWayPathToStationRailBuilder {
-	pathDepatureGetter = null;
-	pathArrivalGetter = null;
+	pathDepatureGetter = null; // 駅の出発タイルへ向けたパス
+	pathArrivalGetter = null; // 駅の到着タイルへ向けたパス
+	isReverse = null; // 上記を逆にする
 	destHgStation = null;
 	limitCount = null;
 	eventPoller = null;
 
+	engine = null;
 	cargo = null;
 	platformLength = null;
 	distance = null;
 	isBuildDepotsDestToSrc = null;
+	isBuildSingleDepotDestToSrc = null;
 
 	buildedPath1 = null;
 	buildedPath2 = null;
 	depots = null;
 	
-	constructor(pathDepatureGetter, pathArrivalGetter, destHgStation, limitCount, eventPoller) {
-		this.pathDepatureGetter = pathDepatureGetter;
-		this.pathArrivalGetter = pathArrivalGetter;
+	constructor(pathDepatureGetter=null, pathArrivalGetter=null, destHgStation=null, limitCount=null, eventPoller=null) {
+		this.pathDepatureGetter = pathDepatureGetter; 
+		this.pathArrivalGetter = pathArrivalGetter; 
+		this.isReverse = false;
 		this.destHgStation = destHgStation;
 		this.limitCount = limitCount;
 		this.eventPoller = eventPoller;
 		this.isBuildDepotsDestToSrc = false;
+		this.isBuildSingleDepotDestToSrc = false;
 		this.depots = [];
 	}
 	
 	function Build() {
 		
-		local b1 = TailedRailBuilder.PathToStation(pathDepatureGetter, destHgStation, limitCount, eventPoller );
+		local b1 = TailedRailBuilder.PathToStation(pathDepatureGetter, destHgStation, limitCount, eventPoller, null, !isReverse );
 		b1.cargo = cargo;
+		b1.engine = engine;
 		b1.platformLength = platformLength;
 		b1.distance = distance;
+		b1.isReverse = isReverse;
+		b1.isRevReverse = isReverse;
 		if(!b1.BuildTails()) {
 			RemoveDepots();
 			return false;
@@ -1943,19 +2030,26 @@ class TwoWayPathToStationRailBuilder {
 			depots.extend(buildedPath1.path.Reverse().SubPathIndex(4).BuildDoubleDepot());
 		}
 		
-		local b2 = TailedRailBuilder.PathToStation(pathArrivalGetter, destHgStation, limitCount, eventPoller,buildedPath1.path, false );
+		local b2 = TailedRailBuilder.PathToStation(pathArrivalGetter, destHgStation, limitCount, eventPoller, buildedPath1.path, isReverse );
 		b2.cargo = cargo;
+		b2.engine = engine;
 		b2.platformLength = platformLength;
 		b2.distance = distance;
-		b2.isReverse = true;
+		b2.isReverse = !isReverse;
+		b2.isRevReverse = isReverse;
 		if(!b2.BuildTails()) {
 			b1.Remove();
 			return false;
 		}
 		buildedPath2 = b2.buildedPath;
 		if(isBuildDepotsDestToSrc) {
-			
 			depots.extend(buildedPath2.path.Reverse().SubPathIndex(4).BuildDoubleDepot());
+		}
+		if(isBuildSingleDepotDestToSrc) {
+			local depot = buildedPath2.path.Reverse().SubPathIndex(4).BuildDepotForRail();
+			if(depot != null) {
+				depots.push(depot);
+			}
 		}
 		return true;
 	}
@@ -1973,6 +2067,7 @@ class TwoWayStationRailBuilder {
 	limitCount = null;
 	eventPoller = null;
 	
+	engine = null;
 	cargo = null;
 	platformLength = null;
 	distance = null;
@@ -1995,6 +2090,7 @@ class TwoWayStationRailBuilder {
 	
 	function Build() {
 		local b1 = TailedRailBuilder.StationToStation(destHgStation, srcHgStation, limitCount, eventPoller );
+		b1.engine = engine;
 		b1.cargo = cargo;
 		b1.platformLength = platformLength;
 		b1.distance = distance;
@@ -2014,6 +2110,7 @@ class TwoWayStationRailBuilder {
 
 	
 		local b2 = TailedRailBuilder.StationToStationReverse(destHgStation, srcHgStation, limitCount, eventPoller, buildedPath2.path);
+		b2.engine = engine;
 		b2.cargo = cargo;
 		b2.platformLength = platformLength;
 		b2.distance = distance;
@@ -2029,7 +2126,10 @@ class TwoWayStationRailBuilder {
 			}
 		}
 		if(isBuildSingleDepotDestToSrc) {
-			depots.push(buildedPath2.path.BuildDepotForRail());
+			local depot = buildedPath2.path.BuildDepotForRail();
+			if(depot != null) {
+				depots.push(depot);
+			}
 		}
 		
 		buildedPath1 = b2.buildedPath;
@@ -2045,6 +2145,7 @@ class SingleStationRailBuilder {
 	limitCount = null;
 	eventPoller = null;
 	
+	engine = null;
 	cargo = null;
 	platformLength = null;
 	distance = null;
@@ -2062,6 +2163,7 @@ class SingleStationRailBuilder {
 	
 	function Build() {
 		local b1 = TailedRailBuilder.StationToStationSingle(destHgStation, srcHgStation, limitCount, eventPoller );
+		b1.engine = engine;
 		b1.cargo = cargo;
 		b1.platformLength = platformLength;
 		b1.distance = distance;
@@ -2087,7 +2189,7 @@ class RailToAnyRailBuilder extends RailBuilder {
 	originalPath = null;
 	buildPointsSuceeded = false;
 	
-	constructor(railPath, goalsArray, ignoreTiles, isReverse, limitCount, eventPoller, reversePath=null, cargo=null, distance=null) {
+	constructor(railPath, goalsArray, ignoreTiles, isReverse, limitCount, eventPoller, pathFinder) {
 		this.originalPath = railPath;
 		this.isReverse = isReverse;
 		this.cargo = cargo;
@@ -2098,11 +2200,20 @@ class RailToAnyRailBuilder extends RailBuilder {
 		if(startArray.len()==0) {
 			path = null;
 		} else {
-			local pathfinder = CreatePathFinder();
-			pathfinder.InitializePath(startArray, goalsArray, ignoreTiles, reversePath);
-			path = FindPath(pathfinder, limitCount, eventPoller);
+			local newPathFinder = RailPathFinder();
+			newPathFinder.engine = pathFinder.engine;
+			newPathFinder.cargo = pathFinder.cargo;
+			newPathFinder.platformLength = pathFinder.platformLength;
+			newPathFinder.distance = pathFinder.distance;
+			newPathFinder.isOutward = pathFinder.isOutward;
+			newPathFinder.isRevReverse = pathFinder.isRevReverse;
+			newPathFinder.dangerTiles = pathFinder.dangerTiles;			
+			newPathFinder.InitializePath(startArray, goalsArray, ignoreTiles);
+			path = FindPath(newPathFinder, limitCount, eventPoller);
 		}
 		RailBuilder.constructor(path, isReverse, ignoreTiles, eventPoller);
+		
+		this.pathFinder = pathFinder;
 	}
 
 	static function IsForkable(prevprev,prev,fork) {
