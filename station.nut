@@ -1798,6 +1798,10 @@ class HgStation {
 	}
 
 	function GetProduction(cargo, route, callers) {
+		if(stationGroup == null) {
+			HgLog.Warning("stationGroup==null(GetProduction) "+this);
+			return 0;
+		}
 		return stationGroup.GetExpectedProduction( cargo, route.GetVehicleType(), true, callers );
 	}
 	
