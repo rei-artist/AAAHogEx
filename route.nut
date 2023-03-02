@@ -456,7 +456,12 @@ class Route {
 	function GetLeftCapacity(cargo, isDest = false) {
 		local station = isDest ? destHgStation : srcHgStation;
 		// CurrentExpectedProductionは完ぺきではないが、さすがに2倍を超えていたらオーバーしていると思う
-		local maxCapacity = IsReturnRoute(isDest) ? GetCurrentRouteCapacity(cargo) : GetMaxRouteCapacity(cargo) * 2; 
+		local maxCapacity;
+		if( IsReturnRoute(isDest) ) {
+			maxCapacity = GetCurrentRouteCapacity(cargo);
+		} else {
+			maxCapacity = GetMaxRouteCapacity(cargo);
+		}
 		if(station.stationGroup == null) {
 			return 0;
 		}

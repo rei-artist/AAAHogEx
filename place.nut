@@ -410,6 +410,7 @@ class Place {
 	static supportEstimatesCache = ExpirationTable(360);
 	static usedOtherCompanyEstimationCache = ExpirationRawTable(180);
 	static nearLandCache = {};
+	static maybeNotUsed = {};
 
 	static function SaveStatics(data) {
 		local array = [];
@@ -439,6 +440,7 @@ class Place {
 		data.nearWaters <- PlaceDictionary.Get().nearWaters;
 		data.ngPlaces <- Place.ngPlaces;
 		data.ngCandidatePlaces <- Place.ngCandidatePlaces;
+		data.maybeNotUsed <- Place.maybeNotUsed;
 	}
 
 	
@@ -472,6 +474,9 @@ class Place {
 		}
 		if(data.rawin("ngCandidatePlaces")) {
 			HgTable.Extend(Place.ngCandidatePlaces, data.ngCandidatePlaces);
+		}
+		if(data.rawin("maybeNotUsed")) {
+			HgTable.Extend(Place.maybeNotUsed, data.maybeNotUsed);
 		}
 	}
 	
@@ -1184,7 +1189,7 @@ class Place {
 			}
 			foreach(vehicleType in vehicleTypes) {
 				local estimate = Route.Estimate(vehicleType, acceptingCargo, PlaceProduction.PIECE_SIZE, 
-					productionCount[0] / productionCount[1], // サポート作らなくなるのでやらない。生産上位半分が使われる想定なので平均より少し増やしておく
+					productionCount[0] / productionCount[1],
 					false);
 				if(estimate==null) {
 					continue;
@@ -1333,7 +1338,13 @@ class Place {
 	}
 	
 	function AdjustUsing(production,cargo,isMine) {
-		local otherCompanies = GetUsedOtherCompanyEstimation();
+		local key = Id();
+		local maybeNotUsed = Place.maybeNotUsed.rawin(key) ? Place.maybeNotUsed[key] : false;
+		local otherCompanies = maybeNotUsed ? 0 : GetUsedOtherCompanyEstimation();
+		if(otherCompanies>=1 && GetLastMonthTransportedPercentage(cargo) == 0) { // 推定するしかできない
+			Place.maybeNotUsed.rawset(key,true)
+			otherCompanies = 0;
+		}
 		//local usingRoutes = GetRoutesUsingSource(cargo);
 		local totalRates = 0;
 		local count = 0;

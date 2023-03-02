@@ -435,7 +435,11 @@ class TrainRoute extends Route {
 		if(engineSet == null) {
 			return 0;
 		}
-		return engineSet.GetMaxRouteCapacity(cargo) * GetPlatformLength() * 16 / engineSet.length;
+		if(GetCargoCapacity(cargo) == 0) {
+			return 200; // うまく計算できない
+		} else {
+			return engineSet.GetMaxRouteCapacity(cargo) * GetPlatformLength() * 16 / engineSet.length;
+		}
 	}
 	
 	function GetUsableCargos() {
@@ -1609,10 +1613,14 @@ class TrainRoute extends Route {
 	}
 	
 	
-	function IsInStationOrDepotOrStop(){
+	function IsInStationOrDepotOrStop(isTransfer){
+		local srcStationId = srcHgStation.GetAIStation() 
 		foreach(vehicle, v in engineVehicles) {
-			if(AIStation.GetStationID(AIVehicle.GetLocation(vehicle)) == srcHgStation.GetAIStation() 
-					|| AIVehicle.IsInDepot (vehicle) /*|| AIMap.DistanceManhattan(AIVehicle.GetLocation(vehicle),srcHgStation.platformTile) < 12*/) {
+			if(AIStation.GetStationID(AIVehicle.GetLocation(vehicle)) == srcStationId
+					|| AIVehicle.IsInDepot(vehicle) /*|| AIMap.DistanceManhattan(AIVehicle.GetLocation(vehicle),srcHgStation.platformTile) < 12*/) {
+				return true;
+			}
+			if(isTransfer && AIVehicle.GetCurrentSpeed(vehicle) == 0) {
 				return true;
 			}
 		}
@@ -1693,7 +1701,7 @@ class TrainRoute extends Route {
 	
 	function IsCloneTrain() {
 		local result = (maxTrains == null || maxTrains > engineVehicles.len())
-			&& !IsInStationOrDepotOrStop() 
+			&& !IsInStationOrDepotOrStop(IsTransfer()) 
 			&& (averageUsedRate == null || averageUsedRate < TrainRoute.USED_RATE_LIMIT)
 			&& (/*HogeAI.Get().IsRich() || */
 				(latestEngineSet==null || IsWaitingCargoForCloneTrain()));

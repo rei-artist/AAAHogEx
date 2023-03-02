@@ -72,6 +72,7 @@ class HogeAI extends AIController {
 	roadTrafficRate = null;
 	canUsePlaceOnWater = null;
 	waitForPriceStartDate = null;
+	maxRoi = null;
 	
 	yeti = null;
 	ecs = null;
@@ -223,6 +224,7 @@ class HogeAI extends AIController {
 		pendings = {};
 		pathfindings = {};
 		canUsePlaceOnWater = false;
+		maxRoi = 0;
 
 		DelayCommandExecuter();
 	}
@@ -607,7 +609,7 @@ class HogeAI extends AIController {
 	}
 	
 	function CalculateProfitModel() {
-		if(!IsRich()) {
+		if(!IsRich()/* || (maxRoi < 1000 && !HasIncome(250000))*/) {
 			roiBase = true;
 			buildingTimeBase = false;
 			vehicleProfibitBase = false;
@@ -814,6 +816,9 @@ class HogeAI extends AIController {
 			if(newRoute != null) {
 				if(t.src instanceof Place) {
 					t.src.SetDirtyArround();
+				}
+				if(newRoute.IsTransfer() && t.rawin("route")) {
+					t.route.NotifyAddTransfer();
 				}
 				rootBuilders.push(routeBuilder);
 				if(isBiDirectional) {
@@ -1097,6 +1102,7 @@ class HogeAI extends AIController {
 					if(estimate == null || estimate.value <= 0) {
 						continue;
 					}
+					maxRoi = max(estimate.roi,maxRoi);
 					HgLog.Info("Estimate d:"+distance+" roi:"+estimate.roi+" income:"+estimate.routeIncome+" ("+estimate.incomePerOneTime+") "
 						+ AIEngine.GetName(estimate.engine)+(estimate.rawin("numLoco")?"x"+estimate.numLoco:"") +"("+estimate.vehiclesPerRoute+") "
 						+ "runningCost:"+AIEngine.GetRunningCost(estimate.engine)+" capacity:"+estimate.capacity);
@@ -1111,6 +1117,7 @@ class HogeAI extends AIController {
 			vtValues.sort(function(a,b){
 				return -(a.maxValue - b.maxValue);
 			});
+			CalculateProfitModel();
 			
 			
 			local cargoResult = [];
