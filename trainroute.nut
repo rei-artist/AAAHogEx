@@ -1119,15 +1119,25 @@ class TrainRoute extends Route {
 
 		if(latestEngineVehicle != null) {
 			local orderFlags = AIOrder.OF_NON_STOP_INTERMEDIATE + (IsBiDirectional() ? 0 : AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD);
-		
-			if(AIOrder.GetOrderCount (latestEngineVehicle) >= 4) {
-				AIOrder.InsertOrder(latestEngineVehicle, 3, destHgStation.platformTile, orderFlags);
-				AIOrder.SetStopLocation	(latestEngineVehicle, 3, AIOrder.STOPLOCATION_MIDDLE);
+			local failed = false;
+			if(AIOrder.GetOrderCount (latestEngineVehicle) >= 4) { // return routeがある場合、changeしないのでこちらにはこない？
+				if(!AIOrder.InsertOrder(latestEngineVehicle, 3, destHgStation.platformTile, orderFlags)) {
+					HgLog.Warning("InsertOrder failed:"+HgTile(destHgStation.platformTile)+" "+this);
+					failed = true;
+				} else {
+					AIOrder.SetStopLocation	(latestEngineVehicle, 3, AIOrder.STOPLOCATION_MIDDLE);
+				}
 			} else {
-				AIOrder.AppendOrder(latestEngineVehicle, destHgStation.platformTile, orderFlags);
-				AIOrder.SetStopLocation	(latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
+				if(!AIOrder.AppendOrder(latestEngineVehicle, destHgStation.platformTile, orderFlags)) {
+					HgLog.Warning("AppendOrder failed:"+HgTile(destHgStation.platformTile)+" "+this);
+					failed = true;
+				} else {
+					AIOrder.SetStopLocation	(latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
+				}
 			}
-			AIOrder.RemoveOrder(latestEngineVehicle, 2);
+			if(!failed) {
+				AIOrder.RemoveOrder(latestEngineVehicle, 2);
+			}
 		}
 		if(additionalRoute != null) {
 			additionalRoute.AddDestination(destHgStation);
@@ -1703,8 +1713,7 @@ class TrainRoute extends Route {
 		local result = (maxTrains == null || maxTrains > engineVehicles.len())
 			&& !IsInStationOrDepotOrStop(IsTransfer()) 
 			&& (averageUsedRate == null || averageUsedRate < TrainRoute.USED_RATE_LIMIT)
-			&& (/*HogeAI.Get().IsRich() || */
-				(latestEngineSet==null || IsWaitingCargoForCloneTrain()));
+			&& (latestEngineSet==null || IsWaitingCargoForCloneTrain() );
 		if(!result) {
 			return false;
 		}
@@ -1728,15 +1737,19 @@ class TrainRoute extends Route {
 
 
 	function IsWaitingCargoForCloneTrain() {
-	
-		local station = srcHgStation.GetAIStation();
-		local waiting = AIStation.GetCargoWaiting(station, cargo);
-		local capacity = GetCargoCapacity(cargo);
-		if(waiting > capacity / 2) {
-			return true;
-		}
-		if(waiting > capacity / 4 && AIStation.GetCargoRating (station, cargo) < 40) {
-			return true;
+		foreach(cargo in GetCargos()) {
+			local capacity = GetCargoCapacity(cargo);
+			if(capacity == 0) {
+				continue;
+			}
+			local station = srcHgStation.GetAIStation();
+			local waiting = AIStation.GetCargoWaiting(station, cargo);
+			if(waiting > capacity / 2) {
+				return true;
+			}
+			if(waiting > capacity / 4 && AIStation.GetCargoRating (station, cargo) < 40) {
+				return true;
+			}
 		}
 		return false;
 	}

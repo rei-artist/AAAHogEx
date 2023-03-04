@@ -452,7 +452,7 @@ class HogeAI extends AIController {
 				stockpiled = true;
 				HgLog.Info("ecs: true");
 			}
-			if(name.find("FIRS") != null || name.find("NAIS") != null || name.find("XIS") != null) {
+			if(name.find("FIRS") != null || name.find("NAIS") != null || name.find("XIS") != null  || name.find("AIRS") != null) {
 				firs = true;
 				HgLog.Info("firs: true");
 			}
@@ -1256,6 +1256,16 @@ class HogeAI extends AIController {
 					places.sort(function(a,b){
 						return -(a.allowedAirportLevel - b.allowedAirportLevel);
 					});
+				} else if(vt == AIVehicle.VT_WATER) {
+					foreach(place in placeInfo.places) {
+						places.push({
+							place = place
+							coasts = place.GetCoasts(cargo)
+						});
+					}
+					places.sort(function(a,b){
+						return (a.coasts == null ? 1 : 0) - (b.coasts == null ? 1 : 0);
+					});
 				} else {
 					foreach(place in placeInfo.places) {
 						places.push({place = place});
@@ -1710,10 +1720,10 @@ class HogeAI extends AIController {
 		local maxDistance;
 		local minDistance;
 		local minProduction;
-		if(vehicleType == AIVehicle.VT_RAIL) {
-			minDistance = RoadRoute.IsTooManyVehiclesForSupportRoute(RoadRoute) ? 0 : 0;
+		if(vehicleType == AIVehicle.VT_RAIL || vehicleType == AIVehicle.VT_WATER) {
+			minDistance = 0;
 			maxDistance = 500;
-			minProduction = 50;
+			minProduction = vehicleType == AIVehicle.VT_RAIL ? 50 : 1;
 		} else {
 			minDistance = 0;
 			maxDistance = 200;

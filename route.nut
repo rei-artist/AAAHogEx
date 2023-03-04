@@ -391,25 +391,25 @@ class Route {
 		return false;
 	}
 	
-	function NeedsAdditionalProducing(callRoutes = null, isDest = false) {
-		return NeedsAdditionalProducingCargo(cargo, callRoutes, isDest );
+	function NeedsAdditionalProducing(callRoutes = null, isDest = false, checkRouteCapacity = true) {
+		return NeedsAdditionalProducingCargo(cargo, callRoutes, isDest, checkRouteCapacity );
 	}
 	
-	function NeedsAdditionalProducingCargo(cargo, callRoutes = null, isDest = false) {
-		local key = cargo+"-"+isDest;
+	function NeedsAdditionalProducingCargo(cargo, callRoutes = null, isDest = false, checkRouteCapacity = true) {
+		local key = cargo+"-"+isDest+"-"+checkRouteCapacity;
 		if(needsAdditionalCache.rawin(key)) {
 			return needsAdditionalCache.rawget(key);
 		}
-		local result = _NeedsAdditionalProducingCargo(cargo, callRoutes, isDest);
+		local result = _NeedsAdditionalProducingCargo(cargo, callRoutes, isDest, checkRouteCapacity);
 		needsAdditionalCache.rawset(key,result);
 		return result;
 	}
 
-	function _NeedsAdditionalProducingCargo(cargo, callRoutes = null, isDest = false) {
+	function _NeedsAdditionalProducingCargo(cargo, callRoutes = null, isDest = false, checkRouteCapacity = true ) {
 		if(IsClosed()) {
 			return false;
 		}
-		if(IsOverflow(cargo,isDest)) {
+		if(checkRouteCapacity && IsOverflow(cargo,isDest)) {
 			return false;
 		}
 	
@@ -423,16 +423,21 @@ class Route {
 
 		local hgStation = isDest ? destHgStation : srcHgStation;
 		local limitCapacity = GetCargoCapacity(cargo);
-		if(IsReturnRoute(isDest)) {
-			limitCapacity *= 2;
+		if(!IsReturnRoute(isDest)) {
+			limitCapacity /= 2;
 		}
 		local cargoWaiting = AIStation.GetCargoWaiting( hgStation.GetAIStation(), cargo );
-		if(cargoWaiting == 0 && limitCapacity == 0 && cargo != this.cargo && !NeedsAdditionalProducingCargo(this.cargo)) { // 新たな種類のcargoが必要かどうかのチェック
+		if(cargoWaiting == 0 && limitCapacity == 0 && cargo != this.cargo
+				&& !NeedsAdditionalProducingCargo(this.cargo,null,false,checkRouteCapacity)) { // 新たな種類のcargoが必要かどうかのチェック
 			return false;	// メインカーゴがこれ以上不要な場合、列車数が飽和している事を示唆している
 		}
+		if(checkRouteCapacity && GetLeftCapacity(cargo, isDest) == 0) {
+			return false;
+		}
 
-		local  result = cargoWaiting <= limitCapacity && GetLeftCapacity(cargo, isDest) > 0;
+		local result = cargoWaiting <= limitCapacity;
 		if(!IsTransfer()) {
+			//HgLog.Warning("_NeedsAdditionalProducingCargo "+result+" cargoWaiting:"+cargoWaiting+" limitCapacity:"+limitCapacity+" "+this);
 			return result;
 		}
 		if(isDest || !result) {
@@ -440,12 +445,12 @@ class Route {
 		}
 		foreach(destRoute in GetDestRoutes()) {
 			if( destRoute.IsBiDirectional() && destRoute.destHgStation.stationGroup == destHgStation.stationGroup ) {
-				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, true) 
-						&& !destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false) ) {
+				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, true, checkRouteCapacity) 
+						&& !destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
 					return true;
 				}
 			} else {
-				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false) ) {
+				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
 					return true;
 				}
 			}
@@ -2030,7 +2035,7 @@ class CommonRoute extends Route {
 		}
 
 		//local c021 = PerformanceCounter.Start("c021");
-		local needsAddtinalProducing = NeedsAdditionalProducing();
+		local needsAddtinalProducing = NeedsAdditionalProducing(null,false,false);
 		local isDestOverflow = IsDestOverflow();
 		local usingRoutes = srcHgStation.stationGroup.GetUsingRoutesAsSource();
 		//c021.Stop();
@@ -2107,7 +2112,7 @@ class CommonRoute extends Route {
 			if(needsAddtinalProducing) {
 				CommonRouteBuilder.CheckTownTransferCargo(this,srcHgStation,cargo);
 			}
-			if(isBiDirectional && NeedsAdditionalProducing(null, true)) {
+			if(isBiDirectional && NeedsAdditionalProducing(null, true, true)) {
 				CommonRouteBuilder.CheckTownTransferCargo(this,destHgStation,cargo);
 			}
 			//c4.Stop();		
