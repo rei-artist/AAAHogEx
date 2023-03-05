@@ -952,12 +952,6 @@ class Route {
 		if(IsRemoved() || IsBuilding()) {
 			return;
 		}
-		/*
-		if(isTransfer && (destRoute == false || destRoute.IsRemoved())) {
-			HgLog.Warning("Route Remove (DestRoute["+destRoute+"] removed)"+this);
-			Remove();
-			return;
-		}*/
 		if(srcHgStation.stationGroup == null) {
 			HgLog.Warning("Route Remove (srcHgStation removed) "+this);
 			Remove();
@@ -978,8 +972,9 @@ class Route {
 			Remove();
 			return;
 		}
-		if(isTransfer) {
+		if(IsTransfer()) {
 			local destRoutes = destHgStation.stationGroup.GetUsingRoutesAsSource();
+			local srcSharing = srcHgStation.stationGroup.GetUsingRoutesAsSource().len() >= 2;
 			/*
 			if(destHgStation.GetName().find("2340") != null) {
 				HgLog.Warning("GetUsingRoutesAsSource:"+destRoutes.len()+" "+destHgStation.stationGroup+" "+this);
@@ -995,6 +990,9 @@ class Route {
 			}
 			local closedAllDest = true;
 			foreach(destRoute in destRoutes) {
+				if(srcSharing && destRoute.IsOverflow(cargo)) {
+					continue;
+				}
 				if(!destRoute.IsClosed() && destRoute.HasCargo(cargo)) {
 					closedAllDest = false;
 					break;
@@ -1026,6 +1024,28 @@ class Route {
 				}
 			} else if(IsClosed() && acceptedCargo) {
 				ReOpen();
+			}
+
+			if(GetVehicleType() == AIVehicle.VT_ROAD || IsSingle()) {
+				local routes = [];
+				if(srcHgStation.place != null) {
+					routes.extend(PlaceDictionary.Get().GetUsedAsSourceByPriorityRoute(srcHgStation.place, cargo));
+				}
+				if(IsBiDirectional() && destHgStation.place != null) {
+					routes.extend(PlaceDictionary.Get().GetUsedAsSourceByPriorityRoute(destHgStation.place, cargo));
+				}
+				foreach(route in routes) {
+					HgLog.Warning("GetUsedAsSourceByPriorityRoute:"+route+" "+this);
+					if(route.IsClosed() || (!route.NeedsAdditionalProducingPlace(srcHgStation.place) && !route.NeedsAdditionalProducingPlace(destHgStation.place))) {
+						continue;
+					}
+					if(route.IsSameSrcAndDest(this)) {// industryへのsupply以外が対象(for FIRS)
+						continue;
+					}
+					HgLog.Warning("Route Remove (Collided rail route found)"+this);
+					Remove();
+					return;
+				}
 			}
 		}
 	}
@@ -1413,6 +1433,10 @@ class CommonRoute extends Route {
 	
 	function IsTransfer() {
 		return isTransfer;
+	}
+	
+	function IsSingle() {
+		return false;
 	}
 	
 	function IsRoot() {
@@ -2386,37 +2410,6 @@ class CommonRoute extends Route {
 			return;
 		}
 	
-		if(!isClosed) {
-			if(isTransfer && (!destRoute || destRoute.IsClosed())) {
-				this.destRoute = null;
-				destRoute = GetDestRoute();
-			}
-			if(GetVehicleType() == AIVehicle.VT_ROAD && !srcHgStation.IsTownStop() && !isTransfer) {
-				local routes = [];
-				local destRoute = GetDestRoute();
-				if(srcHgStation.place != null) {
-					routes.extend(PlaceDictionary.Get().GetUsedAsSourceByPriorityRoute(srcHgStation.place, cargo));
-				}
-				if(IsBiDirectional() && destHgStation.place != null) {
-					routes.extend(PlaceDictionary.Get().GetUsedAsSourceByPriorityRoute(destHgStation.place, cargo));
-				}
-				foreach(route in routes) {
-					//HgLog.Info("GetUsedTrainRoutes:"+route+" destRoute:"+destRoute+" "+this);
-					if(route.IsClosed() || (!route.NeedsAdditionalProducingPlace(srcHgStation.place) && !route.NeedsAdditionalProducingPlace(destHgStation.place))) {
-						continue;
-					}
-					if(IsTransfer() && route.IsSrcStationGroup(destHgStation.stationGroup)) {
-						continue;
-					}
-					if(destRoute!=false && !IsTransfer() && !route.IsSameSrcAndDest(this)) {// industryへのsupply以外が対象(for FIRS)
-						continue;
-					}
-					HgLog.Warning("Route Remove (Collided rail route found)"+this);
-					Remove();
-					return;
-				}
-			}
-		}
 		
 		/* やらない方がパフォーマンスが良い
 		if(HogeAI.Get().buildingTimeBase && AIBase.RandRange(100) < 10) {

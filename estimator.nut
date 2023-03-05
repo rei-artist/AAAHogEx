@@ -36,12 +36,12 @@ Estimation <- {
 		runningCostPerCargo = (annualDeliver == 0 ? 0 : runningCost * vehiclesPerRoute / annualDeliver) + additionalRunningCostPerCargo;
 		income = incomePerOneTime * 365 / totalDays - runningCost;;
 		routeIncome = income * vehiclesPerRoute - infrastractureCost - additionalRunningCostPerCargo * annualDeliver + additionalRouteIncome;
-		local lostOpportunity = routeIncome * (days / 2 + waitingInStationTime) / 365;
-		roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost + lostOpportunity);
 		value = GetValue();
 	}
 
 	function GetValue() {
+		local lostOpportunity = 0; //routeIncome * (days / 2 + waitingInStationTime) / 365;
+		roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost + lostOpportunity);
 		local incomePerVehicle = routeIncome / vehiclesPerRoute; 
 		local incomePerBuildingTime = routeIncome * 100 / buildingTime;
 		return HogeAI.Get().GetValue(roi,incomePerBuildingTime,incomePerVehicle);
@@ -86,28 +86,29 @@ Estimation <- {
 					AppendSupportRouteEstimate(src, cargo, supportEstimate);
 				}
 			}
-			local vehicleType = GetVehicleType();
-			if(!subCargo && vehicleType == AIVehicle.VT_RAIL) {
-				foreach(eachCargo in src.GetProducingCargos()) {
-					//HgLog.Warning("additional.EstimateAdditional GetProducingCargos:"+AICargo.GetName(eachCargo)+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
-					if(eachCargo != cargo && dest.IsAcceptingCargo(eachCargo)) {
-						//HgLog.Warning("additional.EstimateAdditional IsAcceptingCargo:"+AICargo.GetName(eachCargo)+" "+dest.GetName()+"<-"+src.GetName());
-						local production = src.GetExpectedProduction(eachCargo, vehicleType);
-						local additional = Route.Estimate( vehicleType, eachCargo, distance, production, isBidirectional, infrastractureTypes );
-						if(additional != null && additional.routeIncome > 0) {
-							additional = clone additional;
-							additional.EstimateAdditional( dest, src, infrastractureTypes, transferedRoute, true);
-							//if(src.GetName().find("Bindwood") != null) {
-								//HgLog.Warning("additional.EstimateAdditional "+additional+" "+dest.GetName()+"<-"+src.GetName());
-							//}
-							routeIncome += additional.routeIncome;
-						} else {
-							//HgLog.Warning("additional.EstimateAdditional false "+additional+" "+dest.GetName()+"<-"+src.GetName());
-						}
+		}
+		local vehicleType = GetVehicleType();
+		if(!subCargo && vehicleType == AIVehicle.VT_RAIL) {
+			foreach(eachCargo in src.GetProducingCargos()) {
+				//HgLog.Warning("additional.EstimateAdditional GetProducingCargos:"+AICargo.GetName(eachCargo)+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
+				if(eachCargo != cargo && dest.IsAcceptingCargo(eachCargo)) {
+					//HgLog.Warning("additional.EstimateAdditional IsAcceptingCargo:"+AICargo.GetName(eachCargo)+" "+dest.GetName()+"<-"+src.GetName());
+					local production = src.GetExpectedProduction(eachCargo, vehicleType);
+					local additional = Route.Estimate( vehicleType, eachCargo, distance, production, isBidirectional, infrastractureTypes );
+					if(additional != null && additional.routeIncome > 0) {
+						additional = clone additional;
+						additional.EstimateAdditional( dest, src, infrastractureTypes, transferedRoute, true);
+						//if(src.GetName().find("Bindwood") != null) {
+							//HgLog.Warning("additional.EstimateAdditional "+additional+" "+dest.GetName()+"<-"+src.GetName());
+						//}
+						routeIncome += additional.routeIncome;
+						price += additional.price;
+					} else {
+						//HgLog.Warning("additional.EstimateAdditional false "+additional+" "+dest.GetName()+"<-"+src.GetName());
 					}
 				}
-				value = routeIncome * 100 / buildingTime;
 			}
+			value = GetValue(); //routeIncome * 100 / buildingTime;
 		}
 	}
 	
@@ -714,9 +715,9 @@ class CommonEstimator extends Estimator {
 		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
 		//		return distance * 2 + 1800; //TODO: 海率によって異なる
 				if(distance == WaterRoute.IF_CANAL) {
-					return 200 + distance / 10;
+					return 250 + distance / 10;
 				} else {
-					return 60 + distance / 10;
+					return 125 + distance / 10;
 				}
 
 				local x = distance / 10;
@@ -732,6 +733,7 @@ class CommonEstimator extends Estimator {
 			case AIVehicle.VT_AIR:
 				return 300;
 		}
+		assert(false);
 	}
 }
 

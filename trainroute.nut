@@ -2073,7 +2073,7 @@ class TrainRoute extends Route {
 			return;
 		}
 	
-		if(IsTransfer()) {
+		if(IsTransfer() || IsSingle()) {
 			Route.CheckClose();
 /*			local destRoute = GetDestRoute();
 			if(destRoute == false || destRoute.IsRemoved()) {

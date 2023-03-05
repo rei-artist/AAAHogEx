@@ -1866,6 +1866,7 @@ class TailedRailBuilder {
 		pathFinder1.platformLength = platformLength;
 		pathFinder1.distance = distance;
 		pathFinder1.isOutward = isOutward;
+		pathFinder1.isSingle = isSingle;
 		pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
 		local starts = srcTilesGetter.Get();

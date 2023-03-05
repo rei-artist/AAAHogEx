@@ -56,6 +56,7 @@ class RailPathFinder
 	dangerTiles = null;
 	isOutward = null;
 	isRevReverse = null;
+	isSingle = null;
 	
 	isFoundPath = false;
 	
@@ -90,6 +91,7 @@ class RailPathFinder
 		this._goalsMap = {};
 
 		this.isRevReverse = false;
+		this.isSingle = false;
 		
 		this.useInitializePath2 = false;
 	}
@@ -98,10 +100,17 @@ class RailPathFinder
 	function InitializeParameters() {
 		_cost_level_crossing = 900;
 		_cost_crossing_reverse = 300;
-		_cost_bridge_per_tile_ex = 600;
-		_cost_bridge_per_tile_ex2 = 900;
-		_cost_tunnel_per_tile_ex  = 600;
-		_cost_tunnel_per_tile_ex2 = 900;
+		if(isSingle) {
+			_cost_bridge_per_tile_ex = 100;
+			_cost_bridge_per_tile_ex2 = 200;
+			_cost_tunnel_per_tile_ex  = 100;
+			_cost_tunnel_per_tile_ex2 = 200;
+		} else {
+			_cost_bridge_per_tile_ex = 600;
+			_cost_bridge_per_tile_ex2 = 900;
+			_cost_tunnel_per_tile_ex  = 600;
+			_cost_tunnel_per_tile_ex2 = 900;
+		}
 		_cost_diagonal_tile = 67;
 		_cost_doublediagonal_sea = 100000;
 		_cost_guide = 1500; //20;

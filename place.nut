@@ -895,7 +895,8 @@ class Place {
 			return true;
 		}
 		foreach(route in GetRoutesUsingSource(cargo)) {
-			if(vehicleType != AIVehicle.VT_ROAD && route.GetVehicleType() == AIVehicle.VT_ROAD) {
+			if(vehicleType != AIVehicle.VT_ROAD 
+					&& (route.GetVehicleType() == AIVehicle.VT_ROAD || route.IsSingle())) {
 				continue;
 			}
 			if(route.IsOverflowPlace(this,cargo)) {
@@ -1175,6 +1176,7 @@ class Place {
 		local routeIncome = {};
 		local buildingTime = {};
 		local production = 0;
+		local count = 0;
 		local connectedPlaces = {};
 		local vehicleTypes = Route.GetAvailableVehicleTypes();
 		foreach(vehicleType in vehicleTypes) {
@@ -1211,8 +1213,20 @@ class Place {
 				if(!connected) {
 					buildingTime[vehicleType] += estimate.buildingTime * productionCount[1];
 				}
+				/*
+				HgLog.Warning("GetSupportEstimate"
+					+" cargo:"+AICargo.GetName(acceptingCargo)
+					+" vehicleType:"+vehicleType
+					+" routeIncome:"+estimate.routeIncome
+					+" buildingTime:"+estimate.buildingTime
+					+(estimate.rawin("infraBuildingTime")?(" infraBT:"+estimate.infraBuildingTime):"")
+					+" production:"+(productionCount[0] / productionCount[1])
+					+" count:"+productionCount[1]
+					+" connected:"+connected
+					+" "+this);*/
 			}
 			production += productionCount[0];
+			count += productionCount[1];
 		}
 		local maxVehicleType = null;
 		local maxValue = null;
@@ -1225,6 +1239,13 @@ class Place {
 				}
 			}
 		}
+		/*
+		HgLog.Warning("GetSupportEstimate maxVehicleType:"+maxVehicleType
+			+" routeIncome:"+(maxVehicleType==null ? 0 : routeIncome[maxVehicleType])
+			+" buildingTime:"+(maxVehicleType==null ? 0 : buildingTime[maxVehicleType])
+			+" production:"+production
+			+" count:"+count
+			+" "+this);*/
 		return {
 			routeIncome = maxVehicleType==null ? 0 : routeIncome[maxVehicleType]
 			buildingTime = maxVehicleType==null ? 0 : buildingTime[maxVehicleType]

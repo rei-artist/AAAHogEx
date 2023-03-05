@@ -817,6 +817,11 @@ class StationFactory {
 					continue;
 				}
 			}
+			foreach( route in stationGroup.GetUsingRoutesAsSource() ) {
+				if(route instanceof TrainReturnRoute) {
+					continue;
+				}
+			}
 			nearestFor = stationGroup.hgStations[0].platformTile;
 			local s = stationGroup.GetStationCandidatesInSpread(this);
 			stations.extend(s);
