@@ -51,6 +51,22 @@ class PlaceProduction {
 		local currentMonth = GetCurrentMonth();
 		if(lastCheckMonth == null || lastCheckMonth < currentMonth) {
 			foreach(cargo,v in AICargoList()) {
+				local list = AIIndustryList_CargoProducing(cargo);
+				list.Valuate(AIIndustry.GetLastMonthProduction,cargo);
+				foreach(industry, production in list) {
+					local key = industry+"-"+cargo;
+					if(history.rawin(key)) {
+						history[key].push(production);
+					} else {
+						history.rawset(key, [production]);
+					}
+					currentProduction.rawset(key, -1);
+				}
+			}
+			lastCheckMonth = currentMonth;
+		}
+/*			
+			
 				foreach(industry,v in AIIndustryList_CargoProducing(cargo)) {
 					local production = AIIndustry.GetLastMonthProduction (industry, cargo);
 					//HgLog.Info("GetLastMonthProduction "+AIIndustry.GetName(industry)+" "+AICargo.GetName(cargo)+" "+production);
@@ -69,9 +85,39 @@ class PlaceProduction {
 				}
 			}
 			lastCheckMonth = currentMonth;
-		}
+		}*/
 	}
-	
+
+	function GetLastMonthProduction(industry,cargo) {
+		Check();
+		local key = industry+"-"+cargo;
+		if(!history.rawin(key)) {
+			return 0;
+		}
+		if(currentProduction.rawin(key)) {
+			local result = currentProduction[key];
+			if(result != -1) {
+				return result;
+			}
+		}
+		local productions = history[key];
+		local l = productions.len();
+		if(l == 0) {
+			return 0;
+		}
+		if(l > 12) {
+			productions = productions.slice(l-12,l);
+			history[key] = productions;
+		}
+		local sum = 0;
+		foreach(p in productions) {
+			sum += p;
+		}
+		local result = sum / productions.len();
+		currentProduction.rawset(key,result);
+		return result;
+	}
+	/*
 	function GetLastMonthProduction(industry,cargo) {
 		Check();
 		local key = industry+"-"+cargo;
@@ -95,7 +141,7 @@ class PlaceProduction {
 			currentProduction.rawset(key, result);
 		}
 		return result;
-	}
+	}*/
 	
 	function GetCargoProductionInfos() {
 		if(cargoProductionInfos == null) {
@@ -120,7 +166,7 @@ class PlaceProduction {
 			};
 			foreach(place in places) {
 				local p = place.GetLastMonthProduction(cargo);
-				if(p >= 1) {
+				if(p >= 50) {
 					local pieceIndex = GetPieceIndex(place.GetLocation());
 					local pieceInfo;
 					if(pieceInfos[pieceIndex] == null) {
@@ -183,11 +229,14 @@ class PlaceProduction {
 		local sum = 0;
 		local count = 0;
 		local places = [];
+		local pieceIndex = GetPieceIndex(location);
 		foreach(index in GetArroundIndexes(location)) {
 			local pieceInfo = pieceInfos[index];
+			local arround = index != pieceIndex;
 			if(pieceInfo != null && pieceInfo.usable) {
-				sum += pieceInfo.sum;
-				count += pieceInfo.count;
+				local div = arround && pieceInfo.count>=2 ? 2 : 1
+				sum += pieceInfo.sum / div;
+				count += pieceInfo.count / div;
 				places.extend(pieceInfo.places);
 			}
 		}
@@ -407,6 +456,7 @@ class Place {
 	static canBuildAirportCache = {};
 	static notUsedProducingPlaceCache = ExpirationTable(90);
 	static expectedProductionCache = ExpirationRawTable(30);
+	static currentExpectedProductionCache = ExpirationRawTable(30);
 	static supportEstimatesCache = ExpirationTable(360);
 	static usedOtherCompanyEstimationCache = ExpirationRawTable(180);
 	static nearLandCache = {};
@@ -544,9 +594,11 @@ class Place {
 			} else {
 				return AIDate.GetCurrentDate() < date;
 			}
-		} else if(HogeAI.Get().IsAvoidSecondaryIndustryStealing()) {
-			if(facility instanceof HgIndustry && facility.IsProcessing() && facility.GetRoutes().len() == 0) {
-				if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1) {
+		}
+		local checkOtherCompany = false;
+		if(facility instanceof HgIndustry && AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1) {
+			if(HogeAI.Get().IsAvoidSecondaryIndustryStealing()) {
+				if( facility.IsProcessing() && facility.GetRoutes().len() == 0) {
 					local tileList = AITileList_IndustryAccepting(facility.industry,5);
 					tileList.Valuate(AITile.IsStationTile);
 					tileList.RemoveValue(0);
@@ -555,7 +607,7 @@ class Place {
 					if(tileList.Count() >= 1) {
 						HgLog.Info("Detect SecondaryIndustryStealing:"+facility.GetName());
 						foreach(vt in Route.allVehicleTypes) {
-							AddNgPlace(facility, cargo, vt, 10 * 365);
+							Place.AddNgPlace(facility, cargo, vt, 10 * 365);
 						}
 						return true;
 					}
@@ -566,6 +618,38 @@ class Place {
 					HgLog.Info("Detect SecondaryIndustryStealing:"+facility.GetName());
 					return true;
 				}*/
+			}
+			if(Place.ExistsOtherHoge(facility)) {
+				HgLog.Info("ExistsOtherHoge "+facility.GetName());
+				foreach(vt in Route.allVehicleTypes) {
+					Place.AddNgPlace(facility, cargo, vt, 10 * 365);
+				}
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	
+	static function ExistsOtherHoge(facility) {
+		if(facility instanceof HgIndustry && facility.GetRoutes().len() == 0) {
+			if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1) {
+				local tileList = AITileList_IndustryAccepting(facility.industry,5);
+				tileList.Valuate(AITile.IsStationTile);
+				tileList.RemoveValue(0);
+				tileList.Valuate(AITile.GetOwner);
+				tileList.RemoveValue(AICompany.ResolveCompanyID(AICompany.COMPANY_SELF));
+				local companies = {};
+				foreach(tile,company in tileList) {
+					companies.rawset(company,0);
+				}
+				foreach(company,_ in companies) {
+					local name = AICompany.GetName(company);
+					if(name != null && name.find("AAAHogEx") != null) {
+						return true;
+					}
+				}
 			}
 		}
 		return false;
@@ -942,7 +1026,7 @@ class Place {
 	
 		local result = []
 		foreach(route in PlaceDictionary.Get().GetRoutesBySource(this)) {
-			if(route.cargo == cargo) {
+			if(route.HasCargo(cargo)) {
 				result.push(route);
 			}
 		}
@@ -981,7 +1065,7 @@ class Place {
 		
 		local result = []
 		foreach(route in PlaceDictionary.Get().GetRoutesByDest(this)) {
-			if(route.cargo == cargo) {
+			if(route.HasCargo(cargo)) {
 				result.push(route);
 			}
 		}
@@ -1081,12 +1165,15 @@ class Place {
 	}
 	
 	function GetFutureExpectedProduction(cargo, vehicleType, isMine = false) {
+		return GetExpectedProduction(cargo,vehicleType,isMine);
+		
+		/*
 		if(HogeAI.Get().buildingTimeBase && !HogeAI.Get().ecs) {
-			if(/*!IsProcessing() && */IsIncreasable() && vehicleType == AIVehicle.VT_RAIL) {
+			if(IsIncreasable() && vehicleType == AIVehicle.VT_RAIL) {
 				return GetExpectedProduction(cargo,vehicleType,isMine) * 3; // 将来は今よりずっと増える
 			}
 		}
-		return GetExpectedProduction(cargo,vehicleType,isMine);
+		return GetExpectedProduction(cargo,vehicleType,isMine);*/
 	}
 	
 	function GetExpectedProduction(cargo, vehicleType, isMine = false) {
@@ -1104,6 +1191,16 @@ class Place {
 	}
 	
 	function GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
+		local key = Id() + "-" + cargo + "-" + vehicleType + "-" + isMine;
+		if(Place.currentExpectedProductionCache.rawin(key)) {
+			return Place.currentExpectedProductionCache.rawget(key);
+		}
+		local result = _GetCurrentExpectedProduction(cargo,vehicleType,isMine);
+		Place.currentExpectedProductionCache.rawset(key,result);
+		return result;
+	}
+	
+	function _GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
 		return AdjustUsing( GetLastMonthProduction(cargo), cargo, isMine );
 	}
 	
@@ -1289,7 +1386,7 @@ class Place {
 				inputableProduction += placeProduction.GetArroundProductionCount(GetLocation(), acceptingCargo)[0];
 			}
 			//HgLog.Warning("GetExpectedProductionAll production:"+production+" inputableProduction/4:"+(inputableProduction/4)+" "+GetName()+" cargo:"+AICargo.GetName(cargo)+" "+vehicleType);
-			production += inputableProduction / 4; //max(0,(inputableProduction - production));
+			production += inputableProduction;// / 2; //max(0,(inputableProduction - production));
 			//production = max(production, inputableProduction / 2);
 		}
 		if(HogeAI.Get().ecs /*GetUsableMoney() >= HogeAI.Get().GetInflatedMoney(2000000)*/ && IsRaw() && production >= 1) {
@@ -1453,12 +1550,14 @@ class Place {
 	function CheckNearWater(cargo) {		
 		//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
 		if(IsBuiltOnWater()) {
-			local cur = GetLocation();
+			local cur = GetLocation(); // 陸地に接しているIsBuiltOnWaterがある(firs)
 			while(true) {
 				cur = Coasts.FindCoast(cur);
 				if(cur != null) {
 					local coasts = Coasts.GetCoasts(cur);
-					if(coasts.coastType == Coasts.CT_SEA) {
+					if(coasts.coastType == Coasts.CT_POND) {
+						return null;
+					} else if(coasts.coastType == Coasts.CT_SEA) {
 						return coasts;
 					}
 				} else {
@@ -1472,7 +1571,11 @@ class Place {
 		local gen = GetTiles(dockRadius,cargo)
 		while((tile = resume gen) != null) {
 			if(AITile.IsCoastTile(tile)) {
-				return Coasts.GetCoasts(tile);
+				local result = Coasts.GetCoasts(tile);
+				if(result.coastType == Coasts.CT_POND) {
+					return null;
+				}
+				return result;
 			}
 		}
 		return null;
@@ -1563,13 +1666,18 @@ class Place {
 			if( engineSet == null ) {
 				continue;
 			}
-			if(!usingRoute.NeedsAdditionalProducing()) {
-				continue;
-			}
 			local cargoIncomes = engineSet.cargoIncomes;
 			foreach(producingCargo in producingCargos) {
+				if(!usingRoute.NeedsAdditionalProducingCargo(producingCargo)) {
+					continue;
+				}
 				if( cargoIncomes.rawin(producingCargo) ) {
 					result += cargoIncomes[producingCargo];
+					if(usingRoute instanceof TrainRoute) {
+						if(usingRoute.returnRoute != null && !usingRoute.returnRoute.NeedsAdditionalProducingCargo(producingCargo)) {
+							result += cargoIncomes[producingCargo]; // 復路の分。TODO: 転送やbidirectionも
+						}
+					}
 				}
 			}
 		}
@@ -2039,7 +2147,7 @@ class TownCargo extends Place {
 		return result;
 	}
 
-	function GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
+	function _GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
 		return GetExpectedProductionAll(cargo, vehicleType, true, isMine );
 	}
 	
@@ -2054,15 +2162,15 @@ class TownCargo extends Place {
 		} else {
 			production = GetLastMonthProduction(cargo);
 		}
-		if(TownBus.CanUse(cargo) || HogeAI.Get().IsDistantJoinStations()) {
+		if(HogeAI.Get().IsDistantJoinStations() || (TownBus.CanUse(cargo) && RoadRoute.GetVehicleNumRoom(RoadRoute) > 50)) {
 			if(vehicleType == AIVehicle.VT_ROAD && !HogeAI.Get().IsDistantJoinStations()) {
-				return min( production * 2 / 3, cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 100 );
+				return min( production , cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80 );
 			} else {
-				return min( production * 2 / 3, cargo == HogeAI.Get().GetPassengerCargo() ? 1000 : 500);
+				return min( production , cargo == HogeAI.Get().GetPassengerCargo() ? 550 : 220);
 			}
 		}
-		local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 100;
-		production = min(minValue, production); // TODO 駅拡張ができる場合はその分増える
+		local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80;
+		production = min(minValue, production);
 
 
 		switch(vehicleType) {
@@ -2089,10 +2197,7 @@ class TownCargo extends Place {
 				r = AITown.GetPopulation(town) / 16;
 			}
 		}
-		return r / 2;
-		/*} else {
-			return AITown.GetLastMonthProduction( town, cargo ) * 2 / 5;
-		}*/
+		return r; // / 2;
 	}
 	
 	function GetLastMonthTransportedPercentage(cargo) {

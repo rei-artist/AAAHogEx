@@ -106,10 +106,14 @@ class RailPathFinder
 			_cost_tunnel_per_tile_ex  = 100;
 			_cost_tunnel_per_tile_ex2 = 200;
 		} else {
-			_cost_bridge_per_tile_ex = 600;
+			/*_cost_bridge_per_tile_ex = 600;
 			_cost_bridge_per_tile_ex2 = 900;
 			_cost_tunnel_per_tile_ex  = 600;
-			_cost_tunnel_per_tile_ex2 = 900;
+			_cost_tunnel_per_tile_ex2 = 900;*/
+			_cost_bridge_per_tile_ex = 200;
+			_cost_bridge_per_tile_ex2 = 300;
+			_cost_tunnel_per_tile_ex  = 200;
+			_cost_tunnel_per_tile_ex2 = 300;
 		}
 		_cost_diagonal_tile = 67;
 		_cost_doublediagonal_sea = 100000;
@@ -136,7 +140,7 @@ class RailPathFinder
 		cost.slope = 0;
 		
 		if(engine != null) {
-			if(AIEngine.GetMaxTractiveEffort(engine) < AIGameSettings.GetValue("vehicle.train_slope_steepness") * 50 ) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+			if(AIEngine.GetMaxTractiveEffort(engine) < HogeAI.Get().GetTrainSlopeSteepness() * 50 ) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
 				HgLog.Info("TrainRoute: pathfinding consider slope");
 				cost.slope = 1500;
 				cost.turn = 100;
@@ -163,6 +167,7 @@ class RailPathFinder
 	
 	function FindPath(limitCount,eventPoller,limitDay=null) {
 		if(limitDay != null) {
+			limitDay /= HogeAI.Get().GetDayLengthFactor();
 			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay+" distance:"+distance);
 		} else {
 			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount+" distance:"+distance);

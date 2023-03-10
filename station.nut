@@ -334,6 +334,12 @@ class StationGroup {
 	}
 	
 	function IsAcceptingCargoHere(cargo) {
+		foreach(station in hgStations) {
+			if(station instanceof PlaceStation && station.IsAcceptingCargo(cargo)) {
+				return true;
+			}
+		}
+	
 		local result = 0;
 		local tileList = AIList();
 		tileList.AddList(GetCoverageTileList());
@@ -376,6 +382,11 @@ class StationGroup {
 	}
 	
 	function IsProducingCargoHere(cargo) {
+		foreach(station in hgStations) {
+			if(station instanceof PlaceStation && station.IsProducingCargo(cargo)) {
+				return true;
+			}
+		}
 		local tileList = AIList();
 		tileList.AddList(GetCoverageTileList());
 		tileList.Valuate(AITile.GetCargoProduction, cargo, 1, 1, 0 );
@@ -723,6 +734,9 @@ class StationFactory {
 		local candidates = [];
 		foreach(station in stations2) {
 			checked.AddItem(station.platformTile,0);
+			if(HgStation.IsNgStationTile(station)) {
+				continue;
+			}
 			if(station.Build(levelTiles, true)) {
 				HgLog.Info("Build succeeded(TestMode) stationPlace:"+label);
 				station.levelTiles = levelTiles;
@@ -1214,6 +1228,8 @@ class TerminalStationFactory extends RailStationFactory {
 class HgStation {
 	static worldInstances = {};
 	static idCounter = IdCounter();
+	static ngStationTiles = {}
+	
 	
 	static STATION_NW = 0;
 	static STATION_NE = 1;
@@ -1227,6 +1243,7 @@ class HgStation {
 			a[i++] = station.savedData; // データが多すぎてSave()がタイムアウトするため事前にTableを準備しておく。AddWorld以後のフィールド変更はsavedDataを都度作る必要がある事に注意
 		}
 		data.stations <- a;
+		data.ngStationTiles <- HgStation.ngStationTiles;
 	}
 	
 	static function LoadStatics(data) {
@@ -1302,10 +1319,12 @@ class HgStation {
 				station.place.AddStation(station);
 			}
 			BuildedPath.AddTiles(station.GetTiles());
-			
+		}
+		if(data.rawin("ngStationTiles")) {
+			HgTable.Extend(HgStation.ngStationTiles, data.ngStationTiles);
 		}
 	}
-	
+
 	static function SearchStation(placeOrGroup, stationType, cargo, isAccepting) {
 		local result = [];
 		local stations;
@@ -1344,6 +1363,17 @@ class HgStation {
 		}
 		return result;
 	}
+	
+	static function AddNgStationTile(station) {
+		local key = station.GetLocation() + "-" + station.GetTypeName();
+		HgStation.ngStationTiles.rawset(key,0);
+	}
+
+	static function IsNgStationTile(station) {
+		local key = station.GetLocation() + "-" + station.GetTypeName();
+		return HgStation.ngStationTiles.rawin(key);
+	}
+
 	
 	id = null;
 	platformTile = null;
@@ -1461,7 +1491,7 @@ class HgStation {
 		//isTestMode = false;
 		local joinStation = AIBaseStation.STATION_NEW
 		if(stationGroup != null && stationGroup.hgStations.len() >= 1 && !stationGroup.isVirtual) {
-			if(!HogeAI.IsDistantJoinStations()) {
+			if(!HogeAI.Get().IsDistantJoinStations()) {
 				joinStation = AIStation.STATION_JOIN_ADJACENT;
 				local neighborStations = {};
 				foreach(tile in GetPlatformRectangle().GetAroundTiles()) {
@@ -3342,7 +3372,7 @@ class DestRailStation extends RailStation {
 	}
 	
 	function BuildDepot(p1,p2) {
-		if(AIRail.BuildRailDepot(p1,p2)) {
+		if(BuildUtils.BuildRailDepotSafe(p1,p2)) {
 			depots.push(p1);
 		}
 		savedData = Save();
@@ -3816,7 +3846,7 @@ class SrcRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!AIRail.BuildRailDepot(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
+			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				if(!isTestMode) {
 					HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
 				}
@@ -4070,7 +4100,7 @@ class RealSrcRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!AIRail.BuildRailDepot(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
+			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				if(!isTestMode || AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
 					if(!isTestMode) {
 						HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
@@ -4390,7 +4420,7 @@ class SimpleRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!AIRail.BuildRailDepot(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
+			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				if(!isTestMode || AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
 					if(!isTestMode) {
 						HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());

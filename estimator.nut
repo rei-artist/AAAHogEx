@@ -40,8 +40,9 @@ Estimation <- {
 	}
 
 	function GetValue() {
-		local lostOpportunity = 0; //routeIncome * (days / 2 + waitingInStationTime) / 365;
-		roi = routeIncome * 1000 / (price * vehiclesPerRoute + buildingCost + lostOpportunity);
+		local lostOpportunity = routeIncome * (days / 2 + waitingInStationTime) / 365;
+		local cost = max(1,price * vehiclesPerRoute + buildingCost + lostOpportunity);
+		roi = routeIncome * 1000 / cost;
 		local incomePerVehicle = routeIncome / vehiclesPerRoute; 
 		local incomePerBuildingTime = routeIncome * 100 / buildingTime;
 		return HogeAI.Get().GetValue(roi,incomePerBuildingTime,incomePerVehicle);
@@ -296,11 +297,12 @@ TrainEstimation <- delegate Estimation : {
 	}
 	
 	function GetBuildingTime() {
-		local result = 470 + distance * 2;
+		//local result = 470 + distance * 2;
+		local result = 200 + distance * 4;
 		if(isSingle) {
-			result = result * 8 / 10;
+			result = result * 6 / 10;
 		}
-		return (result + Estimator.buildingTimePerVehicle * vehiclesPerRoute) / 2; // Railはマルチカーゴができるので有利
+		return (result + Estimator.buildingTimePerVehicle * vehiclesPerRoute);// / 2; // Railはマルチカーゴができるので有利
 	}
 	
 
@@ -631,11 +633,11 @@ class CommonEstimator extends Estimator {
 				local days;
 				if(vehicleType == AIVehicle.VT_AIR && cruiseSpeed > 80 && useReliability) {
 					local avgBrokenDistance = min(100 * pathDistance / ( (AIEngine.GetReliability(e) * 150 / 100) * cruiseSpeed * 24 / 664), 100) * pathDistance / (100 * 2);
-					days = (((pathDistance - avgBrokenDistance) * 664 / cruiseSpeed / 24 + avgBrokenDistance * 664 / 80 / 24) + loadingTime) * 2;
+					days = (VehicleUtils.GetDays(pathDistance - avgBrokenDistance,cruiseSpeed) + VehicleUtils.GetDays(avgBrokenDistance,80) + loadingTime) * 2;
 					//local days2 = (pathDistance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
 					//HgLog.Info("debug: avgBrokenDistance:" + avgBrokenDistance + " d:"+pathDistance+" v:"+cruiseSpeed+" r:"+AIEngine.GetReliability(e)+" "+AIEngine.GetName(e));
 				} else {
-					days = (pathDistance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
+					days = (VehicleUtils.GetDays(pathDistance,cruiseSpeed) + loadingTime) * 2;
 				}
 				days = max(days,1);
 				
@@ -715,9 +717,9 @@ class CommonEstimator extends Estimator {
 		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
 		//		return distance * 2 + 1800; //TODO: 海率によって異なる
 				if(distance == WaterRoute.IF_CANAL) {
-					return 250 + distance / 10;
+					return 250 + distance * 2;
 				} else {
-					return 125 + distance / 10;
+					return 125 + distance * 2;
 				}
 
 				local x = distance / 10;
@@ -726,9 +728,9 @@ class CommonEstimator extends Estimator {
 			case AIVehicle.VT_ROAD:
 	//		return distance + 1200;
 				if(HogeAI.Get().IsInfrastructureMaintenance()) {
-					return (125 + distance / 5) * 6;
+					return 125 + distance * 2;
 				} else {
-					return 125 + distance / 5;
+					return 125 + distance * 2;
 				}
 			case AIVehicle.VT_AIR:
 				return 300;
@@ -1394,11 +1396,11 @@ class TrainEstimator extends Estimator{
 						cruiseSpeed = (60 + cruiseSpeed * 3) / 4;
 					}
 					
-					local cruiseDays = pathDistance * 664 / cruiseSpeed / 24 * 150 / (trainReiliability+50);
+					local cruiseDays = VehicleUtils.GetDays( pathDistance,cruiseSpeed ) * 150 / (trainReiliability+50);
 					local days = (cruiseDays + loadingTime) * 2;
 					
 					local stationLimitTime = isRoRo ? 10 : 20;
-					local stationInOutTime = max(platformLength,7)*2*664/cruiseSpeed/24;
+					local stationInOutTime = VehicleUtils.GetDays( max(platformLength,7), cruiseSpeed );
 					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime));
 					maxVehicles = min( maxVehicles, vehiclesRoom );
 
@@ -1443,10 +1445,17 @@ class TrainEstimator extends Estimator{
 						local estimation = clone trainEstimation;
 						estimation.infrastractureCost = infrastractureCost / (isSingle ? 2 : 1);
 						estimation.buildingCost = realBuildingCost;
-						estimation.maxVehicles = maxVehicles;
+						estimation.maxVehicles = isSingle ? 1 : maxVehicles;
 						estimation.isSingle = isSingle;
 						
 						estimation.Estimate();
+						/*
+						trainPlan.reachMaxVehicles = estimation.vehiclesPerRoute >= maxVehicles;
+						if(trainPlan.priorityWagon == null) {
+							trainPlan.cargoIncomes = estimation.cargoIncomes;
+							trainPlan.CalculatePriorityWagon();
+						}*/
+						
 						if( estimation.income > 0) {
 							result.push(estimation);
 						} else {
@@ -1542,6 +1551,10 @@ class TrainPlan {
 	power = null;
 	tractiveEffort = null;
 	lengthWeights = null;
+	reachMaxVehicles = null;
+	cargoIncomes = null;
+	priorityWagon = null;
+	wagons = null;
 
 	
 	constructor(locoInfo,wagonInfos,cargoProduction) {
@@ -1568,6 +1581,8 @@ class TrainPlan {
 			capacityPerProduction[cargo] <- 0;
 		}
 		this.lengthWeights = [];
+		this.reachMaxVehicles = false;
+		this.wagons = [];
 	}
 	
 	function SetNumLoco(n) {
@@ -1620,18 +1635,22 @@ class TrainPlan {
 		if(wagonInfos.len() == 1) { // TODO wagonInfos.len()==0の場合
 			IncreaseWagon(wagonInfos[0],delta);
 		} else {
-			for(local i=0; i<delta; i++) {
-				local minWagonInfo = null;
-				local minCp = null;
-				foreach(wagonInfo in wagonInfos) {
-					local cargo = wagonInfo.cargo;
-					local cp = capacityPerProduction[cargo];
-					if(minWagonInfo == null || cp < minCp) {
-						minWagonInfo = wagonInfo;
-						minCp = cp;
+			if(reachMaxVehicles) {
+				IncreaseWagon(priorityWagon,delta);
+			} else {
+				for(local i=0; i<delta; i++) {
+					local minWagonInfo = null;
+					local minCp = null;
+					foreach(wagonInfo in wagonInfos) {
+						local cargo = wagonInfo.cargo;
+						local cp = capacityPerProduction[cargo];
+						if(minWagonInfo == null || cp < minCp) {
+							minWagonInfo = wagonInfo;
+							minCp = cp;
+						}
 					}
+					IncreaseWagon(minWagonInfo,1);
 				}
-				IncreaseWagon(minWagonInfo,1);
 			}
 		}
 	}
@@ -1640,6 +1659,7 @@ class TrainPlan {
 		if(wagonInfos.len() == 1) { // TODO wagonInfos.len()==0の場合
 			DecreaseWagon(wagonInfos[0],1);
 		} else {
+		/*
 			local maxWagonInfo = null;
 			local maxCp = null;
 			foreach(wagonInfo in wagonInfos) {
@@ -1651,8 +1671,8 @@ class TrainPlan {
 						maxCp = cp;
 					}
 				}
-			}
-			DecreaseWagon(maxWagonInfo,1);
+			}*/
+			DecreaseWagon(wagons.pop(),1);
 		}
 	}
 
@@ -1678,6 +1698,7 @@ class TrainPlan {
 			}
 			idx += w.numWagon;
 		}
+		wagons.push(wagonInfo);
 	}
 	
 	function DecreaseWagon(wagonInfo,n) {
@@ -1701,6 +1722,18 @@ class TrainPlan {
 				break;
 			}
 			idx += w.numWagon;
+		}
+	}
+	
+	function CalculatePriorityWagon() {
+		local maxValue = null;
+		priorityWagon = null;
+		foreach(wagonInfo in wagonInfos) {
+			local value = wagonInfo.capacity  * cargoIncomes[wagonInfo.cargo] / wagonInfo.lengthWeight[0];
+			if(maxValue == null || maxValue < value) {
+				maxValue = value;
+				priorityWagon = wagonInfo;
+			}
 		}
 	}
 	

@@ -137,7 +137,7 @@ class Route {
 	}
 	
 	function IsTooManyVehiclesForNewRoute(self) {
-		local remaining = self.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, self.GetVehicleType());
+		local remaining = self.GetVehicleNumRoom(self);
 		if(remaining > 30) {
 			return false;
 		}
@@ -145,11 +145,15 @@ class Route {
 	}
 	
 	function IsTooManyVehiclesForSupportRoute(self) {
-		local remaining = self.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, self.GetVehicleType());
+		local remaining = self.GetVehicleNumRoom(self);
 		if(remaining > 30) {
 			return false;
 		}
 		return remaining <= self.GetMaxTotalVehicles() * (1 - self.GetThresholdVehicleNumRateForSupportRoute());
+	}
+	
+	function GetVehicleNumRoom(self) {
+		return self.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, self.GetVehicleType());
 	}
 	
 	function GetVehicleCount(self) {
@@ -372,7 +376,7 @@ class Route {
 		}
 
 		local capacity = GetCargoCapacity(cargo);
-		local bottom = max(300, min(capacity * 20, 3000));
+		local bottom = max(300, min(capacity * (HogeAI.Get().roiBase ? 3 : 20), 3000));
 		local station = (isDest ? destHgStation : srcHgStation).GetAIStation();
 		if(!isDest && !(this instanceof TrainReturnRoute)
 				&& AIStation.HasCargoRating(station, cargo) && AIStation.GetCargoRating(station, cargo) < 50) {
@@ -423,38 +427,45 @@ class Route {
 
 		local hgStation = isDest ? destHgStation : srcHgStation;
 		local limitCapacity = GetCargoCapacity(cargo);
-		if(!IsReturnRoute(isDest)) {
+/*		if(!IsReturnRoute(isDest)) {
 			limitCapacity /= 2;
-		}
+		}*/
 		local cargoWaiting = AIStation.GetCargoWaiting( hgStation.GetAIStation(), cargo );
 		if(cargoWaiting == 0 && limitCapacity == 0 && cargo != this.cargo
 				&& !NeedsAdditionalProducingCargo(this.cargo,null,false,checkRouteCapacity)) { // 新たな種類のcargoが必要かどうかのチェック
+			callRoutes.rawdelete(this);
 			return false;	// メインカーゴがこれ以上不要な場合、列車数が飽和している事を示唆している
 		}
 		if(checkRouteCapacity && GetLeftCapacity(cargo, isDest) == 0) {
+			callRoutes.rawdelete(this);
 			return false;
 		}
 
 		local result = cargoWaiting <= limitCapacity;
 		if(!IsTransfer()) {
 			//HgLog.Warning("_NeedsAdditionalProducingCargo "+result+" cargoWaiting:"+cargoWaiting+" limitCapacity:"+limitCapacity+" "+this);
+			callRoutes.rawdelete(this);
 			return result;
 		}
 		if(isDest || !result) {
+			callRoutes.rawdelete(this);
 			return false;
 		}
 		foreach(destRoute in GetDestRoutes()) {
 			if( destRoute.IsBiDirectional() && destRoute.destHgStation.stationGroup == destHgStation.stationGroup ) {
 				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, true, checkRouteCapacity) 
 						&& !destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
+					callRoutes.rawdelete(this);
 					return true;
 				}
 			} else {
 				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
+					callRoutes.rawdelete(this);
 					return true;
 				}
 			}
 		}
+		callRoutes.rawdelete(this);
 		return false;
 	}
 	
@@ -990,7 +1001,7 @@ class Route {
 			}
 			local closedAllDest = true;
 			foreach(destRoute in destRoutes) {
-				if(srcSharing && destRoute.IsOverflow(cargo)) {
+				if(srcSharing && destRoute.IsDestOverflow(cargo)) {
 					continue;
 				}
 				if(!destRoute.IsClosed() && destRoute.HasCargo(cargo)) {
@@ -1035,7 +1046,7 @@ class Route {
 					routes.extend(PlaceDictionary.Get().GetUsedAsSourceByPriorityRoute(destHgStation.place, cargo));
 				}
 				foreach(route in routes) {
-					HgLog.Warning("GetUsedAsSourceByPriorityRoute:"+route+" "+this);
+					//HgLog.Warning("GetUsedAsSourceByPriorityRoute:"+route+" "+this);
 					if(route.IsClosed() || (!route.NeedsAdditionalProducingPlace(srcHgStation.place) && !route.NeedsAdditionalProducingPlace(destHgStation.place))) {
 						continue;
 					}
@@ -1142,7 +1153,7 @@ class CommonRoute extends Route {
 				return -1;
 			}
 			local d = AIMap.DistanceManhattan( vehicleList.GetValue(v), AIVehicle.GetLocation(v) );
-			return CargoUtils.GetSpeed( d, AIDate.GetCurrentDate() - start );
+			return VehicleUtils.GetSpeed( d, AIDate.GetCurrentDate() - start );
 		});
 		vehicleList.RemoveValue( -1 );
 		return vehicleList;
@@ -1266,7 +1277,7 @@ class CommonRoute extends Route {
 		}
 		
 		if(emergency || (tooManyVehicles /*&& engineChanged*/)) {
-			if(minRoute != null && checkRoutes >= 3) {
+			if(minRoute != null && (checkRoutes >= 3 || self.IsSupportModeVt(vehicleType))) {
 				HgLog.Warning("RemoveRoute minProfit:"+minProfit+" "+minRoute);
 				minRoute.Remove();
 			}
@@ -1399,10 +1410,10 @@ class CommonRoute extends Route {
 		isClosed = t.isClosed;
 		isRemoved = t.isRemoved;
 		isWaitingProduction = t.isWaitingProduction;
-		maxVehicles = t.maxVehicles;
 		lastDestClosedDate = t.lastDestClosedDate;
 		cannotChangeDest = t.cannotChangeDest;
 		latestEngineSet = t.latestEngineSet != null ? delegate CommonEstimation : t.latestEngineSet : null;
+		maxVehicles = t.maxVehicles;
 	}
 	
 	function UpdateSavedData() {
@@ -1859,7 +1870,7 @@ class CommonRoute extends Route {
 		}
 	}
 	
-	function CheckNotProfitableOrStopVehicle( emergency = false ) {
+	function CheckNotProfitableOrStopVehicle( emergency = false, tooMany = false ) {
 		local isBiDirectional = IsBiDirectional();
 		local vehicleType = GetVehicleType();
 		local vehicleList = GetVehicleList();
@@ -1927,7 +1938,10 @@ class CommonRoute extends Route {
 					waitStations.rawset(AIVehicle.GetLocation(v),true);
 				}
 			}
-			vehicleList.RemoveValue(AIVehicle.VS_AT_STATION);
+			if(tooMany && AIStation.GetCargoWaiting(srcHgStation.GetAIStation(),cargo) < 10) {
+			} else {
+				vehicleList.RemoveValue(AIVehicle.VS_AT_STATION);
+			}
 			vehicleList.Valuate(function(v):(waitStations) {
 				local location = AIVehicle.GetLocation(v);
 				foreach(p,_ in waitStations) {
@@ -1938,7 +1952,7 @@ class CommonRoute extends Route {
 				return 0;
 			});
 			vehicleList.KeepValue(1);
-			if(vehicleList.Count() >= 2) {
+			if(vehicleList.Count() >= (tooMany ? 1 : 2)) {
 				vehicleList.RemoveTop(1);
 				foreach(vehicle,_ in vehicleList) {
 					AppendRemoveOrder(vehicle);
@@ -2007,7 +2021,7 @@ class CommonRoute extends Route {
 		}
 		inDepot.RemoveList(all);
 		sellCounter += all.Count();
-		if(isRemoved) {
+		if(isRemoved || isClosed) {
 			foreach(v,_ in vehicleList) {
 				AppendRemoveOrder(v);
 			}
@@ -2052,9 +2066,10 @@ class CommonRoute extends Route {
 		
 		local isBiDirectional = IsBiDirectional();
 
+		local cargoWaiting = AIStation.GetCargoWaiting(srcHgStation.GetAIStation(),cargo);
 		if(AIBase.RandRange(100) < (HogeAI.Get().buildingTimeBase ? 5 : 25)) {
 			//local c02 = PerformanceCounter.Start("c02");
-			CheckNotProfitableOrStopVehicle();
+			CheckNotProfitableOrStopVehicle(false,tooMany);
 			//c02.Stop();
 		}
 
@@ -2105,7 +2120,7 @@ class CommonRoute extends Route {
 						}
 					}
 				}
-				if(HogeAI.Get().buildingTimeBase) {
+				if(HogeAI.Get().buildingTimeBase && (!tooMany || AIBase.RandRange(100) < vehicleList.Count())) {
 					local old = maxVehicles;
 					maxVehicles = max(0,min(maxVehicles, vehicleList.Count()-reduce));
 					if(old != maxVehicles) {
@@ -2115,7 +2130,29 @@ class CommonRoute extends Route {
 			}
 			//c03.Stop();
 			return;
-		}		
+		}
+		/*
+		if(!IsTransfer() && tooMany && IsSupportMode()) {
+			local cargoWaiting = AIStation.GetCargoWaiting(srcHgStation.GetAIStation(),cargo);
+			if(cargoWaiting < 10) {
+				local reduce = 1; //max(1,vehicleList.Count() / 30);
+				local count = 0;
+				foreach(vehicle,_ in vehicleList) {
+					if(AppendRemoveOrder(vehicle)) {
+						count ++;
+						if(count >= reduce) {
+							break;
+						}
+					}
+				}
+				local old = maxVehicles;
+				maxVehicles = max(0,min(maxVehicles, vehicleList.Count()-reduce));
+				if(old != maxVehicles) {
+					HgLog.Info("maxVehicles:"+maxVehicles+"(IsSupportMode) "+this);
+				}
+				return;
+			}
+		}*/
 		
 		
 		if(AIBase.RandRange(100) < (HogeAI.Get().roiBase ? 3 : 15)) {
@@ -2180,12 +2217,11 @@ class CommonRoute extends Route {
 		}*/
 		
 		//local c6 = PerformanceCounter.Start("c6");	
-		local needsProduction = vehicleList.Count() < 10 ? 10 : 100; //= min(4,maxVehicles / 2 + 1) ? capacity : bottomWaiting;
+		local needsProduction = (!tooMany && vehicleList.Count() < 10) ? 10 : 100; //= min(4,maxVehicles / 2 + 1) ? capacity : bottomWaiting;
 		if(showLog) {
 			HgLog.Info("needsProduction "+needsProduction+" "+this);
 		}
-		if(AIStation.GetCargoWaiting(srcHgStation.GetAIStation(),cargo) > needsProduction 
-				|| (vehicleList.Count()==0 && (!isTransfer || needsAddtinalProducing))) {
+		if(cargoWaiting > needsProduction || (vehicleList.Count()==0 && (!isTransfer || needsAddtinalProducing))) {
 			local vehicles = vehicleList;
 			if(!ExistsWaiting(vehicles)) {
 				local latestVehicle = null;

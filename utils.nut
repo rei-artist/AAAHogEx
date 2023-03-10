@@ -551,6 +551,12 @@ class BuildUtils {
 		});
 	}
 
+	static function BuildRailDepotSafe(a,b) {
+		return BuildUtils.WaitForMoney( function():(a,b) {
+			return AIRail.BuildRailDepot(a,b);
+		});
+	}
+
 	static function BuildRailTrackSafe(a,b) {
 		return BuildUtils.WaitForMoney( function():(a,b) {
 			return AIRail.BuildRailTrack(a,b);
@@ -780,7 +786,7 @@ class VehicleUtils {
 	static function GetCargoWeight(cargo, quantity) { // 鉄道用
 		local result = VehicleUtils.GetCommonCargoWeight(cargo, quantity);
 		if (AICargo.IsFreight(cargo)) {
-			result *= AIGameSettings.GetValue("vehicle.freight_trains");
+			result *= HogeAI.Get().GetFreightTrains();
 		}
 		return result;
 	}
@@ -812,11 +818,11 @@ class VehicleUtils {
 	}	
 
 	static function GetSlopeForce(slopedWeight, totalWeight) {
-		return slopedWeight * AIGameSettings.GetValue("vehicle.train_slope_steepness") * 100 + totalWeight * 10 + totalWeight * 15;
+		return slopedWeight * HogeAI.Get().GetTrainSlopeSteepness() * 100 + totalWeight * 10 + totalWeight * 15;
 	}
 	
 	static function GetRoadSlopeForce(weight) {
-		return weight * AIGameSettings.GetValue("vehicle.roadveh_slope_steepness") * 100 + weight * 10 + weight * 75;
+		return weight * HogeAI.Get().GetRoadvehSlopeSteepness() * 100 + weight * 10 + weight * 75;
 	}
 	
 	 
@@ -858,7 +864,7 @@ class VehicleUtils {
 	}
 
 	static function AdjustTrainScoreBySlope(score, engine, start, end) {
-		local considerSlope = AIEngine.GetMaxTractiveEffort(engine) < AIGameSettings.GetValue("vehicle.train_slope_steepness") * 50;
+		local considerSlope = AIEngine.GetMaxTractiveEffort(engine) < HogeAI.Get().GetTrainSlopeSteepness() * 50;
 		if(considerSlope) {
 			local slopeLevel = HgTile(start).GetSlopeLevel(HgTile(end));
 			score = score * 8 / (8 + slopeLevel-4);
@@ -866,6 +872,14 @@ class VehicleUtils {
 		return score;
 	}
 	
+	static function GetDays(distance, speed) {
+		return max(1, distance * 664 / speed / 24 / HogeAI.Get().GetDayLengthFactor());
+	}
+	
+	static function GetSpeed(distance, days) {
+		return distance * 664 * HogeAI.Get().GetDayLengthFactor() / days / 24;
+	}
+
 	static function ToString( vehicleType ) {
 		switch(vehicleType) {
 			case AIVehicle.VT_RAIL:
@@ -998,6 +1012,7 @@ class CargoUtils {
 
 	// 年間の予想収益
 	// waitingDays: 積み下ろし時間
+	/*
 	static function GetCargoIncome(distance, cargo, speed, waitingDays=0, isBidirectional=false) {
 		if(speed<=0) {
 			return 0;
@@ -1006,11 +1021,7 @@ class CargoUtils {
 		
 		local income = AICargo.GetCargoIncome(cargo,distance,days);
 		return income * 365 / (days * 2 + waitingDays) * (isBidirectional ? 2 : 1);
-	}
-	
-	static function GetSpeed(distance, days) {
-		return distance*664/days/24;
-	}
+	}*/
 	
 	static function IsPaxOrMail(cargo) {
 		return HogeAI.GetPassengerCargo() == cargo || HogeAI.GetMailCargo() == cargo;

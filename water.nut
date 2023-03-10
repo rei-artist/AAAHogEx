@@ -352,6 +352,10 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 				HgLog.Warning("coast not found "+this);
 				return null;
 			}
+			if(Coasts.GetCoasts(coastTile).coastType == Coasts.CT_POND) {
+				HgLog.Warning("CT_POND "+this);
+				return null;
+			}
 			return BuildCompoundRoute( isDestFarFromSea, coastTile );
 		}
 		return result;
@@ -1053,12 +1057,13 @@ class Coasts {
 
 	static CT_ISLAND = 1;
 	static CT_SEA = 2;
+	static CT_POND = 3;
 
 	static function SaveStatics(data) {
 		data.tileCoastId <- Coasts.tileCoastId;
 		local coastsArray = [];
 		foreach(id,coasts in Coasts.idCoasts) {
-			coastsArray.push(coasts.Save());
+			coastsArray.push(coasts.saveData);
 		}
 		data.coastsArray <- coastsArray;
 	}
@@ -1084,12 +1089,17 @@ class Coasts {
 			return Coasts.idCoasts[ Coasts.tileCoastId[ coastTile ] ];
 		}
 		local coast = Coasts();
-		coast.SearchCoastTiles(coastTile);
+		local small = coast.SearchCoastTiles(coastTile) < 80;
 		if(coast.nearLand == null) { // 陸地が無い
 			coast.coastType = Coasts.CT_ISLAND;
+			coast.Save();
 			return GlobalCoasts;
 		}
 		coast.SearchCoastType();
+		if(coast.coastType == Coasts.CT_SEA && small) {
+			coast.coastType = Coasts.CT_POND;
+		}
+		coast.Save();
 		return coast;
 	}
 	
@@ -1112,6 +1122,8 @@ class Coasts {
 	nearLand = null;
 	parentSea = null;
 	childrenIslands = null;
+	
+	saveData = null;
 
 	constructor(coastType = null, id = null) {
 		if(id == null) {
@@ -1123,10 +1135,11 @@ class Coasts {
 		this.coastType = coastType;
 		this.childrenIslands = {};
 		Coasts.idCoasts.rawset(this.id, this);
+		Save();
 	}
 	
 	function Save() {
-		return {
+		saveData = {
 			id = id
 			coastType = coastType
 			nearLand = nearLand
@@ -1138,12 +1151,16 @@ class Coasts {
 	function Load(data) {
 		nearLand = data.nearLand;
 		parentSea = data.parentSea == null ? null : idCoasts[data.parentSea];
-		childrenIslands = data.childrenIslands
+		childrenIslands = data.childrenIslands;
+		saveData = data;
 	}
 
 	function IsConnectedOnSea( anotherCoasts ) {
 		if(id == anotherCoasts.id) {
 			return true;
+		}
+		if(coastType == CT_POND || anotherCoasts.coastType == CT_POND) {
+			return false;
 		}
 		if(coastType == CT_SEA) {
 			if(anotherCoasts.coastType == CT_SEA) {
@@ -1163,11 +1180,11 @@ class Coasts {
 	
 	function SearchCoastTiles(coastTile) {
 		local tiles = [coastTile];
-
+		local count = 0;
 		while(tiles.len() >= 1) {
 			local tile = tiles.pop();
 			Coasts.tileCoastId.rawset(tile,id);
-			
+			count ++;
 			/*{
 				local execMode = AIExecMode();
 				AISign.BuildSign (tile, id.tostring());
@@ -1182,6 +1199,7 @@ class Coasts {
 				}
 			}
 		}
+		return count;
 	}
 	
 	function IsCoastTile(tile) {
@@ -1203,29 +1221,29 @@ class Coasts {
 		local y = AIMap.GetTileY(nearLand);
 
 		local boundCount = 0;
-		local coast = false;
-		local sea = false;
+		local myCoast = false;
 		local firstLink = null;
 		
-		while(x > 1) {
-			local cur = AIMap.GetTileIndex(x,y);
-			
+		local end = AIMap.GetTileIndex(1,y);
+		local cur = nearLand;
+		local prev = cur;
+		while(cur >= end) {
 			if(tileCoastId.rawin(cur) && tileCoastId[cur] == id) {
-				coast = true;
+				myCoast = true;
 			} else {
 				if(firstLink == null && boundCount % 2 == 1 && IsCoastTile(cur)) {
 					firstLink = cur;
 				}
 			
-				if(coast) { // 直前がcoast
-					if(sea != AITile.IsSeaTile(cur)) {
+				if(myCoast) { // 直前が「自分の」coast
+					if(AITile.IsSeaTile(prev) != AITile.IsSeaTile(cur)) { //TODO: ブイ等で誤動作する
 						boundCount ++;
 					}
+					myCoast = false;
 				}
-				sea = AITile.IsSeaTile(cur);
-				coast = false;
+				prev = cur;
 			}
-			x--;
+			cur--;
 		}
 		if(boundCount % 2 == 0) {
 			coastType = CT_SEA;

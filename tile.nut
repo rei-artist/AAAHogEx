@@ -502,6 +502,7 @@ class HgTile {
 		}
 		return [true,maxSeaLength];
 	}
+	
 
 	
 	function CanForkRail(toHgTile) {

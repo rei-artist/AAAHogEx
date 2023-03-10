@@ -129,6 +129,7 @@ class TrainRoute extends Route {
 			}
 			trainRoute.engineSetsCache = engineSets;
 		}
+
 		trainRoute.engineSetsDate = t.engineSetsDate;
 		trainRoute.engineSetAllRailCache = t.engineSetAllRailCache != null ? delegate TrainEstimation : t.engineSetAllRailCache : null;
 		trainRoute.engineSetAllRailDate = t.engineSetAllRailDate;
@@ -831,7 +832,8 @@ class TrainRoute extends Route {
 	
 	function CloneTrain() {
 		local execMode = AIExecMode();
-		if(this.latestEngineVehicle == null) {
+		if(!AIVehicle.IsValidVehicle(this.latestEngineVehicle)) {
+			HgLog.Warning("CloneVehicle failed. Invalid latestEngineVehicle("+this.latestEngineVehicle+") "+this);
 			return null;
 		}
 		local engineVehicle = null;
@@ -861,7 +863,7 @@ class TrainRoute extends Route {
 		local engineVehicle = AIVehicle.BuildVehicle(depotTile, trainEngine);
 		if(!AIVehicle.IsValidVehicle(engineVehicle)) {
 			local error = AIError.GetLastError();
-			HgLog.Warning("BuildVehicle failed. "+explain+" "+AIError.GetLastErrorString());
+			HgLog.Warning("BuildVehicle failed. "+explain+" "+AIError.GetLastErrorString()+" "+this);
 			if(engineVehicles.len() >= 1) {
 				AIVehicle.SellWagonChain(engineVehicles[0], 0);
 			}
@@ -872,7 +874,7 @@ class TrainRoute extends Route {
 		}
 		AIVehicle.RefitVehicle(engineVehicle, cargo);
 		if(engineVehicles.len() >= 1 && !AIVehicle.MoveWagon(engineVehicle, 0, engineVehicles[0], engineVehicles.len()-1)) {
-			HgLog.Warning("MoveWagon engineVehicle failed. "+explain + " "+AIError.GetLastErrorString());
+			HgLog.Warning("MoveWagon engineVehicle failed. "+explain + " "+AIError.GetLastErrorString()+" "+this);
 			AIVehicle.SellWagonChain(engineVehicles[0], 0);
 			AIVehicle.SellWagonChain(engineVehicle, 0);
 			return false;
@@ -931,26 +933,26 @@ class TrainRoute extends Route {
 					local wagon = AIVehicle.BuildVehicleWithRefit(depotTile, wagonEngineInfo.engine, wagonEngineInfo.cargo);
 					if(!AIVehicle.IsValidVehicle(wagon))  {
 						// AddUnsuitableEngineWagon(trainEngine, wagonEngineInfo.engine); wagonとの組み合わせの問題ではない
-						HgLog.Warning("BuildVehicleWithRefit wagon failed. "+explain+" "+AIError.GetLastErrorString());
+						HgLog.Warning("BuildVehicleWithRefit wagon failed. "+explain+" "+AIError.GetLastErrorString()+" "+this);
 						success = false;
 						break;
 					}
 					local realLength = AIVehicle.GetLength(wagon);
 					local trainInfo = TrainInfoDictionary.Get().GetTrainInfo(wagonEngineInfo.engine);
 					if(realLength != trainInfo.length) { // 時代で変わる？
-						HgLog.Warning("Wagon length different:"+realLength+"!="+trainInfo.length+" "+AIEngine.GetName(wagonEngineInfo.engine)+" "+explain);
+						HgLog.Warning("Wagon length different:"+realLength+"!="+trainInfo.length+" "+AIEngine.GetName(wagonEngineInfo.engine)+" "+explain+" "+this);
 						trainInfo.length = realLength;
 					}
 					if(!AIVehicle.MoveWagon(wagon, 0, engineVehicle, AIVehicle.GetNumWagons(engineVehicle)-1)) {
 						AddUnsuitableEngineWagon(trainEngine, wagonEngineInfo.engine);
-						HgLog.Warning("MoveWagon failed. "+explain + " "+AIError.GetLastErrorString());
+						HgLog.Warning("MoveWagon failed. "+explain + " "+AIError.GetLastErrorString()+" "+this);
 						AIVehicle.SellWagonChain(wagon, 0);
 						success = false;
 						break;
 					}
 					if(AIVehicle.GetLength(engineVehicle) > GetPlatformLength() * 16) {
 						HgLog.Warning("Train length over platform length."
-							+AIVehicle.GetLength(engineVehicle)+">"+(GetPlatformLength() * 16)+" "+explain);
+							+AIVehicle.GetLength(engineVehicle)+">"+(GetPlatformLength() * 16)+" "+explain+" "+this);
 						AIVehicle.SellWagonChain(wagon, 0);
 						success = false;
 						break;
@@ -1476,7 +1478,7 @@ class TrainRoute extends Route {
 			oldVehicles.push(engineVehicle);
 		}
 		if(!BuildNewTrain()) {
-			HgLog.Warning("newTrain == null");
+			HgLog.Warning("newTrain == null "+this);
 			updateRailDepot = null;
 			return false;
 		}
@@ -1755,7 +1757,7 @@ class TrainRoute extends Route {
 	}
 		
 	function CheckCloneTrain() {
-		if(isClosed || updateRailDepot!=null || IsSingle()) {
+		if(isClosed || isRemoved || updateRailDepot!=null || IsSingle()) {
 			return;
 		}
 		
@@ -1846,10 +1848,12 @@ class TrainRoute extends Route {
 		}
 		
 		if(!HogeAI.HasIncome(20000) || !ExistsMainRouteExceptSelf()) {
+			//HgLog.Warning("Cannot renewal train "+this);
 			return;
 		}
 		
 		engineSet = ChooseEngineSet();
+//		HgLog.Warning("ChooseEngineSet "+engineSet+" "+this);
 		if(engineSet == null) {
 			HgLog.Warning("No usable engineSet ("+AIRail.GetName(GetRailType())+") "+this);
 			return;
@@ -1858,7 +1862,7 @@ class TrainRoute extends Route {
 			return; // すぐに買えない場合はリニューアルしない。車庫に列車が入って収益性が著しく悪化する場合がある
 		}
 		foreach(engineVehicle, v in engineVehicles) {
-			if(/*AIVehicle.GetAge(engineVehicle) >= 365 登れないとかtransfer追加とかすぐ変えないといけない時がある&&*/ (!HasVehicleEngineSet(engineVehicle,engineSet) || AIVehicle.GetAgeLeft (engineVehicle) <= 600)) {
+			if(!HasVehicleEngineSet(engineVehicle,engineSet) || AIVehicle.GetAgeLeft (engineVehicle) <= 600) {
 				if(isBiDirectional || AIVehicle.GetCargoLoad(engineVehicle,cargo) == 0) {
 					//HgLog.Info("SendVehicleToDepot(renewal or age):"+engineVehicle+" "+this);
 					SendVehicleToDepot(engineVehicle);
@@ -1883,6 +1887,10 @@ class TrainRoute extends Route {
 	function HasVehicleEngineSet(vehicle, engineSet) {
 		if(engineSet == null) { // 作れるlocoが無くなるとnullになる
 			return true;
+		}
+		if(!engineVehicles.rawin(vehicle)) {
+			HgLog.Warning("!engineVehicles.rawin("+vehicle+") "+this);
+			return false;
 		}
 		local vehicleEngineSet = engineVehicles[vehicle];
 		if(vehicleEngineSet == engineSet) {
@@ -2140,6 +2148,7 @@ class TrainRoute extends Route {
 	}
 	
 	function NotifyAddTransfer(callers=null) {
+		HgLog.Warning("NotifyAddTransfer "+this);
 		Route.NotifyAddTransfer(callers);
 		engineSetsCache = null;
 	}
