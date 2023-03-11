@@ -595,7 +595,10 @@ class HogeAI extends AIController {
 				numCompany ++;
 			}
 		}
-		WaitDays(AIBase.RandRange(hogex*7));
+		if(!HogeAI.Get().IsDebug()) {
+			WaitDays(AIBase.RandRange(hogex*7));
+		}
+
 		if(numCompany > AIIndustryList().Count()) {
 			WaitDays(365); // 新しいindustryが建設されるのを待ってみる
 		}

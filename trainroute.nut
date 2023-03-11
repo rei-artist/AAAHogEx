@@ -2146,9 +2146,11 @@ class TrainRoute extends Route {
 			}
 		}
 	}
-	
+
+	function NotifyChangeDestRoute() {
+	}
+
 	function NotifyAddTransfer(callers=null) {
-		HgLog.Warning("NotifyAddTransfer "+this);
 		Route.NotifyAddTransfer(callers);
 		engineSetsCache = null;
 	}

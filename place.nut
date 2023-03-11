@@ -633,6 +633,9 @@ class Place {
 	
 	
 	static function ExistsOtherHoge(facility) {
+		if(HogeAI.Get().IsDebug()) {
+			return false;
+		}
 		if(facility instanceof HgIndustry && facility.GetRoutes().len() == 0) {
 			if(AIIndustry.GetAmountOfStationsAround(facility.industry) >= 1) {
 				local tileList = AITileList_IndustryAccepting(facility.industry,5);

@@ -387,6 +387,9 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 			if(destRoute == null) {
 				return null;
 			}
+			srcRoute.NotifyAddTransfer();
+			srcRoute.NotifyChangeDestRoute();
+			srcRoute.ChooseEngineSet(); //destへ繋がったので再見積もりを行う
 			return srcRoute;
 		} else {
 			local destRoute = WaterRouteBuilder( dest, coastPlace, cargo, {
@@ -410,6 +413,7 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 			if(srcRoute == null) {
 				return null;
 			}
+			destRoute.NotifyAddTransfer();
 			return srcRoute;
 		}
 		HgLog.Info("## Succeeded BuildCompoundRoute "+this);

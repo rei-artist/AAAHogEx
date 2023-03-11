@@ -603,7 +603,7 @@ class Route {
 
 	function GetDelivableProduction(cargo, callers = null) {
 		local result = GetProductionCargo(cargo, callers);
-		local currentCapacity = GetCurrentRouteCapacity(cargo);
+		local currentCapacity = GetMaxRouteCapacity(cargo);
 		if(currentCapacity == 0 && GetVehicleType() == AIVehicle.VT_RAIL) {
 			currentCapacity = GetRouteCapacity() * 100; // TODO: 実際に車両が作れるかどうかの検査
 		}		
@@ -788,11 +788,6 @@ class Route {
 		return destRoute;
 	}
 	
-	function NotifyChangeDestRoute() {
-		destRoute = null;
-	}
-
-	
 	function CalculateSubCargos() {
 		local src = srcHgStation.stationGroup;
 		local dest = destHgStation.stationGroup;
@@ -869,61 +864,6 @@ class Route {
 		return [cargo];
 	}
 	
-	function NotifyAddTransfer(callers = null) {
-		if(callers == null) {
-			callers = {};
-		}
-		if(callers.rawin(this)) {
-			return;
-		}
-		callers.rawset(this,0);
-		needsAdditionalCache.clear();
-		productionCargoCache.clear();
-		if(IsTransfer()) {
-			local destRoute = GetDestRoute();
-			if(destRoute != false) {
-				destRoute.NotifyAddTransfer(callers);
-			}
-		}
-	}
-
-	function OnIndustoryClose(industry) {
-		local srcPlace = srcHgStation.place;
-		if(srcPlace != null && srcPlace instanceof HgIndustry && srcPlace.industry == industry) {
-			if(GetVehicleType() == AIVehicle.VT_RAIL && HogeAI.Get().IsInfrastructureMaintenance() == false) {
-				HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. Search transfer." + this);
-				HogeAI.Get().SearchAndBuildTransferRoute(this);
-			}
-			local saved = false;
-			foreach(route in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
-				if(route.IsTransfer() && route.cargo == cargo) {
-					HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. But saved because transfer route found."+this);
-					saved = true;
-				}
-			}
-			if(saved) {
-				srcHgStation.place = null;
-				srcHgStation.savedData = srcHgStation.Save();
-			} else {
-				HgLog.Warning("Remove Route (src industry closed:"+AIIndustry.GetName(industry)+")"+this);
-				Remove();
-			}
-		}
-		local destPlace = destHgStation.place;
-		if(destPlace != null && destPlace instanceof HgIndustry && destPlace.industry == industry) {
-			HgLog.Warning("Remove Route (dest industry closed:"+AIIndustry.GetName(industry)+")"+this);
-			Remove();
-		}
-		
-/*	
-		local destPlace = GetFinalDestPlace();
-		if(destPlace != null && (destPlace instanceof HgIndustry) && destPlace.industry == industry) {
-			HgLog.Warning("Close dest industry:"+AIIndustry.GetName(industry));
-			isClosed = true;
-			Close();
-		}*/
-	}
-	
 	function GetLastYearProfit() {
 		local result = 0;
 		foreach(vehicle in GetVehicles()) {
@@ -945,7 +885,6 @@ class Route {
 	function IsTownTransferRoute() {
 		return IsTransfer() && srcHgStation.IsTownStop();
 	}
-	
 	
 	function IsDestDest() {
 		local destRoute = GetDestRoute();
@@ -1061,6 +1000,65 @@ class Route {
 		}
 	}
 
+
+	function NotifyChangeDestRoute() {
+		destRoute = null;
+	}
+
+	function NotifyAddTransfer(callers = null) {
+		if(callers == null) {
+			callers = {};
+		}
+		if(callers.rawin(this)) {
+			return;
+		}
+		callers.rawset(this,0);
+		needsAdditionalCache.clear();
+		productionCargoCache.clear();
+		if(IsTransfer()) {
+			foreach(destRoute in GetDestRoutes()) {
+				destRoute.NotifyAddTransfer(callers);
+			}
+		}
+	}
+
+	function OnIndustoryClose(industry) {
+		local srcPlace = srcHgStation.place;
+		if(srcPlace != null && srcPlace instanceof HgIndustry && srcPlace.industry == industry) {
+			if(GetVehicleType() == AIVehicle.VT_RAIL && HogeAI.Get().IsInfrastructureMaintenance() == false) {
+				HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. Search transfer." + this);
+				HogeAI.Get().SearchAndBuildTransferRoute(this);
+			}
+			local saved = false;
+			foreach(route in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
+				if(route.IsTransfer() && route.cargo == cargo) {
+					HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. But saved because transfer route found."+this);
+					saved = true;
+				}
+			}
+			if(saved) {
+				srcHgStation.place = null;
+				srcHgStation.savedData = srcHgStation.Save();
+			} else {
+				HgLog.Warning("Remove Route (src industry closed:"+AIIndustry.GetName(industry)+")"+this);
+				Remove();
+			}
+		}
+		local destPlace = destHgStation.place;
+		if(destPlace != null && destPlace instanceof HgIndustry && destPlace.industry == industry) {
+			HgLog.Warning("Remove Route (dest industry closed:"+AIIndustry.GetName(industry)+")"+this);
+			Remove();
+		}
+		
+/*	
+		local destPlace = GetFinalDestPlace();
+		if(destPlace != null && (destPlace instanceof HgIndustry) && destPlace.industry == industry) {
+			HgLog.Warning("Close dest industry:"+AIIndustry.GetName(industry));
+			isClosed = true;
+			Close();
+		}*/
+	}
+	
 	function _tostring() {
 		return (IsTransfer() ? "T:" : "") + destHgStation.GetName() + "<-"+(IsBiDirectional()?">":"") + srcHgStation.GetName()
 				+ "[" + AICargo.GetName(cargo) + "]" + GetLabel() + (IsClosed()?" Closed":"");
@@ -2501,6 +2499,11 @@ class CommonRoute extends Route {
 		} else {
 			HgLog.Warning("CreateNewRoute failed:"+newRoute+" from "+this);
 		}
+	}
+
+	function NotifyAddTransfer(callers=null) {
+		Route.NotifyAddTransfer(callers);
+		latestEngineSet.isValid = false;
 	}
 }
 
