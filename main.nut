@@ -30,7 +30,6 @@ class BBB extends AAA {
 	}
 }
 
-
 class HogeAI extends AIController {
 	static container = Container();
 	static notBuildableList = AIList();
@@ -743,7 +742,7 @@ class HogeAI extends AIController {
 		}
 		local searchDays = AIDate.GetCurrentDate() - startDate;
 		HgLog.Info("searchDays:"+searchDays);
-		limitDate = AIDate.GetCurrentDate() + max((roiBase ? 356 : 365*2) / GetDayLengthFactor(), searchDays * 3);
+		limitDate = AIDate.GetCurrentDate() + max((roiBase ? 356 : 365*2) / GetDayLengthFactor(), searchDays * 5);
 		local dirtyPlaces = {};
 		local rootBuilders = [];
 		local pendingPlans = [];
@@ -825,6 +824,10 @@ class HogeAI extends AIController {
 			});
 			if(routeBuilder.ExistsSameRoute()) {
 				HgLog.Info("ExistsSameRoute "+explain);
+				continue;
+			}
+			if(t.estimate.value < 0) {
+				HgLog.Info("t.estimate.value < 0 ("+t.estimate.value+") "+explain);
 				continue;
 			}
 			HgLog.Info("Try "+routeBuilder+" production:"+t.production+" distance:"+t.distance+" value:"+t.estimate.value);
@@ -1474,7 +1477,7 @@ class HogeAI extends AIController {
 		
 		local result = [];
 		foreach(candidate in candidates) {
-			if(Route.SearchRoutes( Route.GetRouteWeightingVt(candidate.vehicleType), orgPlace, candidate.place, cargo ).len() >= 1) {
+			if(!Route.CanCreateRoute( candidate.vehicleType, orgPlace, candidate.place, cargo )) {
 				continue;
 			}
 			if(candidate.vehicleType == AIVehicle.VT_RAIL) {
@@ -3169,6 +3172,7 @@ class HogeAI extends AIController {
 		local checkPointsEnd = path.Reverse().GetCheckPoints(32,3);
 		local startTile = path.GetTile();
 		local lastTile = path.GetLastTile();
+		local totalLength = AIMap.DistanceManhattan(startTile, lastTile);
 
 		local srcPlaces = Place.GetNotUsedProducingPlaces( cargo );
 		local srces = srcPlaces.Map(function(place):(cargo) {
@@ -3222,7 +3226,7 @@ class HogeAI extends AIController {
 				local distanceD = dest.distanceFromPath;
 				local used = HgTile(path.GetTile()).DistanceManhattan(HgTile(lastTile)) 
 					- (HgTile(lastTile).DistanceManhattan(HgTile(pathTileS)) + HgTile(startTile).DistanceManhattan(HgTile(pathTileD)));
-				if(used < 200) {
+				if(used < 200 || used < distanceS + distanceD || used < totalLength / 2) {
 					continue;
 				}
 				local dCost = AIMap.DistanceManhattan(destPlace.GetLocation(), pathTileD);
@@ -3368,6 +3372,8 @@ class HogeAI extends AIController {
 			local returnRoute = TrainReturnRoute(route, transferStation, returnDestStation, 
 				railBuilderPathToTransfer.buildedPath, railBuilderTransferToPath.buildedPath,
 				railBuilderReturnDest.buildedPath1, railBuilderReturnDest.buildedPath2);
+				
+			returnRoute.AddDepots( railBuilderReturnDest.depots );
 
 		
 			/*
@@ -3908,10 +3914,12 @@ class HogeAI extends AIController {
 					event = AIEventIndustryOpen.Convert(event);
 					HgLog.Info("ET_INDUSTRY_OPEN:"+AIIndustry.GetName(event.GetIndustryID())+" ID:"+event.GetIndustryID());
 					break;
+				case AIEvent.ET_VEHICLE_CRASHED:
+					OnVehicleCrashed(AIEventVehicleCrashed.Convert(event));
+					break;
 				case AIEvent.ET_VEHICLE_LOST:
 					OnVehicleLost(AIEventVehicleLost.Convert(event));
-					break;
-					
+					break;					
 			}
 		}
 	}
@@ -3919,8 +3927,8 @@ class HogeAI extends AIController {
 	function OnVehicleLost(event) {
 		local vehicle = event.GetVehicleID();
 		local group = AIVehicle.GetGroupID(vehicle);
-		local vehicleType = AIGroup.GetVehicleType(group);
-		HgLog.Warning("ET_VEHICLE_LOST:"+AIVehicle.GetName(vehicle)+" vt:"+vehicleType+" group:"+AIGroup.GetName(group));
+		local vehicleType = AIVehicle.GetVehicleType(vehicle);
+		HgLog.Warning("ET_VEHICLE_LOST:"+vehicle+" "+AIVehicle.GetName(vehicle)+" vt:"+vehicleType+" group:"+AIGroup.GetName(group));
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
 			HgLog.Warning("Invalid vehicle");
 			return;
@@ -3941,6 +3949,16 @@ class HogeAI extends AIController {
 			}
 		
 		}
+	}
+	
+	function OnVehicleCrashed(event) {
+		local vehicle = event.GetVehicleID();
+		local crashSite = event.GetCrashSite();
+		local crashReason = event.GetCrashReason();
+		local vehicleType = AIVehicle.GetVehicleType(vehicle);
+		local group = AIVehicle.GetGroupID(vehicle);
+		HgLog.Warning("ET_VEHICLE_CRASHED:"+vehicle+" "+AIVehicle.GetName(vehicle)+" vt:"+vehicleType+" group:"+AIGroup.GetName(group)
+			+" crashSite:"+HgTile(crashSite)+" crashReason:"+crashReason);
 	}
 	 
 	function Save() {

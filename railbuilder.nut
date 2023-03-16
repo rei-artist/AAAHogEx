@@ -970,7 +970,7 @@ class RailBuilder {
 		if(!BuildUtils.BuildBridgeSafe(vehicleType, bridge, p1, p2)){
 			if( AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR ) {
 				HgLog.Warning("TryDemolishUnderBridge(BuildBridge failed("+HgTile(p1)+"-"+HgTile(p2)+":"+AIError.GetLastErrorString()+")).");
-				TryDemolishUnderBridge(p1,p2);
+				RailBuilder.TryDemolishUnderBridge(p1,p2);
 				if(BuildUtils.BuildBridgeSafe(vehicleType, bridge, p1, p2)) {
 					return true;
 				}

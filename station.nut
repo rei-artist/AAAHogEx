@@ -39,6 +39,10 @@ class StationGroup {
 		return;
 	}
 	
+	function GetRoutesUsingDest() {
+		return GetUsingRoutesAsDest();
+	}
+	
 	function GetUsingRoutesAsDest() {
 		local result = [];
 		foreach(route in GetUsingRoutes()) {
@@ -47,6 +51,9 @@ class StationGroup {
 			}
 		}
 		return result;
+	}
+	function GetRoutesUsingSource() {
+		return GetUsingRoutesAsSource();
 	}
 	
 	function GetUsingRoutesAsSource() {

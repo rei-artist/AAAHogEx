@@ -592,7 +592,9 @@ class Place {
 			if(date == -1) {
 				return true;
 			} else {
-				return AIDate.GetCurrentDate() < date;
+				if( AIDate.GetCurrentDate() < date ) {
+					return true;
+				}
 			}
 		}
 		local checkOtherCompany = false;
@@ -1060,7 +1062,7 @@ class Place {
 		}
 		return HgTable.Keys(table);
 	}
-	
+
 	function GetRoutesUsingDest(cargo = null) {
 		if(cargo == null) {
 			return PlaceDictionary.Get().GetRoutesByDest(this);
@@ -1273,6 +1275,10 @@ class Place {
 	}*/
 	
 	function _GetSupportEstimate() {
+		if(!IsIncreasable()) {
+			return { production = 0 };
+		}
+	
 		local routeIncome = {};
 		local buildingTime = {};
 		local production = 0;
@@ -1540,7 +1546,7 @@ class Place {
 			local result;
 			if(!placeDictionary.nearWaters.rawin(id)) {
 				result = CheckNearWater(cargo);
-				HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo)+" result:"+result);
+				//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo)+" result:"+result);
 				placeDictionary.nearWaters[id] <- result == null ? null : result.id;
 				return result;
 			} else {

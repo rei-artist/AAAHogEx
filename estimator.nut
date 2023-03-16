@@ -37,6 +37,7 @@ Estimation <- {
 		income = incomePerOneTime * 365 / totalDays - runningCost;;
 		routeIncome = income * vehiclesPerRoute - infrastractureCost - additionalRunningCostPerCargo * annualDeliver + additionalRouteIncome;
 		value = GetValue();
+		//HgLog.Warning("CalculateIncome "+GetExplain());
 	}
 
 	function GetValue() {
@@ -70,6 +71,7 @@ Estimation <- {
 
 			}
 			Estimate();
+			//HgLog.Warning("EstimateAdditional Estimate:"+this+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
 			
 		} else {
 			local destRouteCargoIncome = dest.GetDestRouteCargoIncome();
@@ -84,6 +86,7 @@ Estimation <- {
 			if(src instanceof Place) {
 				local supportEstimate = src.GetSupportEstimate();
 				if(supportEstimate.production > 0) {
+					//HgLog.Warning("AppendSupportRouteEstimate "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());	
 					AppendSupportRouteEstimate(src, cargo, supportEstimate);
 				}
 			}
@@ -102,6 +105,7 @@ Estimation <- {
 						//if(src.GetName().find("Bindwood") != null) {
 							//HgLog.Warning("additional.EstimateAdditional "+additional+" "+dest.GetName()+"<-"+src.GetName());
 						//}
+						//HgLog.Warning("additional.routeIncome "+additional.routeIncome+" "+dest.GetName()+"<-"+src.GetName()+"["+AICargo.GetName(eachCargo)+"]");
 						routeIncome += additional.routeIncome;
 						price += additional.price;
 					} else {
@@ -124,7 +128,9 @@ Estimation <- {
 	}
 	
 	function GetExplain() {
-		return  value+" roi:"+roi+" route:"+routeIncome+"("+incomePerOneTime+")" + " speed:"+cruiseSpeed + "("+ days +"d)"
+		return  value+" roi:"+roi
+//			+ " income:"+income+" rc:"+runningCost+" ic:"+infrastractureCost+" ad:"+(capacity * vehiclesPerRoute * 365 / (days + waitingInStationTime - loadingTime))
+			+ " route:"+routeIncome+"("+incomePerOneTime+")" + " speed:"+cruiseSpeed + "("+ days +"d)"
 			+ " ACD:"+additionalCruiseDays+" TD:"+totalDistance +" DRCI:"+destRouteCargoIncome+(additionalRouteIncome>=1?"("+additionalRouteIncome+")":"")
 			+ " ARC:"+additionalRunningCostPerCargo + " BT:" + buildingTime;
 	}
