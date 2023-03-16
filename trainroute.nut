@@ -1825,7 +1825,7 @@ class TrainRoute extends Route {
 						HgLog.Warning("engineVehicles.len() == 0 "+this);
 					} else {
 						foreach(engineVehicle, _ in engineVehicles) {
-							latestEngineVehicle = engineVehicles
+							latestEngineVehicle = engineVehicle;
 							break;
 						}
 					}
