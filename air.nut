@@ -60,7 +60,7 @@ class Air {
 			population = 20000
 			maxPlanes = 20
 			runways = 4
-			stationDateSpan = 3
+			stationDateSpan = 4
 			cost = 46000
 		}
 	];
@@ -595,8 +595,9 @@ class AirStation extends HgStation {
 	}
 	
 	function CanShareByMultiRoute(infrastractureType = null) {
+		local traits = GetAirportTraits();
 		if(infrastractureType != null) {
-			if( GetAirportTraits().level < Air.Get().GetAiportTraits(infrastractureType).level ) {
+			if( traits.level < Air.Get().GetAiportTraits(infrastractureType).level ) {
 				return false;
 			}
 		}
@@ -604,8 +605,13 @@ class AirStation extends HgStation {
 		if(usingRoutes.len() >= 3) { // 最低数1のルートが大量にシェアされて小型空港が溢れかえるので
 			return false;
 		}
+		local arrivesPerYear = 0;
 		foreach(route in usingRoutes) {
 			if(route.IsBiDirectional()) {
+				return false;
+			}
+			arrivesPerYear += 365 / route.GetLatestEngineSet().GetInterval();
+			if(arrivesPerYear > 365 / traits.stationDateSpan) {
 				return false;
 			}
 		}

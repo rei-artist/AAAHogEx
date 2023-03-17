@@ -29,6 +29,10 @@ Estimation <- {
 		}
 	}
 	
+	function GetInterval() {
+		return days / maxVehicles;
+	}
+
 	function CalculateIncome() {
 		buildingTime = GetBuildingTime(); 
 		local totalDays = days + waitingInStationTime - loadingTime;
@@ -147,7 +151,7 @@ CommonEstimation <- delegate Estimation : {
 
 		vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) + 1 ), 1 );
 		
-		local interval = days / vehiclesPerRoute;
+		local interval = GetInterval();
 		local intervalStock;
 		
 		if(interval <= 10) {

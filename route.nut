@@ -1522,14 +1522,23 @@ class CommonRoute extends Route {
 			HgLog.Warning("Not found suitable engine. "+this);
 			return null;
 		}
-		HogeAI.WaitForPrice(AIEngine.GetPrice(engine));
 		//local vehicle = AIVehicle.BuildVehicle(depot, engine);
-		local vehicle = AIVehicle.BuildVehicleWithRefit(depot, engine, cargo);
-		if(!AIVehicle.IsValidVehicle(vehicle)) {
-			HgLog.Warning("BuildVehicleWithRefit failed. engine:"
-				+ AIEngine.GetName(engine) + " depot:" + HgTile(depot)
-				+ " " + AIError.GetLastErrorString() + " " + this);
-			return null;
+		local cost = AIEngine.GetPrice(engine);
+		local vehicle;
+		while(true) {
+			HogeAI.WaitForPrice(cost);
+			vehicle = BuildUtils.BuildVehicleWithRefitSafe(depot, engine, cargo);
+			if(!AIVehicle.IsValidVehicle(vehicle)) {
+				if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) {
+					cost += HogeAI.Get().GetInflatedMoney(10000);
+					continue;
+				}		
+				HgLog.Warning("BuildVehicleWithRefit failed. engine:"
+					+ AIEngine.GetName(engine) + " depot:" + HgTile(depot)
+					+ " " + AIError.GetLastErrorString() + " " + this);
+				return null;
+			}
+			break;
 		}
 		//HgLog.Warning("GetRefitCapacity:"+AIVehicle.GetRefitCapacity(vehicle, cargo)+" "+AIEngine.GetName(engine)+" "+this);
 		//AIVehicle.RefitVehicle (vehicle, cargo);
@@ -1689,14 +1698,27 @@ class CommonRoute extends Route {
 		}
 	
 		local result = null;
-		HogeAI.WaitForPrice(AIEngine.GetPrice(AIVehicle.GetEngineType(vehicle)));
-		result = AIVehicle.CloneVehicle(depot, vehicle, true);
-		if(!AIVehicle.IsValidVehicle(result)) {
-			if(AIError.GetLastError() == AIVehicle.ERR_VEHICLE_NOT_AVAILABLE && latestEngineSet != null) {
-				latestEngineSet.isValid = false;
+		local cost = AIEngine.GetPrice(AIVehicle.GetEngineType(vehicle));
+		while(true) {
+			HogeAI.WaitForPrice(cost);
+			result = AIVehicle.CloneVehicle(depot, vehicle, true);
+			if(!AIVehicle.IsValidVehicle(result)) {
+				if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) {
+					cost += HogeAI.Get().GetInflatedMoney(10000);
+					continue;
+				}		
+				if(AIError.GetLastError() == AIVehicle.ERR_VEHICLE_NOT_AVAILABLE && latestEngineSet != null) {
+					latestEngineSet.isValid = false;
+				}
+				HgLog.Warning("CloneVehicle failed. depot:"+HgTile(depot)+" veh:"+AIVehicle.GetName(vehicle)+" "+AIError.GetLastErrorString()+" "+this);
+				return null;
 			}
-			HgLog.Warning("CloneVehicle failed. depot:"+HgTile(depot)+" veh:"+AIVehicle.GetName(vehicle)+" "+AIError.GetLastErrorString()+" "+this);
-			return null;
+			if(AIOrder.GetOrderCount(result) == 0) {
+				AIVehicle.SellVehicle(result);
+				HgLog.Warning("CloneVehicle failed. depot:"+HgTile(depot)+" veh:"+AIVehicle.GetName(vehicle)+" AIOrder.GetOrderCount(result) == 0 "+this);
+				return null;
+			}
+			break;
 		}
 		AIGroup.MoveVehicle(vehicleGroup, result);
 		if(skipToOrder != null) {
@@ -3025,6 +3047,16 @@ class CommonRouteBuilder extends RouteBuilder {
 		if(sharableStationOnly && (!isShareSrcStation && !isShareDestStation)) {
 			HgLog.Warning("No Sharable station."+this);
 			return null;
+		}
+		if(isShareSrcStation && isShareDestStation) {
+			foreach(r1 in srcHgStation.GetUsingRoutes()) {
+				foreach(r2 in destHgStation.GetUsingRoutes()) {
+					if(r1 == r2 && r1.cargo == cargo) {
+						HgLog.Warning("Cannot share station (same route found)."+this);
+						return null;
+					}
+				}
+			}
 		}
 
 		{

@@ -748,6 +748,7 @@ class HogeAI extends AIController {
 		local pendingPlans = [];
 		local totalNeeds = 0;
 		local endDate = AIDate.GetCurrentDate();
+		local buildingStartDate = AIDate.GetCurrentDate();
 		while(bests.Count() >= 1){
 			local t = bests.Pop();
 			if(t.vehicleType != AIVehicle.VT_AIR) { //airの場合迅速にやらないといけないので
@@ -856,10 +857,10 @@ class HogeAI extends AIController {
 					newRoute.isBuilding = false;
 				}*/
 				if(roiBase && bests.Count() >= 1) {
-					/*if(IsRich()) { // roiBaseから変わったので再検索 estimate直後はお金が余っている事がある
+					if(IsRich() && AIDate.GetCurrentDate() - buildingStartDate > 180) { // roiBaseから変わったので再検索
 						DoPostBuildRoute(rootBuilders);
 						return;
-					}*/
+					}
 					local next = bests.Peek();
 					local usable = GetUsableMoney() + GetQuarterlyIncome() * t.estimate.days / 90;
 					totalNeeds += t.estimate.price * (t.estimate.vehiclesPerRoute - 1); // TODO: これまでの建築にかかった時間分減らす

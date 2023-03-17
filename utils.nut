@@ -584,6 +584,33 @@ class BuildUtils {
 		});
 	}
 	
+	static function BuildVehicleWithRefitSafe(a,b,c) {
+		local func = function():(a,b,c) {
+			return AIVehicle.BuildVehicleWithRefit(a, b, c);
+		};
+		local cost;
+		{
+			local testMode = AITestMode();
+			local accounting = AIAccounting();
+			if(func() != 0) {
+				if(AIError.GetLastError() != AIError.ERR_NOT_ENOUGH_CASH) {
+					return false; // お金じゃない理由で失敗
+				}
+			}
+			cost = accounting.GetCosts();
+		}
+		while(true) {
+			if(!HogeAI.WaitForPrice(cost)) {
+				return false;
+			}
+			local r = func();
+			if(!AIVehicle.IsValidVehicle(r) && AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 事前チェックしてても失敗する事がある
+				cost += HogeAI.Get().GetInflatedMoney(10000);
+				continue;
+			}
+			return r;
+		}
+	}
 	
 	static function DemolishTileSafe(a) {
 		return BuildUtils.WaitForMoney( function():(a) {
