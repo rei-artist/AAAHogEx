@@ -1528,7 +1528,7 @@ class CommonRoute extends Route {
 		while(true) {
 			HogeAI.WaitForPrice(cost);
 			vehicle = BuildUtils.BuildVehicleWithRefitSafe(depot, engine, cargo);
-			if(!AIVehicle.IsValidVehicle(vehicle)) {
+			if(vehicle==null || !AIVehicle.IsValidVehicle(vehicle)) {
 				if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) {
 					cost += HogeAI.Get().GetInflatedMoney(10000);
 					continue;
