@@ -2267,6 +2267,10 @@ class TrainReturnRoute extends Route {
 		return originalRoute.GetLatestEngineSet();
 	}
 
+	function ChooseEngineSet() {
+		return originalRoute.ChooseEngineSet();
+	}
+
 	function Close() {
 	}
 	
