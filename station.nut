@@ -1656,7 +1656,7 @@ class HgStation {
 					local tileList = stationGroup.GetBuildablePlatformRectangle().GetTileList();
 					local coverageRadius = AIStation.GetCoverageRadius(PieceStation.GetStationTypeCargo(cargo));
 					foreach(tile in place.GetTiles(coverageRadius, cargo)) {
-						if(tileList.HasItem(tile)) {
+						if(tileList.HasItem(tile) && AIRoad.IsRoadTile(tile)) {
 							local close = false;
 							foreach(p in pieces) {
 								if(AIMap.DistanceManhattan(p,tile) <= 6) {
