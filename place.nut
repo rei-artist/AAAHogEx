@@ -21,8 +21,8 @@ class PlaceProduction {
 	constructor() {
 		history = {};
 		currentProduction = {};
-		pieceNumX = AIMap.GetMapSizeX() / PlaceProduction.PIECE_SIZE;
-		pieceNumY = AIMap.GetMapSizeY() / PlaceProduction.PIECE_SIZE;
+		pieceNumX = AIMap.GetMapSizeX() / PlaceProduction.PIECE_SIZE + 1;
+		pieceNumY = AIMap.GetMapSizeY() / PlaceProduction.PIECE_SIZE + 1;
 	}
 	
 	static function Save(data) {
@@ -30,7 +30,6 @@ class PlaceProduction {
 			lastCheckMonth = lastCheckMonth
 			history = history
 			currentProduction = currentProduction
-			cargoProductionInfos = cargoProductionInfos
 		};
 	}
 
@@ -39,7 +38,6 @@ class PlaceProduction {
 		lastCheckMonth = t.lastCheckMonth;
 		history = t.history;
 		currentProduction = t.currentProduction;
-		cargoProductionInfos = t.cargoProductionInfos;
 	}
 	
 	function GetCurrentMonth () {
