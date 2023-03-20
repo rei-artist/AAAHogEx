@@ -10,54 +10,6 @@ class TrainRoute extends Route {
 	
 	static USED_RATE_LIMIT = 20;
 	
-	static function Save(route) {
-		local t = {};
-		t.id <- route.id;
-		t.routeType <- route.routeType;
-		t.cargo <- route.cargo;
-		t.srcHgStation <- route.srcHgStation.id;
-		t.destHgStation <- route.destHgStation.id;
-		t.pathSrcToDest <- route.pathSrcToDest.array_; //path.Save();
-		t.pathDestToSrc <- route.pathDestToSrc == null ? null : route.pathDestToSrc.array_; //path.Save();
-		t.subCargos <- route.subCargos;
-		t.transferRoute <- route.isTransfer;
-		t.latestEngineVehicle <- route.latestEngineVehicle;
-		t.latestEngineSet <- route.latestEngineSet;
-		t.engineVehicles <- route.engineVehicles;
-		t.additionalRoute <- route.additionalRoute != null ? route.additionalRoute.id : null;
-		t.parentRoute <- route.parentRoute != null ? route.parentRoute.id : null;
-		t.isClosed <- route.isClosed;
-		t.isRemoved <- route.isRemoved;
-		t.failedUpdateRailType <- route.failedUpdateRailType;
-		t.updateRailDepot <- route.updateRailDepot;
-		t.startDate <- route.startDate;
-		t.destHgStations <- [];
-		foreach(station in route.destHgStations) {
-			t.destHgStations.push(station.id);
-		}
-		t.pathDistance <- route.pathDistance;
-		t.forkPaths <- [];
-		foreach(path in route.forkPaths) {
-			t.forkPaths.push(path.array_);
-		}
-		t.depots <- route.depots;
-		t.returnRoute <- route.returnRoute != null ? route.returnRoute.Save() : null;
-		t.reduceTrains <- route.reduceTrains;
-		t.maxTrains <- route.maxTrains;
-		t.slopesTable <- route.slopesTable;
-		t.usedRateHistory <- route.usedRateHistory;
-		t.engineSetsCache <- route.engineSetsCache;
-		t.engineSetsDate <- route.engineSetsDate;
-		t.engineSetAllRailCache <- route.engineSetAllRailCache;
-		t.engineSetAllRailDate <- route.engineSetAllRailDate;
-		t.lastDestClosedDate <- route.lastDestClosedDate;
-		t.additionalTiles <- route.additionalTiles;
-		t.lastConvertRail <- route.lastConvertRail;
-		t.lastChangeDestDate <- route.lastChangeDestDate;
-		t.cannotChangeDest <- route.cannotChangeDest;
-		t.oldCargoProduction <- route.oldCargoProduction;
-		return t;
-	}
 	
 	static function SaveStatics(data) {
 		local arr = [];
@@ -65,13 +17,16 @@ class TrainRoute extends Route {
 			if(route.id == null) { // Removeが完了したroute
 				continue;
 			}
-			arr.push(TrainRoute.Save(route));
+			if(route.returnRoute != null) {
+				route.saveData.returnRoute = route.returnRoute.Save();
+			}
+			arr.push(route.saveData);
 		}
 		data.trainRoutes <- arr;		
 
 		arr = [];
 		foreach(route in TrainRoute.removed) {
-			arr.push(TrainRoute.Save(route));
+			arr.push(route.saveData);
 		}
 		data.removedTrainRoute <- arr; //いまのところIsInfrastractureMaintenance:trueの時しか使用されない
 		
@@ -113,7 +68,7 @@ class TrainRoute extends Route {
 		trainRoute.pathDistance = t.pathDistance;
 		trainRoute.forkPaths = [];
 		foreach(path in t.forkPaths) {
-			trainRoute.forkPaths.push(BuildedPath(Path.Load(t.pathSrcToDest)));
+			trainRoute.forkPaths.push(BuildedPath(Path.Load(path)));
 		}
 		trainRoute.depots = t.depots;
 		if(t.returnRoute != null) {
@@ -139,6 +94,7 @@ class TrainRoute extends Route {
 		trainRoute.oldCargoProduction = t.oldCargoProduction;
 		trainRoute.lastConvertRail = t.rawin("lastConvertRail") ? t.lastConvertRail : null;
 		trainRoute.lastChangeDestDate = t.lastChangeDestDate;
+		trainRoute.saveData = t;
 		//trainRoute.usedRateHistory = t.rawin("usedRateHistory") ? t.usedRateHistory : [];
 		return trainRoute;
 	}
@@ -171,18 +127,6 @@ class TrainRoute extends Route {
 			}
 		}
 
-		// 今は使われていない
-		foreach(t in data.trainRoutes) {
-			local trainRoute = idMap[t.id];
-			if(t.additionalRoute != null) {
-				trainRoute.additionalRoute = idMap[t.additionalRoute];
-			}
-			if(t.parentRoute != null) {
-				trainRoute.parentRoute = idMap[t.parentRoute];
-			}
-			HgLog.Info("load route:"+trainRoute);
-		}
-		
 		TrainRoute.unsuitableEngineWagons.clear();
 		HgTable.Extend(TrainRoute.unsuitableEngineWagons, data.unsuitableEngineWagons);
 	}
@@ -265,8 +209,6 @@ class TrainRoute extends Route {
 	latestEngineVehicle = null;
 	engineVehicles = null;
 	latestEngineSet = null;
-	additionalRoute = null;
-	parentRoute = null;
 	isClosed = null;
 	isRemoved = null;
 	updateRailDepot = null;
@@ -286,12 +228,13 @@ class TrainRoute extends Route {
 	lastChangeDestDate = null;
 	cannotChangeDest = null;
 	oldCargoProduction = null;
+
+	saveData = null;
 	
-	averageUsedRate = null;
-	usedRateCache = null;
 	destRoute = null;
 	hasRailDest = null;
 	lastCheckProduction = null;
+	
 
 	constructor(routeType, cargo, srcHgStation, destHgStation, pathSrcToDest, pathDestToSrc){
 		Route.constructor();
@@ -323,12 +266,60 @@ class TrainRoute extends Route {
 		this.pathDistance = pathSrcToDest.path.GetRailDistance();
 	}
 	
+	function Save() {
+		local t = {};
+		t.id <- id;
+		t.routeType <- routeType;
+		t.cargo <- cargo;
+		t.srcHgStation <- srcHgStation.id;
+		t.destHgStation <- destHgStation.id;
+		t.pathSrcToDest <- pathSrcToDest.array_; //path.Save();
+		t.pathDestToSrc <- pathDestToSrc == null ? null : pathDestToSrc.array_; //path.Save();
+		t.subCargos <- subCargos;
+		t.transferRoute <- isTransfer;
+		t.latestEngineVehicle <- latestEngineVehicle;
+		t.latestEngineSet <- latestEngineSet;
+		t.engineVehicles <- engineVehicles;
+		t.isClosed <- isClosed;
+		t.isRemoved <- isRemoved;
+		t.failedUpdateRailType <- failedUpdateRailType;
+		t.updateRailDepot <- updateRailDepot;
+		t.startDate <- startDate;
+		t.destHgStations <- [];
+		foreach(station in destHgStations) {
+			t.destHgStations.push(station.id);
+		}
+		t.pathDistance <- pathDistance;
+		t.forkPaths <- [];
+		foreach(path in forkPaths) {
+			t.forkPaths.push(path.array_);
+		}
+		t.depots <- depots;
+		t.reduceTrains <- reduceTrains;
+		t.maxTrains <- maxTrains;
+		t.slopesTable <- slopesTable;
+		t.usedRateHistory <- usedRateHistory;
+		t.engineSetsCache <- engineSetsCache;
+		t.engineSetsDate <- engineSetsDate;
+		t.engineSetAllRailCache <- engineSetAllRailCache;
+		t.engineSetAllRailDate <- engineSetAllRailDate;
+		t.lastDestClosedDate <- lastDestClosedDate;
+		t.additionalTiles <- additionalTiles;
+		t.lastConvertRail <- lastConvertRail;
+		t.lastChangeDestDate <- lastChangeDestDate;
+		t.cannotChangeDest <- cannotChangeDest;
+		t.oldCargoProduction <- oldCargoProduction;
+		t.returnRoute <- null; // SaveStaticで保存する
+		saveData = t;
+	}
+
 	function Initialize() {
+		Save();
 		InitializeSubCargos();
 	}
 	
 	function InitializeSubCargos() {
-		subCargos = CalculateSubCargos();
+		saveData.subCargos = subCargos = CalculateSubCargos();
 	}
 	
 	function GetLatestEngineSet() {
@@ -422,10 +413,6 @@ class TrainRoute extends Route {
 	
 	function AddAdditionalTiles(tiles) {
 		additionalTiles.extend(tiles);
-	}
-	
-	function IsNotAdditional() {
-		return parentRoute == null;
 	}
 	
 	function IsClosed() {
@@ -532,6 +519,7 @@ class TrainRoute extends Route {
 				result[cargo] <- production;
 			}
 		}
+		saveData.oldCargoProduction = oldCargoProduction;
 		return result;
 	
 /*
@@ -608,7 +596,7 @@ class TrainRoute extends Route {
 	}
 
 	function InvalidateEngineSet() {
-		engineSetsCache = null;
+		saveData.engineSetsCache = engineSetsCache = null;
 	}
 
 	function ChooseEngineSet() {
@@ -616,7 +604,7 @@ class TrainRoute extends Route {
 		if(a.len() == 0){ 
 			return null;
 		}
-		latestEngineSet = a[0];
+		saveData.latestEngineSet = latestEngineSet = a[0];
 		return a[0];
 	}
 	
@@ -664,8 +652,8 @@ class TrainRoute extends Route {
 			return trainEstimator.GetEngineSetsOrder();
 		}
 		
-		engineSetsCache = trainEstimator.GetEngineSetsOrder();
-		engineSetsDate = AIDate.GetCurrentDate() + (IsSingle() ? 3000 : 1000) + AIBase.RandRange(500);
+		saveData.engineSetsCache = engineSetsCache = trainEstimator.GetEngineSetsOrder();
+		saveData.engineSetsDate = engineSetsDate = AIDate.GetCurrentDate() + (IsSingle() ? 3000 : 1000) + AIBase.RandRange(500);
 
 		return engineSetsCache;
 	}
@@ -733,7 +721,8 @@ class TrainRoute extends Route {
 		if(engineSetAllRailCache.routeIncome < 0) {
 			HgLog.Warning("Estimate routeIncome:"+engineSetAllRailCache.routeIncome+"<0 "+this);
 		}
-		engineSetAllRailDate = AIDate.GetCurrentDate() + (IsSingle() ? 6000 : 1600) + AIBase.RandRange(400);
+		saveData.engineSetAllRailCache = engineSetAllRailCache;
+		saveData.engineSetAllRailDate = engineSetAllRailDate = AIDate.GetCurrentDate() + (IsSingle() ? 6000 : 1600) + AIBase.RandRange(400);
 		return engineSetAllRailCache;
 	}
 	
@@ -754,7 +743,7 @@ class TrainRoute extends Route {
 	}
 	
 	function _BuildFirstTrain() {
-		latestEngineVehicle = BuildTrain(); //TODO 最初に失敗すると復活のチャンスなし。orderが後から書き変わる事があるがそれが反映されないため。orderを状態から組み立てられる必要がある
+		saveData.latestEngineVehicle = latestEngineVehicle = BuildTrain(); //TODO 最初に失敗すると復活のチャンスなし。orderが後から書き変わる事があるがそれが反映されないため。orderを状態から組み立てられる必要がある
 		if(latestEngineVehicle == null) {
 			HgLog.Warning("BuildFirstTrain failed. "+this);
 			return false;
@@ -772,7 +761,7 @@ class TrainRoute extends Route {
 		}
 		engineVehicles.rawset(latestEngineVehicle,latestEngineSet);
 		if(startDate == null) {
-			startDate = AIDate.GetCurrentDate();
+			saveData.startDate = startDate = AIDate.GetCurrentDate();
 		}
 		return true;
 	}
@@ -786,7 +775,7 @@ class TrainRoute extends Route {
 			HgLog.Warning("Invalid latestEngineVehicle."+this);
 			foreach(v,_ in engineVehicles) {
 				if(AIVehicle.IsValidVehicle(v)) {
-					latestEngineVehicle = v;
+					saveData.latestEngineVehicle = latestEngineVehicle = v;
 					HgLog.Info("New latestEngineVehicle found."+this);
 					break;
 				}
@@ -808,8 +797,8 @@ class TrainRoute extends Route {
 			return false;
 		}
 		engineVehicles.rawset(newTrain,latestEngineSet);	
-		latestEngineVehicle = newTrain;
-		oldCargoProduction = GetCargoProductions(); // 列車新造時点での推定値を保存
+		saveData.latestEngineVehicle = latestEngineVehicle = newTrain;
+		saveData.oldCargoProduction = oldCargoProduction = GetCargoProductions(); // 列車新造時点での推定値を保存
 		return true;
 	}
 	
@@ -833,7 +822,7 @@ class TrainRoute extends Route {
 				return;
 			}
 			if(CloneTrain() == null) {
-				engineSetsCache = null;
+				saveData.engineSetsCache = engineSetsCache = null;
 				BuildNewTrain();
 			}
 		}
@@ -863,7 +852,7 @@ class TrainRoute extends Route {
 		}
 		engineVehicles.rawset( engineVehicle, engineVehicles[this.latestEngineVehicle] );
 		AIVehicle.StartStopVehicle(engineVehicle);
-		latestEngineVehicle = engineVehicle;		
+		saveData.latestEngineVehicle = latestEngineVehicle = engineVehicle;		
 		return engineVehicle;
 	}
 	
@@ -896,7 +885,7 @@ class TrainRoute extends Route {
 	function BuildTrain(mode = 0) {
 		local isAll = false;
 		if(mode == 1) {
-			engineSetsCache = null;
+			saveData.engineSetsCache = engineSetsCache = null;
 		} else if(mode == 2) {
 			isAll = true;
 		}
@@ -996,7 +985,7 @@ class TrainRoute extends Route {
 		}
 		
 		HgLog.Warning("BuildTrain failed. No suitable engineSet. ("+AIRail.GetName(GetRailType())+") "+this);
-		engineSetsCache = null;
+		saveData.engineSetsCache = engineSetsCache = null;
 		return null;
 	}
 	
@@ -1014,9 +1003,6 @@ class TrainRoute extends Route {
 		local result = 0;
 		result = max(result, path.GetSlopes(tileLength));
 		//result = max(result, pathDestToSrc.path.GetSlopes(length));
-		if(parentRoute != null) {
-			result = max(result, parentRoute.GetMaxSlopes(length));
-		}
 		if(pathDestToSrc != null && pathIn == null && (returnRoute != null || IsBiDirectional())) {
 			result = max(result, GetMaxSlopes(length, pathDestToSrc.path));
 		}
@@ -1076,9 +1062,8 @@ class TrainRoute extends Route {
 		engineSetsCache = null;
 		maxTrains = null;
 		lastDestClosedDate = null;
-		if(additionalRoute != null) {
-			additionalRoute.slopesTable.clear();
-		}
+		
+		Save();
 	}
 
 	function ChangeDestination(destHgStation, checkAcceleration = true) {
@@ -1099,12 +1084,12 @@ class TrainRoute extends Route {
 						engineSet.tractiveEffort,
 						engineSet.power,
 						engineSet.weight) < 0) { 
-					cannotChangeDest = true;
+					saveData.cannotChangeDest = cannotChangeDest = true;
 					HgLog.Warning("Cannot ChangeDestination (steep slope)"+this);
 					return;
 				}
 			}
-			cannotChangeDest = false;
+			saveData.cannotChangeDest = cannotChangeDest = false;
 		}
 	
 		local execMode = AIExecMode();
@@ -1123,9 +1108,10 @@ class TrainRoute extends Route {
 		PlaceDictionary.Get().RemoveRoute(this);
 		local oldDestHgStation = this.destHgStation;
 		this.destHgStation = destHgStation;
+		saveData.destHgStation = destHgStation.id;
 		PlaceDictionary.Get().AddRoute(this);
 		oldDestHgStation.AddUsingRoute(this);
-		lastChangeDestDate = AIDate.GetCurrentDate();
+		saveData.lastChangeDestDate = lastChangeDestDate = AIDate.GetCurrentDate();
 		
 		//oldDestHgStation.RemoveOnlyPlatform();// 残った列車がなぜか消えかかった駅で下ろそうとする。ささくれるので線路だけ残す(SendDepotを帰路だけにすれば消しても問題ないかもしれない)
 
@@ -1151,9 +1137,6 @@ class TrainRoute extends Route {
 				AIOrder.RemoveOrder(latestEngineVehicle, 2);
 			}
 		}
-		if(additionalRoute != null) {
-			additionalRoute.AddDestination(destHgStation);
-		}
 	}
 	
 	function IsChangeDestination() {
@@ -1162,6 +1145,7 @@ class TrainRoute extends Route {
 	
 	function AddForkPath(path) {
 		forkPaths.push(path);
+		Save();
 	}
 	
 
@@ -1223,55 +1207,26 @@ class TrainRoute extends Route {
 		}
 		AIOrder.RemoveOrder(latestEngineVehicle,0);
 	}
-	
-	function AddAdditionalRoute(additionalRoute) {
-		this.additionalRoute = additionalRoute;
-		additionalRoute.parentRoute = this;
-	}
-	
+		
 	
 	function GetLastRoute() {
-		if(additionalRoute == null) {
-			return this;
-		} else {
-			return additionalRoute.GetLastRoute();
-		}
+		return this;
 	}
-	
-	function GetLastSrcHgStation() {
-		return additionalRoute==null ? srcHgStation : additionalRoute.GetLastSrcHgStation();
-	}
-	
+		
 	function GetSrcStationTiles() {
-		local result = [srcHgStation.platformTile];
-		if(additionalRoute != null) {
-			result.extend(additionalRoute.GetSrcStationTiles());
-		}
-		return result;
+		return [srcHgStation.platformTile];
 	}
 	
 	function GetTakeAllPathSrcToDest() {
-		local result = pathSrcToDest.path;
-		if(additionalRoute != null) {
-			result = result.SubPathEnd(additionalRoute.pathSrcToDest.path.GetTile());
-		}
-		return result;
+		return pathSrcToDest.path;
 	}
 
 	function GetTakeAllPathDestToSrc() {
-		local result = pathDestToSrc.path;
-		if(additionalRoute != null) {
-			result = result.SubPathStart(additionalRoute.pathDestToSrc.path.GetLastTile());
-		}
-		return result;
+		return pathDestToSrc.path;
 	}
 
 	function GetPathAllDestToSrc() {
-		if(parentRoute != null) {
-			return pathDestToSrc.path.Combine(parentRoute.GetTakeAllPathDestToSrc());
-		} else {
-			return pathDestToSrc.path;
-		}
+		return pathDestToSrc.path;
 	}
 	
 	
@@ -1305,9 +1260,9 @@ class TrainRoute extends Route {
 			local railType = AIRail.GetCurrentRailType();
 			AIRail.SetCurrentRailType ( GetRailType() );
 			if(IsSingle()) {
-				updateRailDepot = pathSrcToDest.path.BuildDepot();
+				saveData.updateRailDepot = updateRailDepot = pathSrcToDest.path.BuildDepot();
 			} else {
-				updateRailDepot = pathDestToSrc.path.BuildDepot();
+				saveData.updateRailDepot = updateRailDepot = pathDestToSrc.path.BuildDepot();
 			}
 			AIRail.SetCurrentRailType(railType);
 			if(updateRailDepot == null) {
@@ -1320,7 +1275,7 @@ class TrainRoute extends Route {
 	
 	function ConvertRailType(railType) {
 		HgLog.Info("ConvertRailType." + AIRail.GetName(railType) + "<=" + AIRail.GetName(GetRailType()) + " " + this);
-		lastConvertRail = AIDate.GetCurrentDate();
+		saveData.lastConvertRail = lastConvertRail = AIDate.GetCurrentDate();
 		
 		local execMode = AIExecMode();
 		AIRail.SetCurrentRailType(railType);
@@ -1446,40 +1401,12 @@ class TrainRoute extends Route {
 				}
 			}
 		}
-		/*
-		foreach(t in tiles) {
-			if(AIRail.GetRailType(t)==railType) {
-				continue;
-			}
-			if(!BuildUtils.RetryUntilFree(function():(t,railType) {
-				return AIRail.ConvertRailType(t,t,railType);
-			}, 500)) {
-				HgLog.Warning("ConvertRailType failed:"+HgTile(t)+" "+AIError.GetLastErrorString());
-				return false;
-			}
-			if(updateRailDepot != null && AIBridge.IsBridgeTile(t)) {
-				local other = AIBridge.GetOtherBridgeEnd(t);
-				local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(t, other) + 1);
-				bridge_list.Valuate(AIBridge.GetMaxSpeed);
-				bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-				local latestBridge = bridge_list.Begin();
-				if(latestBridge != AIBridge.GetBridgeID(t)) {
-					AIBridge.RemoveBridge(t);
-					AIBridge.BuildBridge(AIVehicle.VT_RAIL, latestBridge, t, other);
-				}
-			}
-		}*/
-		engineSetsCache = null;
+		saveData.engineSetsCache = engineSetsCache = null;
 		return true;
 	}
 	
 	
 	function IsAllVehicleInUpdateRailDepot() {
-		if(additionalRoute != null) {
-			if(!additionalRoute.IsAllVehicleInUpdateRailDepot()) {
-				return false;
-			}
-		}
 		return IsAllVehicleLocation(updateRailDepot);
 	}
 	
@@ -1488,7 +1415,7 @@ class TrainRoute extends Route {
 		HgLog.Info("DoUpdateRailType: "+AIRail.GetName(newRailType)+" "+this);
 		RemoveSendUpdateDepotOrder();
 		if(!ConvertRailType(newRailType)) {
-			updateRailDepot = null;
+			saveData.updateRailDepot = updateRailDepot = null;
 			return false;
 		}
 		engineSetsCache = null;
@@ -1498,14 +1425,14 @@ class TrainRoute extends Route {
 		}
 		if(!BuildNewTrain()) {
 			HgLog.Warning("newTrain == null "+this);
-			updateRailDepot = null;
+			saveData.updateRailDepot = updateRailDepot = null;
 			return false;
 		}
 		foreach(engineVehicle in oldVehicles) {
 			SellVehicle(engineVehicle);
 		}
 		HgTile(updateRailDepot).RemoveDepot();
-		updateRailDepot = null;
+		saveData.updateRailDepot = updateRailDepot = null;
 		
 
 		return true;
@@ -1566,7 +1493,7 @@ class TrainRoute extends Route {
 	
 	function Close() {
 		HgLog.Warning("Close route start:"+this);
-		isClosed = true;
+		saveData.isClosed = isClosed = true;
 		local execMode = AIExecMode();
 		/*
 		foreach(engineVehicle, v in engineVehicles) {
@@ -1583,9 +1510,6 @@ class TrainRoute extends Route {
 			}
 		}
 		
-		if(additionalRoute != null) {
-			additionalRoute.Close();
-		}
 		if(returnRoute != null) {
 			returnRoute.Close();
 		}
@@ -1593,7 +1517,7 @@ class TrainRoute extends Route {
 	
 	function Remove() {					
 		HgLog.Info("Remove route: "+this);
-		isRemoved = true;
+		saveData.isRemoved = isRemoved = true;
 		Close();
 	}
 
@@ -1639,7 +1563,7 @@ class TrainRoute extends Route {
 
 	function ReOpen() {
 		HgLog.Warning("ReOpen route:"+this);
-		isClosed = false;
+		saveData.isClosed = isClosed = false;
 		PlaceDictionary.Get().AddRoute(this);
 		if(returnRoute != null) {
 			returnRoute.ReOpen();
@@ -1685,7 +1609,7 @@ class TrainRoute extends Route {
 		
 		if(returnRoute != null) {
 			returnRoute.Remove();
-			returnRoute = null;
+			saveData.returnRoute = returnRoute = null;
 		}
 	}
 	
@@ -1700,44 +1624,20 @@ class TrainRoute extends Route {
 	}
 	
 	function RollbackUpdateRailType(railType) {
-		HgLog.Warning("RollbackUpdateRailType "+this+" additionalRoute:"+additionalRoute+" v:"+engineVehicles.len());
-		failedUpdateRailType = true;
-		updateRailDepot = null;
+		HgLog.Warning("RollbackUpdateRailType "+this+" v:"+engineVehicles.len());
+		saveData.failedUpdateRailType = failedUpdateRailType = true;
+		saveData.updateRailDepot = updateRailDepot = null;
 		ConvertRailType(railType);
 		foreach(engineVehicle,v in engineVehicles) {
 			if(AIVehicle.IsStoppedInDepot(engineVehicle)) {
 				AIVehicle.StartStopVehicle(engineVehicle);
 			}
 		}
-		if(additionalRoute != null) {
-			additionalRoute.RollbackUpdateRailType(railType);
-		}
-	}
-	
-	function CalculateAverageUsedRate(usedRate) {
-		local result = null;
-		if(usedRateHistory.len() == 5) {
-			local a = [];
-			local sum = 0;
-			foreach(i,e in usedRateHistory) {
-				if(i == 0) {
-					continue;
-				}
-				sum += e;
-				a.push(e);
-			}
-			usedRateHistory = a;
-			sum += usedRate;
-			result = sum / 5;
-		}
-		usedRateHistory.push(usedRate);
-		return result;
 	}
 	
 	function IsCloneTrain() {
 		local result = (maxTrains == null || maxTrains > engineVehicles.len())
 			&& !IsInStationOrDepotOrStop(IsTransfer()) 
-			&& (averageUsedRate == null || averageUsedRate < TrainRoute.USED_RATE_LIMIT)
 			&& (latestEngineSet==null || IsWaitingCargoForCloneTrain() );
 		if(!result) {
 			return false;
@@ -1825,7 +1725,7 @@ class TrainRoute extends Route {
 						HgLog.Warning("engineVehicles.len() == 0 "+this);
 					} else {
 						foreach(engineVehicle, _ in engineVehicles) {
-							latestEngineVehicle = engineVehicle;
+							saveData.latestEngineVehicle = latestEngineVehicle = engineVehicle;
 							break;
 						}
 					}
@@ -1877,8 +1777,9 @@ class TrainRoute extends Route {
 			}
 			foreach(removedStation in removed) {
 				ArrayUtils.Remove(destHgStations, removedStation);
+				Save();
 			}
-			lastChangeDestDate = null;
+			saveData.lastChangeDestDate = lastChangeDestDate = null;
 		}
 		
 		if(!HogeAI.HasIncome(20000) || !ExistsMainRouteExceptSelf()) {
@@ -2032,12 +1933,6 @@ class TrainRoute extends Route {
 				local newRailType = newEngineSet.railType;
 				if(!DoUpdateRailType(newRailType)) {
 					RollbackUpdateRailType(currentRailType);
-				} else {
-					if(additionalRoute != null) {
-						if(!additionalRoute.DoUpdateRailType(newRailType)) {
-							RollbackUpdateRailType(currentRailType);
-						}
-					}
 				}
 			}
 			return;
@@ -2077,23 +1972,13 @@ class TrainRoute extends Route {
 			if(IsAllVehiclePowerOnRail(newRailType)) {
 				if(!ConvertRailType(newRailType)) {
 					ConvertRailType(currentRailType);
-					failedUpdateRailType = true;
-				}
-				if(additionalRoute != null) {
-					if(!additionalRoute.ConvertRailType(newRailType)) {
-						additionalRoute.ConvertRailType(currentRailType);
-						ConvertRailType(currentRailType);
-						failedUpdateRailType = true;
-					}
+					saveData.failedUpdateRailType = failedUpdateRailType = true;
 				}
 				if(!failedUpdateRailType) {
-					engineSetsCache = null;
+					saveData.engineSetsCache = engineSetsCache = null;
 				}
 			} else {
 				StartUpdateRail(newRailType);
-				if(additionalRoute != null) {
-					additionalRoute.StartUpdateRail(newRailType);
-				}
 			}
 		}
 	}
@@ -2158,7 +2043,7 @@ class TrainRoute extends Route {
 				}
 			}
 			if(currentStationIndex != acceptableStationIndex && currentStationIndex == destHgStations.len()-1) {
-				lastDestClosedDate = AIDate.GetCurrentDate();
+				saveData.lastDestClosedDate = lastDestClosedDate = AIDate.GetCurrentDate();
 				//CheckStockpiled();
 			}
 			
@@ -2183,7 +2068,7 @@ class TrainRoute extends Route {
 
 	function NotifyAddTransfer(callers=null) {
 		Route.NotifyAddTransfer(callers);
-		engineSetsCache = null;
+		saveData.engineSetsCache = engineSetsCache = null;
 	}
 	
 }

@@ -168,6 +168,7 @@ class RailPathFinder
 	function FindPath(limitCount,eventPoller,limitDay=null) {
 		if(limitDay != null) {
 			limitDay /= HogeAI.Get().GetDayLengthFactor();
+			limitCount = 1000; // 設定によってはメモリ不足になるので限界値を設定
 			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay+" distance:"+distance);
 		} else {
 			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount+" distance:"+distance);
@@ -178,7 +179,13 @@ class RailPathFinder
 		local startDate = AIDate.GetCurrentDate();
 		local endDate = limitDay != null ? startDate + limitDay : null;
 		local totalInterval = 0;
-		while (path == false && ((endDate!=null && AIDate.GetCurrentDate() < endDate + totalInterval) || (endDate==null && counter < limitCount))) {
+		while (path == false) {
+			if(limitCount < counter) {
+				break;
+			}
+			if(endDate != null && AIDate.GetCurrentDate() > endDate + totalInterval) {
+				break;
+			}
 			PerformanceCounter.Clear();
 			path = _FindPath(50);
 			PerformanceCounter.Print();
@@ -186,7 +193,7 @@ class RailPathFinder
 			HgLog.Info("counter:"+counter);
 			local intervalStartDate = AIDate.GetCurrentDate();
 			if(eventPoller != null && eventPoller.OnPathFindingInterval()==false) {
-				HgLog.Warning("TrainRoute: FindPath break by OnPathFindingInterval");
+				HgLog.Info("TrainRoute: FindPath break by OnPathFindingInterval");
 				return null;
 			}
 			totalInterval += AIDate.GetCurrentDate() - intervalStartDate;

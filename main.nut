@@ -793,11 +793,11 @@ class HogeAI extends AIController {
 			}
 			if(t.rawin("route")) {
 				if(!t.route.NeedsAdditionalProducingCargo( t.cargo, null, t.route.destHgStation.stationGroup==t.dest )) {
-					HgLog.Warning("NeedsAdditionalProducing false "+explain+" "+t.route);
+					//HgLog.Warning("NeedsAdditionalProducing false "+explain+" "+t.route);
 					pendingPlans.push(t);
 					continue;
 				}
-				HgLog.Info("NeedsAdditionalProducing true "+explain+" "+t.route);
+				//HgLog.Info("NeedsAdditionalProducing true "+explain+" "+t.route);
 			}
 			if(t.estimate.additionalRouteIncome >= 1) {
 				if(firs) {
@@ -981,14 +981,10 @@ class HogeAI extends AIController {
 			}*/
 			
 
-			if(route.parentRoute == null) {
-				if(route.additionalRoute == null ) {
-					SearchAndBuildAdditionalSrc(route);
-				}
-				if(SearchAndBuildAdditionalDestAsFarAsPossible( route )) {
-					CheckBuildReturnRoute(route); // やたらとreturn route作成失敗を繰り返すので延長できた時のみ
-					// scan placeでやる SearchAndBuildTransferRoute( route, { useLastMonthProduction = true } );
-				}
+			SearchAndBuildAdditionalSrc(route);
+			if(SearchAndBuildAdditionalDestAsFarAsPossible( route )) {
+				CheckBuildReturnRoute(route); // やたらとreturn route作成失敗を繰り返すので延長できた時のみ
+				// scan placeでやる SearchAndBuildTransferRoute( route, { useLastMonthProduction = true } );
 			}
 			route.isBuilding = false;
 			DoInterval();
@@ -2989,7 +2985,7 @@ class HogeAI extends AIController {
 		if(additionalPlace.GetProducing().IsTreatCargo(route.cargo)) {
 			additionalPlace = additionalPlace.GetProducing();
 		}
-		local stationFactory = TerminalStationFactory(/*route.additionalRoute!=null?3:2*/);
+		local stationFactory = TerminalStationFactory();
 		stationFactory.platformLength = route.srcHgStation.platformLength;
 		stationFactory.minPlatformLength = route.GetPlatformLength();
 		if(CargoUtils.IsPaxOrMail(route.cargo)) {
@@ -3079,57 +3075,6 @@ class HogeAI extends AIController {
 		
 		HgLog.Info("# TrainRoute: BuildDestRouteAdditional succeeded: "+route);
 		return 0;
-	}
-	
-	function BuildSrcRouteAdditional(route, additionalPlace) {
-		AIRail.SetCurrentRailType(route.GetRailType());
-		
-		local additionalHgStation = SrcRailStationFactory().CreateBest(additionalPlace, route.cargo, route.destHgStation.platformTile);
-		if(additionalHgStation == null) {
-			HgLog.Info("cannot build src additional station");
-			return null;
-		}
-		
-		local aiExecMode = AIExecMode();
-		additionalHgStation.cargo = route.cargo;
-		additionalHgStation.isSourceStation = true;
-		if(!additionalHgStation.BuildExec()) {
-			return null;
-		}
-		
-		local railBuilder = TwoWayPathToStationRailBuilder(
-			GetterFunction( function():(route) {
-				return route.pathDestToSrc.path;
-			}),
-			GetterFunction( function():(route) {
-				return route.pathSrcToDest.path.Reverse();
-			}),
-			additionalHgStation, pathFindLimit, this);
-		railBuilder.cargo = route.cargo;
-		railBuilder.platformLength = route.GetPlatformLength();
-		if(!railBuilder.Build()) {
-			HgLog.Warning("railBuilder.Build failed.");
-			additionalHgStation.Remove();
-			return null;
-		}
-		local depotPath = route.pathDestToSrc.path.SubPathStart(railBuilder.buildedPath1.path.GetLastTile());
-		local depot = depotPath.BuildDepot();
-		local doubleDepots = depotPath.BuildDoubleDepot();
-		
-		route.AddDepot(depot);
-		route.AddDepots(doubleDepots);
-		local additionalRoute = TrainRoute(TrainRoute.RT_ADDITIONAL, route.cargo, additionalHgStation, route.destHgStation,
-			railBuilder.buildedPath2, railBuilder.buildedPath1);
-
-		
-		TrainRoute.instances.push(additionalRoute);
-		route.AddAdditionalRoute(additionalRoute);		
-		PlaceDictionary.Get().AddRoute(additionalRoute);
-		
-		additionalRoute.BuildFirstTrain();
-		additionalRoute.CloneAndStartTrain();
-		HgLog.Info("BuildSrcRouteAdditional succeeded: "+additionalRoute);
-		return additionalRoute;
 	}
 	
 	function CheckBuildReturnRoute(route, limitValue=null) {
@@ -3423,6 +3368,7 @@ class HogeAI extends AIController {
 				railBuilderReturnDestArrival.buildedPath, railBuilderReturnDestDeparture.buildedPath);*/
 				
 			route.returnRoute = returnRoute;
+			route.Save();
 			returnRoute.Initialize();
 			
 			PlaceDictionary.Get().AddRoute(returnRoute);
@@ -3643,7 +3589,6 @@ class HogeAI extends AIController {
 	function CheckTrainRoute() {
 		local times = [];
 		foreach(route in TrainRoute.instances) {
-			route.usedRateCache = null;
 			route.CheckClose();
 		}
 		times.push(AIDate.GetCurrentDate()); //0
@@ -3657,9 +3602,7 @@ class HogeAI extends AIController {
 		times.push(AIDate.GetCurrentDate()); //1
 		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) > GetInflatedMoney(1000000)) {
 			foreach(route in TrainRoute.instances) {
-				if(route.IsNotAdditional()) {
-					route.CheckRailUpdate();
-				}
+				route.CheckRailUpdate();
 			}
 		}
 		times.push(AIDate.GetCurrentDate()); //2
