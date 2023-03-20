@@ -3,7 +3,7 @@
    function GetAuthor()      { return "Rei Ishibashi"; }
    function GetName()        { return "AAAHogEx"; }
    function GetDescription() { return "AAAHogEx is a highly competitive AI. This AI designs transportation routes based on the supply and demand of the map. Therefore, it works well in NewGRF such as FIRS, ECS, and YETI where complex industrial chains are required."; }
-   function GetVersion()     { return 40; }
+   function GetVersion()     { return 41; }
    function MinVersionToLoad() { return 25; }
    function GetDate()        { return "2023-03-20"; }
    function CreateInstance() { return "HogeAI"; }
@@ -14,9 +14,9 @@
 		AddSetting({name = "Avoid removing water",
 			description = "Avoid removing water (To prevent this AI from blocking the path of other players' ship)", 
 			easy_value = 1, 
-			medium_value = 0, 
+			medium_value = 1, 
 			hard_value = 0, 
-			custom_value = 0, 
+			custom_value = 1, 
 			flags = AICONFIG_BOOLEAN + CONFIG_INGAME});
 
 		AddSetting({name = "IsForceToHandleFright",
