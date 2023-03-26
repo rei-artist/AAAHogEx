@@ -1529,9 +1529,9 @@ class TrainRoute extends Route {
 		}
 		ArrayUtils.Remove(TrainRoute.instances, this);
 		//TrainRoute.removed.push(this); 町の評価を考えるとすぐに削除した方が良いため
-		if(HogeAI.Get().IsInfrastructureMaintenance()) {
+		//if(HogeAI.Get().IsInfrastructureMaintenance()) {
 			Demolish(); 
-		}
+		//}
 	}
 
 	function Demolish() { // ScanRoutesから呼ばれる
@@ -1766,13 +1766,17 @@ class TrainRoute extends Route {
 						continue;
 					}
 					/* SendDepotのタイミングによってはどうしても分岐側へ移動して本線を詰まらせる事があるので削除しない。
-					platformだけの削除もRailUpdateの兼ね合いがあるので難しい
+					platformだけの削除もRailUpdateの兼ね合いがあるので難しい*/
 					if(!station.IsRemoved()) {
+						foreach(path in forkPaths) {
+							path.Remove();
+						}
+						forkPaths.clear();
 						station.RemoveUsingRoute(this);
 						station.Remove();
 						//station.RemoveOnlyPlatform();
 						removed.push(station);
-					}*/
+					}
 				}
 			}
 			foreach(removedStation in removed) {

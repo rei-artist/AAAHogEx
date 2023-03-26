@@ -1622,18 +1622,17 @@ class HgStation {
 			needsPieceStation = place != null && cargo != null && place instanceof TownCargo;
 			local isForTownPaxMail = needsPieceStation && CargoUtils.IsPaxOrMail(cargo);
 			foreach(corner in GetPlatformRectangle().GetCorners()) { 
-				TownBus.Check(corner.tile, null, 
-					cargo == HogeAI.Get().GetMailCargo() ? cargo : HogeAI.Get().GetPassengerCargo(), isForTownPaxMail);
+				TownBus.Check(corner.tile, null, HogeAI.Get().GetPassengerCargo(), false);
 			}
 			
 			
 			if(isForTownPaxMail) {
-				if(this instanceof RailStation) {
-					TownBus.CheckTown(place.town, null, HogeAI.Get().GetPassengerCargo(), true);
-					TownBus.CheckTown(place.town, null, HogeAI.Get().GetMailCargo(), true);
-				} else {
-					TownBus.CheckTown(place.town, null, cargo, true);
-				}
+				//if(this instanceof RailStation || this instanceof AirStation) {
+					TownBus.CheckTown(place.town, null, HogeAI.Get().GetPassengerCargo(), false);
+					TownBus.CheckTown(place.town, null, HogeAI.Get().GetMailCargo(), false);
+				//} else {
+					//TownBus.CheckTown(place.town, null, cargo, true);
+				//}
 			}
 		}
 

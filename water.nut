@@ -1229,6 +1229,44 @@ class Coasts {
 		local firstLink = null;
 		
 		local end = AIMap.GetTileIndex(1,y);
+		local tileList = AITileList();
+		tileList.AddRectangle(nearLand,end);
+		tileList.Valuate(function(t){
+			if(AITile.IsSeaTile(t)) { //TODO: ブイ等で誤動作する
+				return 1;
+			}
+			if(Coasts.IsCoastTile(t)) {
+				return 2;
+			}
+			return 3;
+		});
+		tileList.Sort(AIList.SORT_BY_ITEM, false);
+		local tileList2 = AITileList();
+		tileList2.AddList(tileList);
+		tileList.Valuate(function(t):(tileList2){
+			return tileList2.GetValue(t-1) == tileList2.GetValue(t) ? 0 : tileList2.GetValue(t);
+		});
+		tileList.RemoveValue(0);
+		local prevType = 3; // landから始まる
+		foreach(tile,tileType in tileList) {
+			//HgLog.Info("tile:"+HgTile(tile)+" tileType:"+tileType);
+			if(tileCoastId.rawin(tile) && tileCoastId[tile] == id) {
+				myCoast = true;
+			} else {
+				if(firstLink == null && boundCount % 2 == 1 && tileType == 2/*Coasts.IsCoastTile*/) {
+					firstLink = tile;
+				}
+				if(myCoast) { // 直前が「自分の」coast
+					if(prevType != tileType) {
+						boundCount ++;
+					}
+					myCoast = false;
+				}
+				prevType = tileType;
+			}
+		}
+		
+		/*
 		local cur = nearLand;
 		local prev = cur;
 		while(cur >= end) {
@@ -1248,15 +1286,18 @@ class Coasts {
 				prev = cur;
 			}
 			cur--;
-		}
+		}*/
 		if(boundCount % 2 == 0) {
 			coastType = CT_SEA;
+			HgLog.Info("SearchCoastType "+HgTile(nearLand)+":SEA");
 		} else {
 			coastType = CT_ISLAND;
 			if(firstLink != null) {
 				Coasts.GetCoasts(firstLink).AddIsland(this);
+				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":ISLAND parent");
 			} else {
 				GlobalCoasts.AddIsland(this);
+				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":GlobalCoasts");
 			}
 		}
 	}

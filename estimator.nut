@@ -69,8 +69,8 @@ Estimation <- {
 				additionalRunningCostPerCargo = engineSet != null ? engineSet.runningCostPerCargo : 0;
 			}
 			if(finalDestStation.place != null) {
-				this.destRouteCargoIncome = finalDestStation.place.GetDestRouteCargoIncome() 
-					* min(100 / (finalDestStation.place.GetUsedOtherCompanyEstimation()+1),70) / 100;
+				this.destRouteCargoIncome = finalDestStation.place.GetDestRouteCargoIncome();
+					 // 使われているかわからない * min(100 / (finalDestStation.place.GetUsedOtherCompanyEstimation()+1),70) / 100;
 				this.additionalRouteIncome = finalDestStation.place.GetAdditionalRouteIncome(cargo);
 
 			}
@@ -81,7 +81,7 @@ Estimation <- {
 			local destRouteCargoIncome = dest.GetDestRouteCargoIncome();
 			local additionalRouteIncome = dest.GetAdditionalRouteIncome(cargo);
 			if(destRouteCargoIncome > 0 || additionalRouteIncome >= 1) {
-				this.destRouteCargoIncome = destRouteCargoIncome * min(100 / (dest.GetUsedOtherCompanyEstimation()+1),70) / 100; // TODO: 複数路線
+				this.destRouteCargoIncome = destRouteCargoIncome; // 使われているかわからない * min(100 / (dest.GetUsedOtherCompanyEstimation()+1),70) / 100; // TODO: 複数路線
 				this.additionalRouteIncome = additionalRouteIncome;
 				Estimate();
 			}
@@ -722,6 +722,7 @@ class CommonEstimator extends Estimator {
 	}
 
 	function GetBuildingTime(distance, infrastracture) {
+		// 恣意的だが、場所がなくなる前にrailを作った方が有利な事が多い
 		switch(GetVehicleType()) {	//return distance / 2 + 100; // TODO expectedproductionを満たすのに大きな時間がかかる
 			case AIVehicle.VT_WATER:
 		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる

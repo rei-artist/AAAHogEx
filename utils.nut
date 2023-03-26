@@ -236,13 +236,18 @@ class ListUtils {
 		return result;
 	}
 	
-	
 	static function Average(list) {
 		local result = 0;
 		foreach(k,v in list) {
 			result += v;
 		}
 		return result / list.Count();
+	}
+	
+	static function Clone(list) {
+		local result = AIList();
+		result.AddList(list);
+		return result;
 	}
 }
 

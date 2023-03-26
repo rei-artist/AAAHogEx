@@ -129,12 +129,14 @@ class Route {
 	
 	productionCargoCache = null;
 	needsAdditionalCache = null;
+	overflowCache = null;
 
 	isBuilding = null;
 	
 	constructor() {
 		productionCargoCache = ExpirationTable(30);
 		needsAdditionalCache = ExpirationTable(30);
+		overflowCache = ExpirationTable(30);
 		isBuilding = false;
 	}
 	
@@ -336,18 +338,6 @@ class Route {
 	}
 
 	
-	function NeedsAdditionalProducingPlace(place) {
-		if(place == null) {
-			return false;
-		}
-		if(IsDestPlace(place)) {
-			return NeedsAdditionalProducing(null, true);
-		}
-		if(IsSrcPlace(place)) {
-			return NeedsAdditionalProducing(null, false);
-		}
-		return false;
-	}
 	
 	function IsDestOverflow( cargo = null ) {
 		if(cargo == null) {
@@ -363,7 +353,27 @@ class Route {
 		return destRoute.IsOverflow( cargo, IsDestDest() );
 	}
 
+	function IsOverflowPlace(place,cargo) {
+		if(IsDestPlace(place)) {
+			return IsOverflow(cargo,true);
+		}
+		if(IsSrcPlace(place)) {
+			return IsOverflow(cargo,false);
+		}
+		return false;
+	}
+
 	function IsOverflow( cargo = null, isDest = false, callRoutes = null ) {
+		local key = cargo+"-"+isDest;
+		if(overflowCache.rawin(key)) {
+			return overflowCache.rawget(key);
+		}
+		local result = _IsOverflow(cargo, isDest, callRoutes);
+		overflowCache.rawset(key,result);
+		return result;
+	}
+	
+	function _IsOverflow( cargo = null, isDest = false, callRoutes = null ) {
 		if( callRoutes == null ) {
 			callRoutes = {};
 		}
@@ -395,16 +405,20 @@ class Route {
 		return AIStation.GetCargoWaiting(station, cargo) > bottom;
 	}
 	
-	function IsOverflowPlace(place,cargo) {
+	
+	function NeedsAdditionalProducingPlace(place) {
+		if(place == null) {
+			return false;
+		}
 		if(IsDestPlace(place)) {
-			return IsOverflow(cargo,true);
+			return NeedsAdditionalProducing(null, true);
 		}
 		if(IsSrcPlace(place)) {
-			return IsOverflow(cargo,false);
+			return NeedsAdditionalProducing(null, false);
 		}
 		return false;
 	}
-	
+
 	function NeedsAdditionalProducing(callRoutes = null, isDest = false, checkRouteCapacity = true) {
 		return NeedsAdditionalProducingCargo(cargo, callRoutes, isDest, checkRouteCapacity );
 	}
