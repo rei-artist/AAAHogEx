@@ -18,7 +18,7 @@ class TrainRoute extends Route {
 				continue;
 			}
 			if(route.returnRoute != null) {
-				route.saveData.returnRoute = route.returnRoute.Save();
+				route.saveData.returnRoute = route.returnRoute.saveData;
 			}
 			arr.push(route.saveData);
 		}
@@ -73,6 +73,7 @@ class TrainRoute extends Route {
 		trainRoute.depots = t.depots;
 		if(t.returnRoute != null) {
 			trainRoute.returnRoute = TrainReturnRoute.Load(t.returnRoute, trainRoute);
+			trainRoute.returnRoute.saveData = t.returnRoute;
 		}
 		trainRoute.reduceTrains = t.rawin("reduceTrains") ? t.reduceTrains : false;
 		trainRoute.maxTrains = t.rawin("maxTrains") ? t.maxTrains : null;
@@ -2089,6 +2090,8 @@ class TrainReturnRoute extends Route {
 	depots = null;
 	subCargos = null;
 	
+	saveData = null;
+	
 	constructor(originalRoute, srcHgStation, destHgStation, srcArrivalPath, srcDeparturePath, destArrivalPath, destDeparturePath) {
 		Route.constructor();
 		this.originalRoute = originalRoute;
@@ -2103,6 +2106,7 @@ class TrainReturnRoute extends Route {
 		this.destArrivalPath.route = this;
 		this.destDeparturePath.route = this;
 		this.depots = [];
+		this.subCargos = [];
 	}
 	
 
@@ -2117,7 +2121,7 @@ class TrainReturnRoute extends Route {
 		t.destDeparturePath <- destDeparturePath.path.Save();
 		t.depots <- depots;
 		t.subCargos <- subCargos;
-		return t;
+		saveData = t;
 	}
 	
 	static function Load(t, originalRoute) {
@@ -2136,9 +2140,11 @@ class TrainReturnRoute extends Route {
 
 	function AddDepots(depots) {
 		this.depots.extend(depots);
+		saveData.depots = depots;
 	}
 
 	function Initialize() {
+		Save();
 		InitializeSubCargos();
 	}
 	
@@ -2150,6 +2156,7 @@ class TrainReturnRoute extends Route {
 				subCargos.push(subCargo);
 			}
 		}
+		saveData.subCargos = subCargos;
 	}
 	
 	function GetLatestEngineSet() {
