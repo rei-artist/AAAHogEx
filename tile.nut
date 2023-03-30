@@ -78,10 +78,10 @@ class HgTile {
 		if(y <= 1) {
 			y = 1;
 		}
-		if(x >= AIMap.GetMapSizeX()-2) {
+		if(x > AIMap.GetMapSizeX()-2) {
 			x = AIMap.GetMapSizeX()-2;
 		}
-		if( y >= AIMap.GetMapSizeY()-2) {
+		if( y > AIMap.GetMapSizeY()-2) {
 			y = AIMap.GetMapSizeY()-2;
 		}
 		return HgTile(AIMap.GetTileIndex(x,y));
@@ -828,7 +828,7 @@ class Rectangle {
 	}
 	
 	function GetTileList() {
-		local result = AIList();
+		/*local result = AIList();
 		for(local y=Top(); y<Bottom(); y++) {
 			for(local x=Left(); x<Right(); x++) {
 				local tile = AIMap.GetTileIndex (x,y)
@@ -836,7 +836,9 @@ class Rectangle {
 					result.AddItem(tile,tile);
 				}
 			}
-		}
+		}*/
+		local result = AITileList();
+		result.AddRectangle(lefttop.tile, HgTile.XY(rightbottom.X() - 1, rightbottom.Y() - 1).tile);
 		return result;
 	}
 	
@@ -986,8 +988,6 @@ class TileListUtil {
 		return tileList;
 	}
 	
-	
-	
 	static function LevelAverageTiles(tiles, track, isTestMode = false) {
 		return LevelAverage(TileListUtil.GetLevelTileList(tiles), track, isTestMode);
 	}
@@ -1135,7 +1135,6 @@ class TileListUtil {
 		return TileListUtil.LevelHeight(TileListUtil.GetLevelTileList(tiles), height);
 	}
 
-	
 	static function LevelHeight(tileList, height) {
 		tileList.Valuate(AITile.GetCornerHeight, AITile.CORNER_N);
 		
@@ -1179,6 +1178,7 @@ class TileListUtil {
 		}
 		return result;
 	}
+
 	static function GetSequenceCount(tile, tiles, track) {
 		local x = track == AIRail.RAILTRACK_NW_SE ? AIMap.GetTileX(tile) : AIMap.GetTileY(tile);
 		local y = track == AIRail.RAILTRACK_NW_SE ? AIMap.GetTileY(tile) : AIMap.GetTileX(tile);

@@ -133,7 +133,7 @@ class PlaceProduction {
 		
 		local result = {};
 		foreach(cargo ,_ in AICargoList()) {
-			local placesList = Place.GetNotUsedProducingPlacesList(cargo);
+			local placesList = Place.GetCargoProducingList(cargo);
 			local places = placesList[0];
 			local placeList = placesList[1];
 			local info = {};
@@ -754,29 +754,19 @@ class Place {
 		if(Place.notUsedProducingPlaceCache.rawin(cargo)) {
 			return Place.notUsedProducingPlaceCache.rawget(cargo);
 		}
+		local placeDictionary = PlaceDictionary.Get();
 		local a = Place.GetCargoProducing( cargo ).array;
-		local l = AIList();
-		local r = AIList();
-		local c = 0;
-		foreach(i,_ in a) {
-			l.AddItem(i,0);
-			c ++;
-			if(c > 1000) {
-				l.Valuate( function(i):(a,cargo) {
-					return PlaceDictionary.Get().CanUseAsSource(a[i],cargo);
-				});
-				l.KeepValue(1);
-				r.AddList(l);
-				l.Clear();
-				c = 0;
+		local result = AIList();
+		foreach(i,place in a) {
+			if(!placeDictionary.CanUseAsSource(place,cargo)) {
+				continue;
 			}
+			if(Place.IsNgCandidatePlace(place,cargo)) {
+				continue;
+			}
+			result.AddItem(i,0);
 		}
-		l.Valuate( function(i):(a,cargo) {
-			return PlaceDictionary.Get().CanUseAsSource(a[i],cargo);
-		});
-		l.KeepValue(1);
-		r.AddList(l);
-		local result = [a,r];
+		local result = [a,result];
 		Place.notUsedProducingPlaceCache.rawset(cargo, result);
 		return result;
 	}

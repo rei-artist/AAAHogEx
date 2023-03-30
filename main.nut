@@ -347,63 +347,22 @@ class HogeAI extends AIController {
 		*/
 		
 		/*
-		local a = AIList();
-		a.AddItem(1,0);
-		a.AddItem(2,0);
-		foreach(k1,_ in a) {
-			foreach(k2,_ in a) {
-				HgLog.Info(k1+","+k2);
-			}
-		}
-		
-		local a = [1,2]
-		foreach(k1 in a) {
-			foreach(k2 in a) {
-				HgLog.Info(k1+","+k2);
-			}
-		}*/
-		
-		/*
-		local list1 = AIList();
-		for(local i=0; i<1000; i++) {
-			list1.AddItem(i,i);
-		}
+		local list1 = AITileList();
 		local c1 = PerformanceCounter.Start("v1");
-		for(local i=0; i<100; i++) {
-			list1.Valuate(function(v){ 
-				local r = 0;
-				for(local j=0; j<10; j++) {
-					r += j;
-				}
-				return r;
-			});
+		for(local i=0; i<10000; i++) {
+			list1.AddRectangle(AIMap.GetTileIndex(10,10),AIMap.GetTileIndex(100,100));
 		}
 		c1.Stop();
+		list1 = AITileList();
 		PerformanceCounter.Print();
 		local c2 = PerformanceCounter.Start("v2");
-		for(local i=0; i<100; i++) {
-			foreach(i,v in list1) {
-				local r = 0;
-				for(local j=0; j<10; j++) {
-					r += j;
-				}
-				list1.SetValue( i, r );
-			}
+		for(local i=0; i<10000; i++) {
+			list1.AddRectangle(AIMap.GetTileIndex(10,10),AIMap.GetTileIndex(300,300));
 		}
 		c2.Stop();
-		PerformanceCounter.Print();*/
-		
-		
-		/*
-		local c = PerformanceCounter.Start("TestSort");
-		local list1 = AITileList();
-		list1.AddRectangle(HgTile.XY(10,10).tile, HgTile.XY(310,310).tile);
-		list1.Valuate(AIMap.DistanceManhattan, HgTile.XY(160,160).tile);
-		list1.Sort( AIList.SORT_BY_VALUE,true);
-		c.Stop();
-		HgLog.Info("TestSort:"+HgTile(list1.Begin()));
 		PerformanceCounter.Print();
 		*/
+		
 		/*
 		local list1 = AIList();
 		list1.AddItem(1, 4);
@@ -1148,7 +1107,7 @@ class HogeAI extends AIController {
 			}
 			//HgLog.Info("step0 "+AICargo.GetName(cargo));
 			
-			local placesList = Place.GetCargoProducingList( cargo );
+			local placesList = Place.GetNotUsedProducingPlacesList( cargo );
 			local places = placesList[0];
 			local placeList = ListUtils.Clone(placesList[1]);
 			
@@ -1160,6 +1119,7 @@ class HogeAI extends AIController {
 				});
 				placeList.KeepTop(300);
 			}
+			/*
 			placeList.Valuate(function(i):(places,cargo){
 				return Place.IsNgCandidatePlace(places[i],cargo);
 			});
@@ -1167,7 +1127,7 @@ class HogeAI extends AIController {
 			placeList.Valuate( function(i):(places,cargo) {
 				return PlaceDictionary.Get().CanUseAsSource(places[i],cargo);
 			});
-			placeList.KeepValue(1);
+			placeList.KeepValue(1);*/
 			if(placeList.Count() == 0) {
 				continue;
 			}

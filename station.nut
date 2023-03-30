@@ -52,6 +52,7 @@ class StationGroup {
 		}
 		return result;
 	}
+
 	function GetRoutesUsingSource() {
 		return GetUsingRoutesAsSource();
 	}
@@ -126,7 +127,7 @@ class StationGroup {
 		local result = null;
 		if(HogeAI.Get().IsDistantJoinStations() == false) {
 			result = [];
-			foreach(s in  stationFactory.CreateOnTilesAllDirection(GetAroundTiles())) {
+			foreach(s in stationFactory.CreateOnTilesAllDirection(GetAroundTiles())) {
 				if(s.GetPlatformRectangle().IsInclude(rectangle)) {
 					result.push(s);
 				}
@@ -314,8 +315,13 @@ class StationGroup {
 		}			
 		local dx = stationSpread - r1.Width();
 		local dy = stationSpread - r1.Height();
-		
-		return Rectangle(HgTile.InMapXY(r1.lefttop.X()-dx, r1.lefttop.Y()-dy) , HgTile.InMapXY(r1.rightbottom.X()+dx, r1.rightbottom.Y()+dy));
+		local lefttop = HgTile.InMapXY(r1.lefttop.X()-dx, r1.lefttop.Y()-dy).tile;
+		local rightbottom = HgTile.InMapXY(r1.rightbottom.X()+dx, r1.rightbottom.Y()+dy).tile;
+		if(lefttop >= rightbottom) {
+			return r1;
+		} else {
+			return Rectangle(HgTile(lefttop), HgTile(rightbottom));
+		}
 	}
 	
 	function FindStation(typeName) {
@@ -582,6 +588,10 @@ class StationFactory {
 		if(result == null) {
 			local coverage = GetCoverageRadius();
 			local tiles = HgArray.Generator( place.GetTiles( coverage ,cargo ) ).array;
+			
+			//local tileList = place.GetTileList();
+			//DoFilterTileList(tileList);
+			
 			/*GetTilesがBiDirectionalの場合に、両方のエリアのみを返してくれる
 			if(isBiDirectional) {
 				local tiles2 = HgArray.Generator( place.GetAccepting().GetTiles( coverage ,cargo ) ).array;
@@ -740,6 +750,7 @@ class StationFactory {
 			+" by:"+label+(considerAcceptance?" considerAcceptance":""));
 		local candidates = [];
 		foreach(station in stations2) {
+			//HgLog.Info("checkPlatform:"+station.GetPlatformRectangle());
 			checked.AddItem(station.platformTile,0);
 			if(HgStation.IsNgStationTile(station)) {
 				continue;
@@ -871,7 +882,7 @@ class StationFactory {
 	
 	function CreateOnTiles(tiles,stationDirection) {
 		local result = [];
-		foreach(platformTile,v in GetPlatformTiles(tiles,stationDirection)) {
+		foreach(platformTile in GetPlatformTiles(tiles,stationDirection)) {
 			result.push(Create(platformTile,stationDirection));
 		}
 		return result;
@@ -882,15 +893,15 @@ class StationFactory {
 		local result = [];
 		
 		if(ignoreDirection) {
-			foreach(platformTile,v in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
+			foreach(platformTile in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
 				result.push(Create(platformTile,HgStation.STATION_NW));
 			}
 		} else {
-			foreach(platformTile,v in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
+			foreach(platformTile in GetPlatformTiles(tiles,HgStation.STATION_NW)) {
 				result.push(Create(platformTile,HgStation.STATION_NW));
 				result.push(Create(platformTile,HgStation.STATION_SE));
 			}
-			foreach(platformTile,v in GetPlatformTiles(tiles,HgStation.STATION_NE)) {
+			foreach(platformTile in GetPlatformTiles(tiles,HgStation.STATION_NE)) {
 				result.push(Create(platformTile,HgStation.STATION_NE));
 				result.push(Create(platformTile,HgStation.STATION_SW));
 			}
@@ -945,17 +956,31 @@ class StationFactory {
 	function GetPlatformTiles(tiles,stationDirection) {
 		local w = GetPlatformWidth(stationDirection);
 		local h = GetPlatformHeight(stationDirection);
-		local cornerDegrees = GetCornerDegrees(w,h);
-		local platformTiles = {};
-		
+
+		local platformTileList = AITileList();
+		local cornerIndex = AIMap.GetTileIndex(-w+1,-h+1);
+		local acceptableTileList = AITileList();
 		foreach(tile in tiles) {
-			foreach(i, degree in cornerDegrees) {
-				local lefttop = tile + AIMap.GetTileIndex(degree[0],degree[1]);
-				platformTiles.rawset(lefttop,0);
+			acceptableTileList.AddItem(tile,0);
+		}
+		acceptableTileList.Valuate(AIMap.GetTileX);
+		acceptableTileList.KeepBetweenValue(w,AIMap.GetMapSizeX()-w);
+		acceptableTileList.Valuate(AIMap.GetTileY);
+		acceptableTileList.KeepBetweenValue(h,AIMap.GetMapSizeY()-h);
+		foreach(tile,_ in acceptableTileList) {
+			platformTileList.AddRectangle(tile + cornerIndex, tile);
+		}
+		local result = [];
+		foreach(t,_ in platformTileList) {
+			if(IsBuildableRectangle(t,w,h)) {
+				result.push(t);
 			}
 		}
-		
-		return platformTiles;
+		return result;
+	}
+	
+	function IsBuildableRectangle(t,w,h) {
+		return true;
 	}
 	
 	function GetCornerDegrees(w, h) {
@@ -996,7 +1021,6 @@ class RailStationFactory extends StationFactory {
 		return null;
 	}
 	
-	
 	function GetMaxStatoinLength(cargo) {
 		if(distance != null) {
 			local settingMax = min(HogeAI.Get().maxStationSpread , AIGameSettings.GetValue("vehicle.max_train_length"));
@@ -1019,6 +1043,29 @@ class RailStationFactory extends StationFactory {
 	
 	function GetVehicleType() {
 		return AIVehicle.VT_RAIL;
+	}
+
+	function IsBuildableRectangle(tile,w,h) {
+		if(!AITile.IsBuildableRectangle(tile,w,h)) {
+			return false;
+		}
+		local tileList = AITileList();
+		tileList.AddRectangle(tile, tile + AIMap.GetTileIndex(w-1, h-1));
+		tileList.Valuate(AITile.GetMaxHeight);
+		tileList.Sort(AIList.SORT_BY_VALUE,false);
+		local max = 0;
+		foreach(t,v in tileList) {
+			max = v;
+			break;
+		}
+		tileList.Valuate(AITile.GetMinHeight);
+		tileList.Sort(AIList.SORT_BY_VALUE,true);
+		local min = 0;
+		foreach(t,v in tileList) {
+			min = v;
+			break;
+		}
+		return max - min < 3;
 	}
 }
 
@@ -1096,7 +1143,7 @@ class RoadStationFactory extends StationFactory {
 			platformNum = 1;
 		}
 	}
-	
+
 	function GetStationType() {
 		return AICargo.HasCargoClass(cargo,AICargo.CC_PASSENGERS) ? AIStation.STATION_BUS_STOP : AIStation.STATION_TRUCK_STOP;
 	}
@@ -1122,6 +1169,8 @@ class RoadStationFactory extends StationFactory {
 			return RoadStation(platformTile,platformNum,stationDirection,GetStationType());
 		}
 	}
+
+	
 }
 
 class SrcRailStationFactory extends RailStationFactory {
@@ -1583,12 +1632,13 @@ class HgStation {
 	
 	function GetPlatformRectangle() {
 		if(platformRectangle == null) {
+			local lefttop = HgTile(platformTile);
 			switch(GetPlatformRailTrack()) {
 				case AIRail.RAILTRACK_NW_SE:
-					platformRectangle = Rectangle(HgTile(platformTile),HgTile(platformTile) + HgTile.XY(platformNum,platformLength));
+					platformRectangle = Rectangle(lefttop, lefttop + HgTile.XY(platformNum,platformLength));
 					break;
 				case AIRail.RAILTRACK_NE_SW:
-					platformRectangle =  Rectangle(HgTile(platformTile),HgTile(platformTile) + HgTile.XY(platformLength,platformNum));
+					platformRectangle =  Rectangle(lefttop, lefttop + HgTile.XY(platformLength,platformNum));
 					break;
 				default:
 					AIError.Log("Unknown PlatformRailTrack:"+GetPlatformRailTrack()+" (GetPlatformRectangle)");
@@ -2019,8 +2069,9 @@ class HgStation {
 class RailStation extends HgStation {
 
 	function IsBuildablePreCheck() {
-		local platformRect = GetPlatformRectangle();
-		return HogeAI.IsBuildable(platformRect.lefttop.tile) && HogeAI.IsBuildable(platformRect.rightbottom.tile - AIMap.GetTileIndex(1,1));
+		return true;
+/*		local platformRect = GetPlatformRectangle();
+		return HogeAI.IsBuildable(platformRect.lefttop.tile) && HogeAI.IsBuildable(platformRect.rightbottom.tile - AIMap.GetTileIndex(1,1));*/
 	}
 
 	function BuildStation(joinStation,isTestMode) {

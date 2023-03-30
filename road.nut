@@ -675,9 +675,9 @@ class RoadBuilder {
 		}*/
 		local distance = AIMap.DistanceManhattan(starts[0],goals[0]);
 		if(HogeAI.Get().IsInfrastructureMaintenance()) {
-			pathfinder._cost_no_existing_road = 0; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
+			pathfinder._cost_no_existing_road = 40; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
 		} else {
-			pathfinder._cost_no_existing_road = 0;
+			pathfinder._cost_no_existing_road = 40;
 		}
 		/*
 		if(distance > 200) {
