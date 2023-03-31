@@ -2140,7 +2140,6 @@ class TrainReturnRoute extends Route {
 
 	function AddDepots(depots) {
 		this.depots.extend(depots);
-		saveData.depots = depots;
 	}
 
 	function Initialize() {
