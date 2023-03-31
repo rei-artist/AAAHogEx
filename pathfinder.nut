@@ -57,6 +57,7 @@ class RailPathFinder
 	isOutward = null;
 	isRevReverse = null;
 	isSingle = null;
+	reversePath = null;
 	
 	isFoundPath = false;
 	
@@ -111,7 +112,7 @@ class RailPathFinder
 			_cost_tunnel_per_tile_ex  = 600;
 			_cost_tunnel_per_tile_ex2 = 900;*/
 			_cost_bridge_per_tile_ex = 200;
-			_cost_bridge_per_tile_ex2 = 300;
+			_cost_bridge_per_tile_ex2 = 400;
 			_cost_tunnel_per_tile_ex  = 200;
 			_cost_tunnel_per_tile_ex2 = 300;
 		}
@@ -323,6 +324,7 @@ class RailPathFinder
 		if(reversePath == null) {
 			return;
 		}
+		this.reversePath = reversePath;
 	
 		//cost.bridge_per_tile = 100;
 		//cost.tunnel_per_tile = 100;

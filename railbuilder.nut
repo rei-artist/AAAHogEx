@@ -2209,7 +2209,7 @@ class RailToAnyRailBuilder extends RailBuilder {
 			newPathFinder.isOutward = pathFinder.isOutward;
 			newPathFinder.isRevReverse = pathFinder.isRevReverse;
 			newPathFinder.dangerTiles = pathFinder.dangerTiles;			
-			newPathFinder.InitializePath(startArray, goalsArray, ignoreTiles);
+			newPathFinder.InitializePath(startArray, goalsArray, ignoreTiles, pathFinder.reversePath);
 			path = FindPath(newPathFinder, limitCount, eventPoller);
 		}
 		RailBuilder.constructor(path, isReverse, ignoreTiles, eventPoller);
