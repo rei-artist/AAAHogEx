@@ -127,6 +127,10 @@ class Route {
 		}
 	}
 	
+	static idCounter = IdCounter();
+	
+	id = null;
+	
 	productionCargoCache = null;
 	needsAdditionalCache = null;
 	overflowCache = null;
@@ -134,6 +138,7 @@ class Route {
 	isBuilding = null;
 	
 	constructor() {
+		id = idCounter.Get();
 		productionCargoCache = ExpirationTable(30);
 		needsAdditionalCache = ExpirationTable(30);
 		overflowCache = ExpirationTable(30);
@@ -440,14 +445,14 @@ class Route {
 		if(checkRouteCapacity && IsOverflow(cargo,isDest)) {
 			return false;
 		}
-	
+		local key = id + "-" + cargo;
 		if(callRoutes == null) {
 			callRoutes = {};
-		} else if(callRoutes.rawin(this)) {
+		} else if(callRoutes.rawin(key)) {
 			HgLog.Warning("NeedsAdditionalProducingCargo() called recursively."+this);
 			return false;
 		}
-		callRoutes.rawset(this,0);
+		callRoutes.rawset(key,0);
 
 		local hgStation = isDest ? destHgStation : srcHgStation;
 		local limitCapacity = GetCargoCapacity(cargo);
@@ -456,46 +461,45 @@ class Route {
 		}*/
 		local cargoWaiting = AIStation.GetCargoWaiting( hgStation.GetAIStation(), cargo );
 		if(cargoWaiting == 0 && limitCapacity == 0 && cargo != this.cargo
-				&& !NeedsAdditionalProducingCargo(this.cargo,null,false,checkRouteCapacity)) { // 新たな種類のcargoが必要かどうかのチェック
-			callRoutes.rawdelete(this);
+				&& !NeedsAdditionalProducingCargo(this.cargo, callRoutes, false, checkRouteCapacity)) { // 新たな種類のcargoが必要かどうかのチェック
+			callRoutes.rawdelete(key);
 			return false;	// メインカーゴがこれ以上不要な場合、列車数が飽和している事を示唆している
 		}
 		if(checkRouteCapacity && GetLeftCapacity(cargo, isDest) == 0) {
-			callRoutes.rawdelete(this);
+			callRoutes.rawdelete(key);
 			return false;
 		}
 
 		local result = cargoWaiting <= limitCapacity;
 		if(!IsTransfer()) {
 			//HgLog.Warning("_NeedsAdditionalProducingCargo "+result+" cargoWaiting:"+cargoWaiting+" limitCapacity:"+limitCapacity+" "+this);
-			callRoutes.rawdelete(this);
+			callRoutes.rawdelete(key);
 			return result;
 		}
 		if(isDest || !result) {
-			callRoutes.rawdelete(this);
+			callRoutes.rawdelete(key);
 			return false;
 		}
 		foreach(destRoute in GetDestRoutes()) {
 			if( destRoute.IsBiDirectional() && destRoute.destHgStation.stationGroup == destHgStation.stationGroup ) {
 				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, true, checkRouteCapacity) 
 						&& !destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
-					callRoutes.rawdelete(this);
+					callRoutes.rawdelete(key);
 					return true;
 				}
 			} else {
 				if( destRoute.NeedsAdditionalProducingCargo(cargo, callRoutes, false, checkRouteCapacity) ) {
-					callRoutes.rawdelete(this);
+					callRoutes.rawdelete(key);
 					return true;
 				}
 			}
 		}
-		callRoutes.rawdelete(this);
+		callRoutes.rawdelete(key);
 		return false;
 	}
 	
 	function GetLeftCapacity(cargo, isDest = false) {
 		local station = isDest ? destHgStation : srcHgStation;
-		// CurrentExpectedProductionは完ぺきではないが、さすがに2倍を超えていたらオーバーしていると思う
 		local maxCapacity;
 		if( IsReturnRoute(isDest) ) {
 			maxCapacity = GetCurrentRouteCapacity(cargo);
