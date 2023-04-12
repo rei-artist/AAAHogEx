@@ -1408,6 +1408,9 @@ class HogeAI extends AIController {
 				}
 				local t = clone p;
 				t.distance <- AIMap.DistanceManhattan(place.GetLocation(),orgTile);
+				if(t.distance == 0) { // はじかないとSearchAndBuildToMeetSrcDemandMin経由で無限ループする事がある
+					continue;
+				}
 				if(vt == AIVehicle.VT_RAIL) {
 					if(!HogeAI.Get().yeti &&  (orgPlaceAcceptingRaw || (t.place.IsAccepting() && t.place.IsRaw()))) {
 						continue; // RAWを満たすのにRAILは使わない。(YETIをのぞく)
@@ -2422,8 +2425,12 @@ class HogeAI extends AIController {
 			return [];
 		}
 		local result = [];
-		foreach(cargo in srcPlace.GetAccepting().GetCargos()) {
-			result.extend(CreateRoutePlans({place=srcPlace.GetAccepting(),cargo=cargo},null/*結果数の制限無し*/,{noShowResult=true, noSortResult=true, useLastMonthProduction=true}));
+		local acceptingPlace = srcPlace.GetAccepting();
+		foreach(cargo in acceptingPlace.GetCargos()) {
+			if(!acceptingPlace.IsIncreasableInputCargo(cargo)) {
+				continue;
+			}
+			result.extend(CreateRoutePlans({place=acceptingPlace,cargo=cargo},null/*結果数の制限無し*/,{noShowResult=true, noSortResult=true, useLastMonthProduction=true}));
 		}
 		return result;
 	/*
