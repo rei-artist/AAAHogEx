@@ -323,6 +323,10 @@ class TrainRoute extends Route {
 		saveData.subCargos = subCargos = CalculateSubCargos();
 	}
 	
+	function SetCannotChangeDest(cannotChangeDest) {
+		saveData.cannotChangeDest = this.cannotChangeDest = cannotChangeDest;
+	}
+	
 	function GetLatestEngineSet() {
 		return latestEngineSet;
 	}

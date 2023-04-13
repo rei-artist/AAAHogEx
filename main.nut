@@ -2397,7 +2397,7 @@ class HogeAI extends AIController {
 			}
 			if(routePlan.rawin("canChangeDest") && routePlan.canChangeDest) {
 			} else {
-				newRoute.cannotChangeDest = true;
+				newRoute.SetCannotChangeDest(true);
 			}
 			return newRoute;
 		}
