@@ -813,17 +813,18 @@ class RoadBuilder {
 class TownBus {
 	
 	static instances = [];
+	static savedDatas = [];
 	static townMap = {};
 	static canUseCargo = {};
 	static busPrice = {};
 	static engineCache = ExpirationTable(3*365);
 	
 	static function SaveStatics(data) {
-		local array = [];
+		/*local array = [];
 		foreach(townBus in TownBus.instances) {
 			array.push(townBus.saveData);
-		}
-		data.townBus <- array;
+		}*/
+		data.townBus <- TownBus.savedDatas;
 	}
 	
 	static function LoadStatics(data) {
@@ -837,6 +838,7 @@ class TownBus {
 			townBus.removeBus = t.removeBus;
 			townBus.date = t.rawin("date") ? t.date : AIDate.GetCurrentDate();
 			townBus.saveData = t;
+			TownBus.savedDatas.push(t);
 			TownBus.instances.push(townBus);
 		}
 	}
@@ -904,6 +906,7 @@ class TownBus {
 		local aiExec = AIExecMode();
 		local townBus = TownBus(authorityTown, cargo);
 		TownBus.instances.push(townBus);
+		TownBus.savedDatas.push(townBus.saveData);
 		if(!townBus.BuildBusStops()) {
 			return null;
 		}
@@ -942,20 +945,28 @@ class TownBus {
 		this.isTransfer = false;
 		this.date = AIDate.GetCurrentDate();
 		TownBus.townMap[town+":"+cargo] <- this;
+		saveData = {
+			town = null
+			cargo = null
+			stations = null
+			depot = null
+			isTransfer = null
+			townBus = null
+			removeBus = null
+			date = null
+		}
 		Save();
 	}
 	
 	function Save() {
-		saveData = {
-			town = town
-			cargo = cargo
-			stations = stations
-			depot = depot
-			isTransfer = isTransfer
-			townBus = townBus
-			removeBus = removeBus
-			date = date
-		}
+		saveData.town = town;
+		saveData.cargo = cargo;
+		saveData.stations = stations;
+		saveData.depot = depot;
+		saveData.isTransfer = isTransfer;
+		saveData.townBus = townBus;
+		saveData.removeBus = removeBus;
+		saveData.date = date;
 	}
 	
 	function CheckRetry(authorityTown, ignoreTileList, cargo) {

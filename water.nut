@@ -113,7 +113,7 @@ class WaterRoute extends CommonRoute {
 		local count = 0;
 		while(path != null) {
 			WaterRoute.usedTiles.rawset(path.GetTile(),true);
-			if(count % 16 == 15) {
+			if(count % 32 == 31) {
 				local tile = path.GetTile();
 				if(AIMarine.IsBuoyTile(tile) || AIMarine.BuildBuoy(tile)) {
 					buoys.push(tile);
@@ -179,7 +179,7 @@ class WaterRoute extends CommonRoute {
 	
 	static function CanBuild(from, to, cargo) {
 		//local usableTrain = !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute) && !HogeAI.Get().roiBase;
-		local key = from.GetLocation() + "-" + to.GetLocation() +"-" + cargo; // +"-" + usableTrain;
+		local key = from.GetLocation() + "-" + to.GetLocation() +"-" + cargo +"-" + HogeAI.Get().roiBase; // +"-" + usableTrain;
 		if(WaterRoute.canBuildCache.rawin(key)) {
 			return WaterRoute.canBuildCache[key];
 		}
@@ -192,6 +192,11 @@ class WaterRoute extends CommonRoute {
 		local usableTrain = !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute); // && !HogeAI.Get().roiBase;
 		local coastsA = to.GetCoasts(cargo);
 		local coastsB = from.GetCoasts(cargo);
+		if(HogeAI.Get().roiBase) {
+			if(coastsA==null || coastsB==null) {
+				return false;
+			}
+		}
 		if(!usableTrain && coastsA == null && coastsB == null) {
 			return false;
 		}
@@ -244,6 +249,9 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 	}
 	
 	function CreateStationFactory(target) {
+		if(HogeAI.Get().roiBase) {
+			return WaterStationFactory();
+		}
 		if(target.GetCoasts(cargo) == null) {
 			return CanalStationFactory();
 		} else {
@@ -596,6 +604,21 @@ class WaterStation extends HgStation {
 		return true;
 	}
 
+	function SetDepot(depot) {
+		CheckSavedData("depot");
+		savedData.depot = depot;
+	}
+	
+	function GetDepot() {
+		CheckSavedData("depot");
+		return savedData.depot;
+	}
+	
+	function CheckSavedData(name) {
+		if(!savedData.rawin(name)) {
+			savedData.rawset(name,null);
+		}
+	}
 	
 	function GetTiles() {
 		return [platformTile];
@@ -648,11 +671,12 @@ STATION_NEW)) {
 				}
 			}
 		}
-		if(AITile.IsCoastTile(platformTile)) {
-			if(HogeAI.Get().roiBase) {
+		
+		if(HogeAI.Get().roiBase) {
+			if(AITile.IsCoastTile(platformTile)) {
 				result += 10;
 				if(AIMarine.BuildDock(platformTile, AIStation.STATION_NEW)) {
-					result += 10;
+					result += 50;
 				}
 			}
 		}
@@ -689,7 +713,7 @@ class CanalStation extends HgStation {
 	
 
 	function Build(levelTiles=true,isTestMode=true) {
-		local waterRemovable = HogeAI.Get().clearWaterCost < max(HogeAI.Get().GetQuarterlyIncome() / 10,HogeAI.Get().GetUsableMoney() / 100); 
+		local waterRemovable = !HogeAI.Get().roiBase && HogeAI.Get().clearWaterCost < max(HogeAI.Get().GetQuarterlyIncome() / 10,HogeAI.Get().GetUsableMoney() / 100); 
 		local canals = [At(0,1),At(0,2)];
 		if(isTestMode) {
 			foreach(t in canals) {

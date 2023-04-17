@@ -81,7 +81,7 @@ class HgTile {
 		if(x > AIMap.GetMapSizeX()-2) {
 			x = AIMap.GetMapSizeX()-2;
 		}
-		if( y > AIMap.GetMapSizeY()-2) {
+		if(y > AIMap.GetMapSizeY()-2) {
 			y = AIMap.GetMapSizeY()-2;
 		}
 		return HgTile(AIMap.GetTileIndex(x,y));
@@ -97,6 +97,10 @@ class HgTile {
 
 	function Y() {
 		return AIMap.GetTileY(tile);
+	}
+
+	function IsValid() {
+		return AIMap.IsValidTile(tile);
 	}
 	
 	function Min(hgTile) {
@@ -285,11 +289,13 @@ class HgTile {
 	}
 	
 	function _add(hgTile) {
-		return HgTile.XY(this.X() + hgTile.X(), this.Y() + hgTile.Y());
+		return HgTile(tile + hgTile.tile);
+//		return HgTile.XY(this.X() + hgTile.X(), this.Y() + hgTile.Y());
 	}
 
 	function _sub(hgTile) {
-		return HgTile.XY(this.X() - hgTile.X(), this.Y() - hgTile.Y());
+		return HgTile(tile - hgTile.tile);
+//		return HgTile.XY(this.X() - hgTile.X(), this.Y() - hgTile.Y());
 	}
 	
 	static function GetCenter(hgTiles) {
@@ -809,13 +815,9 @@ class Rectangle {
 		return true;
 	}
 	
-	function GetIncludeRectangles(w,h) {
-		local result = [];
-		for(local y=Top(); y<=Bottom()-h; y++) {
-			for(local x=Left(); x<=Right()-w; x++) {
-				result.push(Rectangle(HgTile.XY(x,y),HgTile.XY(x+w,y+h)));
-			}
-		}
+	function GetIncludeRectanglesLefttopTileList(w,h) {
+		local result = AITileList();
+		result.AddRectangle(lefttop.tile, HgTile.InMapXY(Right()-w, Bottom()-h).tile);
 		return result;
 	}
 	
@@ -838,7 +840,7 @@ class Rectangle {
 			}
 		}*/
 		local result = AITileList();
-		result.AddRectangle(lefttop.tile, HgTile.XY(rightbottom.X() - 1, rightbottom.Y() - 1).tile);
+		result.AddRectangle(lefttop.tile, HgTile.InMapXY(rightbottom.X() - 1, rightbottom.Y() - 1).tile);
 		return result;
 	}
 	

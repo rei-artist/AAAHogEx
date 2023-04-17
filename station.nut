@@ -306,7 +306,7 @@ class StationGroup {
 		}
 		local r1 = null;
 		foreach(hgStation in hgStations) {
-			local r2 = hgStation.GetPlatformRectangle()
+			local r2 = hgStation.GetPlatformRectangle();
 			if(r1 == null) {
 				r1 = r2;
 			} else {
@@ -315,13 +315,18 @@ class StationGroup {
 		}			
 		local dx = stationSpread - r1.Width();
 		local dy = stationSpread - r1.Height();
-		local lefttop = HgTile.InMapXY(r1.lefttop.X()-dx, r1.lefttop.Y()-dy).tile;
-		local rightbottom = HgTile.InMapXY(r1.rightbottom.X()+dx, r1.rightbottom.Y()+dy).tile;
-		if(lefttop >= rightbottom) {
+		local lefttop = HgTile.InMapXY(r1.lefttop.X()-dx, r1.lefttop.Y()-dy);
+		local rightbottom = HgTile.InMapXY(r1.rightbottom.X()+dx, r1.rightbottom.Y()+dy);
+		if(lefttop.X() > rightbottom.X()) {
+			HgLog.Error("GetBuildablePlatformRectangle lefttop.X() > rightbottom.X():"+lefttop+" "+rightbottom+"r1:"+r1);
 			return r1;
-		} else {
-			return Rectangle(HgTile(lefttop), HgTile(rightbottom));
 		}
+		if(lefttop.Y() > rightbottom.Y()) {
+			HgLog.Error("GetBuildablePlatformRectangle lefttop.Y() > rightbottom.Y():"+lefttop+" "+rightbottom+"r1:"+r1);
+			return r1;
+		}
+		//HgLog.Warning("GetBuildablePlatformRectangle "+lefttop+" "+rightbottom+" r1:"+r1+" dx:"+dx+" dy:"+dy);
+		return Rectangle(lefttop, rightbottom);
 	}
 	
 	function FindStation(typeName) {
@@ -723,6 +728,10 @@ class StationFactory {
 				station.score -= 10;
 			}
 			local platformRect = station.GetPlatformRectangle();
+			if(!platformRect.rightbottom.IsValid()) {
+				continue;
+			}
+			
 			if(nearestFor != null) {
 				local distance = min(AIMap.DistanceManhattan(platformRect.lefttop.tile, nearestFor), AIMap.DistanceManhattan(platformRect.rightbottom.tile, nearestFor));
 				station.score -= distance;
@@ -917,8 +926,7 @@ class StationFactory {
 		local h = GetPlatformNum();
 		
 		if(ignoreDirection) {
-			foreach(r in rectangle.GetIncludeRectangles(h,w)) {
-				local platformTile = r.lefttop.GetTileIndex();
+			foreach(platformTile,_ in rectangle.GetIncludeRectanglesLefttopTileList(h,w)) {
 				if(checkedTile==null || !checkedTile[1].HasItem(platformTile)) {
 					if(checkedTile!=null) {
 						checkedTile[1].AddItem(platformTile,0);
@@ -927,8 +935,7 @@ class StationFactory {
 				}
 			}
 		} else {
-			foreach(r in rectangle.GetIncludeRectangles(w,h)) {
-				local platformTile = r.lefttop.GetTileIndex();
+			foreach(platformTile,_ in rectangle.GetIncludeRectanglesLefttopTileList(w,h)) {
 				if(checkedTile==null || !checkedTile[0].HasItem(platformTile)) {
 					if(checkedTile!=null) {
 						checkedTile[0].AddItem(platformTile,0);
@@ -937,8 +944,7 @@ class StationFactory {
 					result.push(Create(platformTile,HgStation.STATION_SW));
 				}
 			}
-			foreach(r in rectangle.GetIncludeRectangles(h,w)) {
-				local platformTile = r.lefttop.GetTileIndex();
+			foreach(platformTile,_ in rectangle.GetIncludeRectanglesLefttopTileList(h,w)) {
 				if(checkedTile==null || !checkedTile[1].HasItem(platformTile)) {
 					if(checkedTile!=null) {
 						checkedTile[1].AddItem(platformTile,0);
@@ -1577,18 +1583,20 @@ class HgStation {
 					}
 					return false;
 				}
-				
+				/* TODO: 最新だと近い方が優先される(近いってどっから？等距離だったら？)
 				if(place != null && cargo != null && place instanceof HgIndustry && place.IsAccepting()) {
+					
 					foreach(industry in SearchIndustries(cargo,false)) { //BUG: 本来はstationGroupで調べるべきだが、testモードでは無理かも
 						if(industry < place.industry) { // 予期しないindustryが同一cargoを受け入れている。industryIdが小さい方が優先
 							if(!isTestMode && !supressWarning) {
 								HgLog.Warning("Unexpected accepting industry found."+AIIndustry.GetName(industry)+" "+this);
+								// TODO: Demolish
 							}
 							return false;
 						}
 					}
 				
-				}
+				}*/
 				return true;
 			}
 			if(i==1) {

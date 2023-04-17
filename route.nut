@@ -4,6 +4,7 @@ class Route {
 
 	static checkedNewRoute = ExpirationRawTable(365);
 	static availableVehicleTypesCache = ExpirationTable(30);
+	static tooManyVehiclesForNewRouteCache = ExpirationTable(30);
 
 	static function GetAvailableVehicleTypes() {
 		if(Route.availableVehicleTypesCache.rawin(0)) {
@@ -152,8 +153,19 @@ class Route {
 	function CanCreateNewRoute() {
 		return true;
 	}
-	
+
 	function IsTooManyVehiclesForNewRoute(self) {
+		local vt = self.GetVehicleType();
+		if(Route.tooManyVehiclesForNewRouteCache.rawin(vt)) {
+			return Route.tooManyVehiclesForNewRouteCache.rawget(vt);
+		}
+		local result = self._IsTooManyVehiclesForNewRoute(self);
+		Route.tooManyVehiclesForNewRouteCache.rawset(vt,result);
+		return result;
+	}
+	
+	function _IsTooManyVehiclesForNewRoute(self) {
+	
 		local remaining = self.GetVehicleNumRoom(self);
 		if(remaining > 30) {
 			return false;
@@ -439,6 +451,9 @@ class Route {
 	}
 
 	function _NeedsAdditionalProducingCargo(cargo, callRoutes = null, isDest = false, checkRouteCapacity = true ) {
+		if(IsTooManyVehiclesForNewRoute(this)) {
+			return false;
+		}
 		if(IsClosed()) {
 			return false;
 		}
@@ -1522,16 +1537,25 @@ class CommonRoute extends Route {
 
 	function BuildDepot(path) {
 		local execMode = AIExecMode();
+		if(srcHgStation instanceof WaterStation) {
+			depot = srcHgStation.GetDepot();
+			if(depot != null) {
+				return true;
+			}
+		}
 		if(GetVehicleType() == AIVehicle.VT_WATER) {
 			//path = path.SubPathIndex(5);
 		}
 		depot = path.BuildDepot(GetVehicleType());
+		if(srcHgStation instanceof WaterStation) {
+			srcHgStation.SetDepot(depot);
+		}
 		if(depot == null && srcHgStation instanceof RoadStation) {
 			depot = srcHgStation.BuildDepot();
 		}
 		if(depot == null) {
 			HgLog.Warning("depot == null. "+this);
-			return null;
+			return false;
 		}
 		return depot != null;
 	}
@@ -1539,10 +1563,19 @@ class CommonRoute extends Route {
 	function BuildDestDepot(path) {
 		local execMode = AIExecMode();
 		path = path.Reverse();
+		if(destHgStation instanceof WaterStation) {
+			destDepot = destHgStation.GetDepot();
+			if(destDepot != null) {
+				return true;
+			}
+		}
 		if(GetVehicleType() == AIVehicle.VT_WATER) {
 			//path = path.SubPathIndex(5);
 		}
 		destDepot = path.BuildDepot(GetVehicleType());
+		if(destHgStation instanceof WaterStation) {
+			destHgStation.SetDepot(destDepot);
+		}
 		return destDepot != null;
 	}
 	
@@ -3162,6 +3195,7 @@ class CommonRouteBuilder extends RouteBuilder {
 						HgLog.Warning("retryIfSharableStation."+this);
 						retryIfNoPathUsingSharableStation = false;
 						checkSharableStationFirst = false;
+						Rollback(rollbackFacitilies);
 						return DoBuild();
 					}
 
@@ -3259,7 +3293,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				if(makeReverseRoute && route.IsBiDirectional()) {
 					reverseRoute = BuildReverseRoute(route, path);
 				}
-				if(reverseRoute == null) {
+				if(reverseRoute == null && vehicleType != AIVehicle.VT_WATER) {
 					route.CloneVehicle(vehicle);
 				}
 				//Place.SetUsedPlaceCargo(src,cargo); NgPathFindPairで管理する
@@ -3299,7 +3333,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			local townBus;
 			townBus = TownBus.CheckTown(station.place.town, null, cargo);
 			if(townBus == null) {
-				HgLog.Info("Cannot get TownBus:"+station.place.GetName()+"["+AICargo.GetName(cargo)+"]");
+				//HgLog.Info("Cannot get TownBus:"+station.place.GetName()+"["+AICargo.GetName(cargo)+"]");
 			} else {
 				townBus.CreateTransferRoutes(route, station);
 			}
