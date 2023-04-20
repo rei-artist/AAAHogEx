@@ -42,7 +42,7 @@ class Air {
 			population = 4000
 			maxPlanes = 10
 			runways = 2
-			stationDateSpan = 7
+			stationDateSpan = 8
 			cost = 17000
 		},{
 			level = 5

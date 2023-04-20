@@ -146,6 +146,10 @@ class Route {
 		isBuilding = false;
 	}
 	
+	function GetRouteClass() {
+		return Route.GetRouteClassFromVehicleType(GetVehicleType());
+	}
+	
 	function IsBuilding() {
 		return isBuilding; // ネットワーク作成中なのでCheckClose()はまだしない
 	}
@@ -159,18 +163,18 @@ class Route {
 		if(Route.tooManyVehiclesForNewRouteCache.rawin(vt)) {
 			return Route.tooManyVehiclesForNewRouteCache.rawget(vt);
 		}
-		local result = self._IsTooManyVehiclesForNewRoute(self);
+		local result = self._IsTooManyVehiclesForNewRoute(vt);
 		Route.tooManyVehiclesForNewRouteCache.rawset(vt,result);
 		return result;
 	}
 	
-	function _IsTooManyVehiclesForNewRoute(self) {
-	
-		local remaining = self.GetVehicleNumRoom(self);
+	function _IsTooManyVehiclesForNewRoute(vt) {
+		local routeClass = Route.GetRouteClassFromVehicleType(vt);
+		local remaining = routeClass.GetVehicleNumRoom(routeClass);
 		if(remaining > 30) {
 			return false;
 		}
-		return remaining <= self.GetMaxTotalVehicles() * (1 - self.GetThresholdVehicleNumRateForNewRoute());
+		return remaining <= routeClass.GetMaxTotalVehicles() * (1 - routeClass.GetThresholdVehicleNumRateForNewRoute());
 	}
 	
 	function IsTooManyVehiclesForSupportRoute(self) {
@@ -234,6 +238,10 @@ class Route {
 		if(engineSet == null) {
 			return 0;
 		}
+		if(!("GetMaxRouteCapacity" in engineSet)) {
+			HgLog.Warning("!GetMaxRouteCapacity in engineSet:"+this);
+		}
+		
 		return engineSet.GetMaxRouteCapacity(cargo);
 	}
 
@@ -1099,7 +1107,7 @@ class Route {
 			}
 			if(saved) {
 				srcHgStation.place = null;
-				srcHgStation.savedData = srcHgStation.Save();
+				srcHgStation.DoSave();
 			} else {
 				HgLog.Warning("Remove Route (src industry closed:"+AIIndustry.GetName(industry)+")"+this);
 				Remove();

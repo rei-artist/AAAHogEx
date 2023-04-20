@@ -3979,6 +3979,7 @@ class HogeAI extends AIController {
 		table.estimateTable <- estimateTable;
 		table.maybePurchasedLand <- maybePurchasedLand;
 		table.landConnectedCache <- HgTile.landConnectedCache;
+		table.cargoVtDistanceValues <- cargoVtDistanceValues;
 		Place.SaveStatics(table);
 
 		HgLog.Info("Place.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
@@ -4037,13 +4038,14 @@ class HogeAI extends AIController {
 		turn = loadData.turn;
 		indexPointer = loadData.indexPointer;
 		stockpiled = loadData.stockpiled;
-		estimateTable = loadData.estimateTable;
+		//estimateTable = loadData.estimateTable; delegateが入らない
 		if(loadData.rawin("maybePurchasedLand")) {
 			maybePurchasedLand = loadData.maybePurchasedLand;
 		}
 		if(loadData.rawin("landConnectedCache")) {
 			HgTable.Extend( HgTile.landConnectedCache, loadData.landConnectedCache );
 		}
+		cargoVtDistanceValues = loadData.cargoVtDistanceValues;
 		Place.LoadStatics(loadData);
 		HgStation.LoadStatics(loadData);
 		TrainInfoDictionary.LoadStatics(loadData);

@@ -495,11 +495,23 @@ class CanalStationFactory extends StationFactory {
 
 class WaterStation extends HgStation {
 	
+	depot = null;
+	
 	constructor(platformTile) {
 		HgStation.constructor(platformTile, 0);
 		this.originTile = platformTile;
 		this.platformNum = 1; 
 		this.platformLength = 1;
+	}
+	
+	function Save() {
+		local t = HgStation.Save();
+		t.depot <- depot;
+		return t;
+	}
+	
+	function Load(t) {
+		depot = t.depot;
 	}
 	
 	function GetTypeName() {
@@ -605,19 +617,12 @@ class WaterStation extends HgStation {
 	}
 
 	function SetDepot(depot) {
-		CheckSavedData("depot");
-		savedData.depot = depot;
+		this.depot = depot;
+		DoSave();
 	}
 	
 	function GetDepot() {
-		CheckSavedData("depot");
-		return savedData.depot;
-	}
-	
-	function CheckSavedData(name) {
-		if(!savedData.rawin(name)) {
-			savedData.rawset(name,null);
-		}
+		return depot;
 	}
 	
 	function GetTiles() {

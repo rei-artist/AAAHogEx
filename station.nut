@@ -1289,6 +1289,7 @@ class TerminalStationFactory extends RailStationFactory {
 
 class HgStation {
 	static worldInstances = {};
+	static savedDatas = {};
 	static idCounter = IdCounter();
 	static ngStationTiles = {}
 	
@@ -1299,19 +1300,14 @@ class HgStation {
 	static STATION_SE = 3;
 	
 	static function SaveStatics(data) {
-		local a = array(HgStation.worldInstances.len());
-		local i=0;
-		foreach(station in HgStation.worldInstances) {
-			a[i++] = station.savedData; // データが多すぎてSave()がタイムアウトするため事前にTableを準備しておく。AddWorld以後のフィールド変更はsavedDataを都度作る必要がある事に注意
-		}
-		data.stations <- a;
+		data.savedStations <- HgStation.savedDatas;
 		data.ngStationTiles <- HgStation.ngStationTiles;
 	}
 	
 	static function LoadStatics(data) {
 		local groups = {};
-		HgStation.worldInstances.clear();
-		foreach(t in data.stations) {
+		foreach(id,t in data.savedStations) {
+			HgStation.savedDatas.rawset(id,t);
 			local station;
 			switch(t.name) {
 				case "PieceStation":
@@ -1374,7 +1370,7 @@ class HgStation {
 			HgLog.Info("load station:"+station.GetName()+" "+station.GetTypeName()+" "+stationGroup.id+" "+(station.place != null ? station.place : ""));
 			station.stationGroup = stationGroup;
 			station.Load(t);
-			station.savedData = t.rawin("savedData") ? t.savedData : station.Save();
+			
 			stationGroup.hgStations.push(station);
 			HgStation.worldInstances[station.id] <- station;
 			if(station.place != null) {
@@ -1447,8 +1443,6 @@ class HgStation {
 	buildedDate = null;
 	stationGroup = null;
 	
-	savedData = null;
-
 	originTile = null;
 	score = null;
 	levelTiles = null;
@@ -1489,6 +1483,14 @@ class HgStation {
 	function Load(t) {
 	}
 
+	function DoSave() {
+		HgStation.savedDatas.rawset(id,Save());
+	}
+	
+	function GetSavedDate() {
+		return HgStation.savedDatas.rawget(id);
+	}
+
 	function AddWorld() {
 		this.id = idCounter.Get();
 		if(stationGroup == null) {
@@ -1506,7 +1508,7 @@ class HgStation {
 
 		BuildedPath.AddTiles(GetTiles());
 		
-		savedData = Save();
+		DoSave();
 	}
 	
 	function RemoveWorld() {
@@ -1514,6 +1516,7 @@ class HgStation {
 
 		if(worldInstances.rawin(this.id)) {
 			worldInstances.rawdelete(this.id);
+			HgStation.savedDatas.rawdelete(this.id);
 		} else {
 			HgLog.Warning("Station is not in worldInstances.(at HgStation.RemoveWorld()) "+this);
 		}
@@ -3440,7 +3443,7 @@ class DestRailStation extends RailStation {
 		if(BuildUtils.BuildRailDepotSafe(p1,p2)) {
 			depots.push(p1);
 		}
-		savedData = Save();
+		DoSave();
 	}
 	
 	function RemoveDepots() {
@@ -3450,7 +3453,7 @@ class DestRailStation extends RailStation {
 			}
 		}
 		depots = [];
-		savedData = Save();
+		DoSave();
 	}
 	
 	function BuildAfter() {
