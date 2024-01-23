@@ -845,6 +845,9 @@ class TownBus {
 
 	
 	static function CanUse(cargo) {
+		if(HogeAI.Get().IsDisableRoad()) { // Tramのtownbusは今のところ未対応
+			return false;
+		}
 		if(!CargoUtils.IsPaxOrMail(cargo)) {
 			return false;
 		}

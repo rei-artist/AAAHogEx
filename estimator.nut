@@ -480,14 +480,23 @@ class CommonEstimator extends Estimator {
 		engineList.Valuate(AIEngine.CanRefitCargo, cargo);
 		engineList.KeepValue(1);
 		
-		if(isTownBus || (vehicleType == AIVehicle.VT_ROAD && HogeAI.Get().IsDisableTrams())) {
+		if(vehicleType == AIVehicle.VT_ROAD) {
+			if(isRouteInstance) {
+				engineList.Valuate(AIEngine.HasPowerOnRoad, self.GetRoadType());
+				engineList.KeepValue(1);
+			} else {
+				if(isTownBus || HogeAI.Get().IsDisableTrams()) {
+					engineList.Valuate(AIEngine.HasPowerOnRoad, TownBus.GetRoadType());
+					engineList.KeepValue(1);
+				}
+				if(HogeAI.Get().IsDisableRoad()) {
 			//local roadType = AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin();
-			engineList.Valuate(AIEngine.HasPowerOnRoad, TownBus.GetRoadType()  );
-			engineList.KeepValue(1);
-		} else if(isRouteInstance && vehicleType == AIVehicle.VT_ROAD) {
-			engineList.Valuate(AIEngine.HasPowerOnRoad, self.GetRoadType());
-			engineList.KeepValue(1);
+					engineList.Valuate(AIEngine.HasPowerOnRoad, AIRoad.ROADTYPE_TRAM);
+					engineList.KeepValue(1);
+				}
+			}
 		}
+		
 		if(vehicleType == AIVehicle.VT_AIR) {
 			if(isRouteInstance && self instanceof AirRoute) {
 				local usableBigPlane = Air.GetAiportTraits(self.srcHgStation.airportType).supportBigPlane 

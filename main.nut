@@ -4180,6 +4180,10 @@ class HogeAI extends AIController {
 		return GetSetting("disable_veh_tram") == 1;	
 	}
 	
+	function IsDisableRoad() {
+		return GetSetting("disable_veh_roadveh") == 1;	
+	}
+	
 	function CanRemoveWater() {
 		return HogeAI.GetUsableMoney() > GetInflatedMoney(2000000) && IsAvoidRemovingWater() == false;
 	}
@@ -4267,7 +4271,7 @@ class HogeAI extends AIController {
 		if(AIGameSettings.GetValue("ai.ai_disable_veh_train")==1 || GetSetting("disable_veh_train")==1) {
 			maxTrains = 0;
 		}
-		if(AIGameSettings.GetValue("ai.ai_disable_veh_roadveh")==1 || GetSetting("disable_veh_roadveh")==1) {
+		if(AIGameSettings.GetValue("ai.ai_disable_veh_roadveh")==1 || (HogeAI.Get().IsDisableRoad() && HogeAI.Get().IsDisableTrams())) {
 			maxRoadVehicle = 0;
 		}
 		if(AIGameSettings.GetValue("ai.ai_disable_veh_ship")==1 || GetSetting("disable_veh_ship")==1) {
