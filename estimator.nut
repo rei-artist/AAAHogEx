@@ -665,7 +665,7 @@ class CommonEstimator extends Estimator {
 				local maxRouteCapacity = self.EstimateMaxRouteCapacity( engineInfrastractureType, capacity );
 
 				local price = AIEngine.GetPrice(e);				
-				if(maxBuildingCost > 0) {
+				if(maxBuildingCost > 0 && price > 0) {
 					maxVehicles = (maxBuildingCost - (isBuildingEstimate ? buildingCost : 0)) / price;
 				}
 				if(maxVehicles == 0) {
@@ -1451,7 +1451,7 @@ class TrainEstimator extends Estimator{
 						}
 
 						local realBuildingCost = isSingle ? buildingCost / 2 : buildingCost;
-						if(maxBuildingCost > 0) {
+						if(maxBuildingCost > 0 && price > 0) {
 							maxVehicles = min(maxVehicles, (maxBuildingCost - realBuildingCost) / price);
 							if(maxVehicles <= 0) {
 								if(tooShortMoney == null) {
