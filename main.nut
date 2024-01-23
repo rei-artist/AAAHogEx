@@ -713,6 +713,10 @@ class HogeAI extends AIController {
 			bests.Push(candidate);
 /*			candidate.score += AIBase.RandRange(10); // ほかのHogexとの競合を防ぐ
 			bests.push(candidate);*/
+			if(startDate + 365 < AIDate.GetCurrentDate() && GetUsableMoney() > GetInflatedMoney(100000)) {
+				HgLog.Warning("routeCandidatesGen reached 365 days");
+				break;
+			}
 		}
 		bests.Extend( GetTransferCandidates() );
 		bests.Extend( GetMeetPlaceCandidates() );

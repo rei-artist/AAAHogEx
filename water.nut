@@ -1112,7 +1112,7 @@ class Coasts {
 	}
 
 	static function IsMapLarge() {
-		return AIMap.GetMapSizeX() * AIMap.GetMapSizeY() >= 4096 * 4096; 
+		return false; //AIMap.GetMapSizeX() * AIMap.GetMapSizeY() >= 4096 * 4096; 
 	}
 	
 	static function IsConnectedOnSea( coastTileA, coastTileB) {

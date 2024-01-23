@@ -1557,7 +1557,7 @@ class Place {
 		local id = Id()+":"+cargo;
 		if(this instanceof TownCargo) {
 			local result;
-			if(!placeDictionary.nearWaters.rawin(id)) {
+			if(!placeDictionary.nearWaters.rawin(id) || placeDictionary.nearWaters[id]==true || placeDictionary.nearWaters[id]==false) {
 				result = CheckNearWater(cargo);
 				placeDictionary.nearWaters[id] <- [ (result==null?null:result.id), AITown.GetPopulation(town) ];
 				return result;
@@ -1575,7 +1575,7 @@ class Place {
 			}
 		} else {
 			local result;
-			if(!placeDictionary.nearWaters.rawin(id)) {
+			if(!placeDictionary.nearWaters.rawin(id) || placeDictionary.nearWaters[id]==true || placeDictionary.nearWaters[id]==false) {
 				result = CheckNearWater(cargo);
 				//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo)+" result:"+result);
 				placeDictionary.nearWaters[id] <- result == null ? null : result.id;
@@ -1620,6 +1620,21 @@ class Place {
 	}
 
 	function IsNearWater(cargo) {		
+		local placeDictionary = PlaceDictionary.Get();
+		local id = Id()+":"+cargo;
+		if(placeDictionary.nearWaters.rawin(id)) {
+			if(placeDictionary.nearWaters[id]==true || placeDictionary.nearWaters[id]==false) {
+				return placeDictionary.nearWaters[id];
+			} else {
+				return placeDictionary.nearWaters[id] != null;
+			}
+		}
+		local result = _IsNearWater(cargo);
+		placeDictionary.nearWaters.rawset(id,result);
+		return result;
+	}
+	
+	function _IsNearWater(cargo) {
 		if(IsBuiltOnWater()) {
 			return true;
 		}
@@ -1631,7 +1646,7 @@ class Place {
 				return true;
 			}
 		}
-		return null;
+		return false;
 	}
 
 	
