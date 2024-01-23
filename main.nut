@@ -1117,10 +1117,9 @@ class HogeAI extends AIController {
 			
 			if(placeList.Count() > 300) {
 				placeList.Sort(AIList.SORT_BY_VALUE, false);
-				PlaceProduction.Get().Check(); // Valuate内で走らないようにするため
-				placeList.Valuate(function(placeIndex):(places,cargo) {
-					return places[placeIndex].GetLastMonthProduction(cargo);
-				});
+				foreach(placeIndex,_ in placeList) {
+					placeList.SetValue(placeIndex, places[placeIndex].GetLastMonthProduction(cargo));
+				}
 				placeList.KeepTop(300);
 			}
 			/*
@@ -3082,7 +3081,7 @@ class HogeAI extends AIController {
 			return 2;
 		}
 		if(additionalHgStation.stationGroup == null) {
-			HgLog.Warning("TrainRoute: additionalHgStation was removed."+explain); // 稀に建設中に他ルートの削除と重なって駅が削除される事がある
+			HgLog.Warning("TrainRoute: additionalHgStation was removed."); // 稀に建設中に他ルートの削除と重なって駅が削除される事がある
 			return 1;
 		}
 		
