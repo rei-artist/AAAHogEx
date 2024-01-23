@@ -1395,7 +1395,9 @@ class HogeAI extends AIController {
 			}
 			dplaces.push(places[placeIndex]);
 		}*/
-		
+		if(!(cargo in cargoVtDistanceValues)) {
+			return [];
+		}
 		foreach( vtDistanceValue in cargoVtDistanceValues[cargo] ) {
 			local vt = vtDistanceValue[0];
 			local distanceIndex = vtDistanceValue[1];

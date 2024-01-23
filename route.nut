@@ -1166,6 +1166,9 @@ class CommonRoute extends Route {
 		
 		if(self.instances.len() >= 1) {
 			foreach(route in self.instances) {
+				if(route.depot == null) {
+					continue;
+				}
 				result = AIVehicle.GetBuildWithRefitCapacity(route.depot, engine, cargo);
 				/*
 				if(self.GetVehicleType() == AIVehicle.VT_ROAD && AIEngine.IsArticulated(engine)) {
