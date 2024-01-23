@@ -1111,6 +1111,10 @@ class Coasts {
 		}
 	}
 
+	static function IsMapLarge() {
+		return AIMap.GetMapSizeX() * AIMap.GetMapSizeY() >= 4096 * 4096; 
+	}
+	
 	static function IsConnectedOnSea( coastTileA, coastTileB) {
 		local coastsA = Coasts.GetCoasts(coastTileA);
 		local coastsB = Coasts.GetCoasts(coastTileB);
@@ -1118,6 +1122,9 @@ class Coasts {
 	}
 
 	static function GetCoasts(coastTile) {
+		if(Coasts.IsMapLarge()) {
+			return GlobalCoasts;
+		}
 		if(Coasts.tileCoastId.rawin(coastTile)) {
 			return Coasts.idCoasts[ Coasts.tileCoastId[ coastTile ] ];
 		}
@@ -1252,12 +1259,22 @@ class Coasts {
 	function SearchCoastType() {
 		local x = AIMap.GetTileX(nearLand);
 		local y = AIMap.GetTileY(nearLand);
+		local ex = AIMap.GetMapSizeX();
+		local ey = AIMap.GetMapSizeY();
+		local ends = [[1,y],[x,1],[ex,y],[x,ey]];
+		local endsList = AITileList();
+		foreach(p in ends) {
+			endsList.AddTile(AIMap.GetTileIndex (p[0], p[1]));
+		}
+		endsList.Sort(AIList.SORT_BY_VALUE, true);
+		endsList.Valuate(AIMap.DistanceManhattan, nearLand);
+		local end = endsList.Begin();
 
 		local boundCount = 0;
 		local myCoast = false;
 		local firstLink = null;
 		
-		local end = AIMap.GetTileIndex(1,y);
+		//local end = AIMap.GetTileIndex(1,y);
 		local tileList = AITileList();
 		tileList.AddRectangle(nearLand,end);
 		tileList.Valuate(function(t){
@@ -1269,7 +1286,7 @@ class Coasts {
 			}
 			return 3;
 		});
-		tileList.Sort(AIList.SORT_BY_ITEM, false);
+		tileList.Sort(AIList.SORT_BY_ITEM, nearLand < end ? true : false);
 		local tileList2 = AITileList();
 		tileList2.AddList(tileList);
 		tileList.Valuate(function(t):(tileList2){
@@ -1318,17 +1335,18 @@ class Coasts {
 		}*/
 		if(boundCount % 2 == 0) {
 			coastType = CT_SEA;
-			HgLog.Info("SearchCoastType "+HgTile(nearLand)+":SEA");
+//			HgLog.Info("SearchCoastType "+HgTile(nearLand)+":SEA");
 		} else {
 			coastType = CT_ISLAND;
 			if(firstLink != null) {
 				Coasts.GetCoasts(firstLink).AddIsland(this);
-				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":ISLAND parent");
+//				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":ISLAND parent");
 			} else {
 				GlobalCoasts.AddIsland(this);
-				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":GlobalCoasts");
+//				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":GlobalCoasts");
 			}
 		}
+		HgLog.Info("SearchCoastType "+HgTile(nearLand)+":"+this);
 	}
 	
 	function AddIsland(coasts) {
@@ -1344,7 +1362,7 @@ class Coasts {
 	
 	
 	function _tostring() {
-		return "Coasts:"+id+" type:"+coastType +"parent["+parentSea+"]";
+		return "Coasts:"+id+" type:"+coastType + (parentSea!=null? " parent["+parentSea+"]":"");
 	}
 }
 

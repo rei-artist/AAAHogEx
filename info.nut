@@ -3,7 +3,7 @@
    function GetAuthor()      { return "Rei Ishibashi"; }
    function GetName()        { return "AAAHogEx"; }
    function GetDescription() { return "AAAHogEx is a highly competitive AI. This AI designs transportation routes based on the supply and demand of the map. Therefore, it works well in NewGRF such as FIRS, ECS, and YETI where complex industrial chains are required."; }
-   function GetVersion()     { return 56; }
+   function GetVersion()     { return 57; }
    function MinVersionToLoad() { return 52; }
    function GetDate()        { return "2024-01-23"; }
    function CreateInstance() { return "HogeAI"; }

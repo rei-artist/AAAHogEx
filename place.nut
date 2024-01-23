@@ -1551,6 +1551,7 @@ class Place {
 		return false;
 	}
 	
+	
 	function GetCoasts(cargo) {
 		local placeDictionary = PlaceDictionary.Get();
 		local id = Id()+":"+cargo;
@@ -1590,18 +1591,16 @@ class Place {
 		//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo));
 		if(IsBuiltOnWater()) {
 			local cur = GetLocation(); // 陸地に接しているIsBuiltOnWaterがある(firs)
-			while(true) {
-				cur = Coasts.FindCoast(cur);
-				if(cur != null) {
-					local coasts = Coasts.GetCoasts(cur);
-					if(coasts.coastType == Coasts.CT_POND) {
-						return null;
-					} else if(coasts.coastType == Coasts.CT_SEA) {
-						return coasts;
-					}
-				} else {
-					return GlobalCoasts;
+			cur = Coasts.FindCoast(cur);
+			if(cur != null) {
+				local coasts = Coasts.GetCoasts(cur);
+				if(coasts.coastType == Coasts.CT_POND) {
+					return null;
+				} else if(coasts.coastType == Coasts.CT_SEA) {
+					return coasts;
 				}
+			} else {
+				return GlobalCoasts;
 			}
 		}
 
@@ -1619,6 +1618,22 @@ class Place {
 		}
 		return null;
 	}
+
+	function IsNearWater(cargo) {		
+		if(IsBuiltOnWater()) {
+			return true;
+		}
+		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
+		local tile;
+		local gen = GetTiles(dockRadius,cargo)
+		while((tile = resume gen) != null) {
+			if(AITile.IsCoastTile(tile)) {
+				return true;
+			}
+		}
+		return null;
+	}
+
 	
 	function IsNearLand(cargo) {
 		local key = Id()+"-"+cargo;

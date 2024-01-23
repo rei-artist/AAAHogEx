@@ -1237,7 +1237,8 @@ class HogeAI extends AIController {
 							});
 						} else if(vehicleType == AIVehicle.VT_WATER) {
 							foreach(r in cargoResult) {
-								r.scoreWater <- (r.place.GetCoasts(cargo) != null ? 1 : 0) * 10000 + max(9999,r.production);				
+//								r.scoreWater <- (r.place.GetCoasts(cargo) != null ? 1 : 0) * 10000 + max(9999,r.production);	
+								r.scoreWater <- (r.place.IsNearWater(cargo) ? 1 : 0) * 10000 + max(9999,r.production);				
 							}
 							cargoResult.sort(function(a,b){
 								return -(a.scoreWater - b.scoreWater);
