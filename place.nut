@@ -1643,6 +1643,7 @@ class Place {
 		local gen = GetTiles(dockRadius,cargo)
 		while((tile = resume gen) != null) {
 			if(AITile.IsCoastTile(tile)) {
+				HogeAI.Get().pendingCoastTiles.push(tile);
 				return true;
 			}
 		}
@@ -2240,27 +2241,19 @@ class TownCargo extends Place {
 		if(HogeAI.Get().IsDistantJoinStations()) {
 			return min( production , cargo == HogeAI.Get().GetPassengerCargo()
 				? GetExpectedUsingDistantJoinStations() : GetExpectedUsingDistantJoinStations() * 2 / 5 );
-		} else if(TownBus.CanUse(cargo) && RoadRoute.GetVehicleNumRoom(RoadRoute) > 50) {
+		} else if(TownBus.CanUse(cargo) && TownBus.IsReadyEconomy() && RoadRoute.GetVehicleNumRoom(RoadRoute) > 50) {
 			if(vehicleType == AIVehicle.VT_ROAD) {
 				return min( production , cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80 );
 			} else {
 				return min( production , cargo == HogeAI.Get().GetPassengerCargo() ? 550 : 220);
 			}
-		}
-		
-		local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80;
-		production = min(minValue, production);
-
-
-		switch(vehicleType) {
-			case AIVehicle.VT_RAIL:
-				return production;
-			case AIVehicle.VT_ROAD:
-				return production / 2;
-			case AIVehicle.VT_AIR:
-				return production;
-			case AIVehicle.VT_WATER:
-				return production;
+		} else {
+			local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80;
+			if(vehicleType == AIVehicle.VT_ROAD || vehicleType == AIVehicle.VT_WATER) {
+				minValue /= 2;
+				production /= 2;
+			}			
+			return min(minValue, production);
 		}
 		HgLog.Error("unknown vt:"+vehicleType);
 	}

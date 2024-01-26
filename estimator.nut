@@ -173,7 +173,7 @@ CommonEstimation <- delegate Estimation : {
 			if(vehicleType == AIVehicle.VT_AIR) {
 				incomePerOneTime += cargoIncome * capacity; // dest側も満タン待機
 			} else {
-				incomePerOneTime += cargoIncome * min(capacity, intervalStock);
+				incomePerOneTime += cargoIncome * min(capacity, intervalStock * 2 / 3);
 			}
 		}
 		cargoIncomes = {};
@@ -737,9 +737,9 @@ class CommonEstimator extends Estimator {
 		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
 		//		return distance * 2 + 1800; //TODO: 海率によって異なる
 				if(distance == WaterRoute.IF_CANAL) {
-					return 250 + distance * 2;
+					return (250 + pow(distance,1.5) / 5).tointeger();// distance * 2;
 				} else {
-					return 125 + distance * 2;
+					return (125 + pow(distance,1.5) / 5).tointeger();// distance * 2;
 				}
 
 				local x = distance / 10;

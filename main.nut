@@ -83,6 +83,7 @@ class HogeAI extends AIController {
 	waitForPriceStartDate = null;
 	maxRoi = null;
 	cargoVtDistanceValues = null;
+	pendingCoastTiles = null;
 	
 	yeti = null;
 	ecs = null;
@@ -235,7 +236,8 @@ class HogeAI extends AIController {
 		pathfindings = {};
 		canUsePlaceOnWater = false;
 		maxRoi = 0;
-		cargoVtDistanceValues = {}
+		cargoVtDistanceValues = {};
+		pendingCoastTiles = [];
 
 		DelayCommandExecuter();
 	}
@@ -580,7 +582,7 @@ class HogeAI extends AIController {
 			}
 		}
 		if(!HogeAI.Get().IsDebug()) {
-			WaitDays(AIBase.RandRange(hogex*7));
+			WaitDays(AIBase.RandRange((hogex-1)*7),true);
 		}
 
 		if(numCompany > AIIndustryList().Count()) {
@@ -1139,7 +1141,7 @@ class HogeAI extends AIController {
 				continue;
 			}
 
-			local production = roiBase ? 210 : 890;
+			local stdProduction = roiBase ? 210 : 890;
 			foreach(routeClass in [TrainRoute, RoadRoute, WaterRoute, AirRoute]) {
 				//HgLog.Info("step1 "+routeClass.GetLabel());
 				if(routeClass.IsTooManyVehiclesForNewRoute(routeClass)) {
@@ -1173,6 +1175,7 @@ class HogeAI extends AIController {
 					return place.GetFutureExpectedProduction(cargo,vehicleType);
 				});
 				vtPlaceList.RemoveValue(0);*/
+				stdProduction = 0;
 				foreach(placeIndex,_ in vtPlaceList) {
 					local place = places[placeIndex];
 /*					if(!place.CanUseNewRoute(cargo, vehicleType)) {
@@ -1199,6 +1202,7 @@ class HogeAI extends AIController {
 						place = place
 						production = production
 					});
+					stdProduction = max(stdProduction,production);
 				}
 				if(cargoResult.len() == 0) {
 					continue;
@@ -1211,7 +1215,7 @@ class HogeAI extends AIController {
 					if(vehicleType != AIVehicle.VT_AIR && distance > 550) {
 						continue;
 					}
-					local estimate = Route.Estimate(routeClass.GetVehicleType(), cargo, distance, production, CargoUtils.IsPaxOrMail(cargo) ? true: false, infrastractureTypes);
+					local estimate = Route.Estimate(routeClass.GetVehicleType(), cargo, distance, stdProduction, CargoUtils.IsPaxOrMail(cargo) ? true: false, infrastractureTypes);
 					if(estimate == null || estimate.value <= 0) {
 						continue;
 					}
@@ -1220,7 +1224,7 @@ class HogeAI extends AIController {
 					maxRoi = max(estimate.roi,maxRoi);
 					HgLog.Info("Estimate d:"+distance+" roi:"+estimate.roi+" income:"+estimate.routeIncome+" ("+estimate.incomePerOneTime+") "
 						+ AIEngine.GetName(estimate.engine)+(estimate.rawin("numLoco")?"x"+estimate.numLoco:"") +"("+estimate.vehiclesPerRoute+") "
-						+ "runningCost:"+AIEngine.GetRunningCost(estimate.engine)+" capacity:"+estimate.capacity);
+						+ "runningCost:"+AIEngine.GetRunningCost(estimate.engine)+" capacity:"+estimate.capacity+" prod:"+stdProduction);
 					maxValue = max(maxValue, estimate.value);
 				}
 				
@@ -4120,7 +4124,7 @@ class HogeAI extends AIController {
 				}
 				CommonRoute.CheckReduce(RoadRoute,emergency);
 				CommonRoute.CheckReduce(AirRoute,emergency);
-				AIController.Sleep(100);
+				self.DoPendings(10);
 			}
 			local minimamLoan = min(AICompany.GetMaxLoanAmount(), 
 					AICompany.GetLoanAmount() + needMoney - AICompany.GetBankBalance(AICompany.COMPANY_SELF) + buffer * 2);
@@ -4131,14 +4135,35 @@ class HogeAI extends AIController {
 		return true;
 	}
 	
-	function WaitDays(days) {
+	function WaitDays(days, strict = false) {
 		days /= GetDayLengthFactor();
 		days = max(days,1);
 		HgLog.Info("WaitDays:"+days);
 		local d = AIDate.GetCurrentDate() + days;
 		while(AIDate.GetCurrentDate() < d) {
-			AIController.Sleep(1);		
+			if(strict) {
+				AIController.Sleep(1);
+			} else {
+				DoPendings();
+			}
 			DoInterval();
+		}
+	}
+	
+	function DoPendings(sleepTime = 1) {
+		if(pendingCoastTiles.len() >= 1) {
+			local coastTile = pendingCoastTiles.pop();
+			Coasts.GetCoasts(coastTile);
+		} else {
+			local w = AIMap.GetMapSize();
+			for(local i=0; i<100000; i++) {
+				local tile = AIBase.RandRange(w);
+				if(AITile.IsCoastTile(tile) && !Coasts.tileCoastId.rawin(tile)) {
+					Coasts.GetCoasts(tile);
+					return;
+				}
+			}
+			AIController.Sleep(sleepTime);
 		}
 	}
 	

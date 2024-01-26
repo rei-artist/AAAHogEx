@@ -876,6 +876,10 @@ class TownBus {
 	}
 	
 	
+	static function IsReadyEconomy() {
+		return HogeAI.Get().IsRich() || (HogeAI.Get().GetUsableMoney() >= HogeAI.Get().GetInflatedMoney(200000) && HogeAI.Get().HasIncome(50000));
+	}
+	
 	static function CheckTown(authorityTown, ignoreTileList=null, cargo = null, forTransfer = false) {
 		//HgLog.Info("CheckTown:"+AITown.GetName(authorityTown));
 		if(cargo == null || !AICargo.HasCargoClass(cargo, AICargo.CC_MAIL)) {
@@ -895,7 +899,7 @@ class TownBus {
 					return null;
 				}
 			}
-		} else if( !HogeAI.Get().IsRich() && (HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(200000) || !HogeAI.Get().HasIncome(50000)) ) {
+		} else if( !TownBus.IsReadyEconomy() ) {
 			return null;
 		}
 		if(!TownBus.CanUse(cargo)) { // バスの無い世界線

@@ -1111,10 +1111,6 @@ class Coasts {
 		}
 	}
 
-	static function IsMapLarge() {
-		return false; //AIMap.GetMapSizeX() * AIMap.GetMapSizeY() >= 4096 * 4096; 
-	}
-	
 	static function IsConnectedOnSea( coastTileA, coastTileB) {
 		local coastsA = Coasts.GetCoasts(coastTileA);
 		local coastsB = Coasts.GetCoasts(coastTileB);
@@ -1122,9 +1118,6 @@ class Coasts {
 	}
 
 	static function GetCoasts(coastTile) {
-		if(Coasts.IsMapLarge()) {
-			return GlobalCoasts;
-		}
 		if(Coasts.tileCoastId.rawin(coastTile)) {
 			return Coasts.idCoasts[ Coasts.tileCoastId[ coastTile ] ];
 		}
@@ -1164,6 +1157,7 @@ class Coasts {
 	childrenIslands = null;
 	
 	saveData = null;
+	
 
 	constructor(coastType = null, id = null) {
 		if(id == null) {
@@ -1221,11 +1215,13 @@ class Coasts {
 	function SearchCoastTiles(coastTile) {
 		local tiles = [coastTile];
 		local count = 0;
+		local w = AIMap.GetMapSizeX();
+		local h = AIMap.GetMapSizeY();
 		while(tiles.len() >= 1) {
 			local tile = tiles.pop();
 			Coasts.tileCoastId.rawset(tile,id);
 			count ++;
-			/*{
+/*			{
 				local execMode = AIExecMode();
 				AISign.BuildSign (tile, id.tostring());
 			}*/
@@ -1259,43 +1255,47 @@ class Coasts {
 	function SearchCoastType() {
 		local x = AIMap.GetTileX(nearLand);
 		local y = AIMap.GetTileY(nearLand);
-		local ex = AIMap.GetMapSizeX();
-		local ey = AIMap.GetMapSizeY();
+		
+		local ex = AIMap.GetMapSizeX()-2;
+		local ey = AIMap.GetMapSizeY()-2;
 		local ends = [[1,y],[x,1],[ex,y],[x,ey]];
 		local endsList = AITileList();
 		foreach(p in ends) {
 			endsList.AddTile(AIMap.GetTileIndex (p[0], p[1]));
 		}
 		endsList.Sort(AIList.SORT_BY_VALUE, true);
-		endsList.Valuate(AIMap.DistanceManhattan, nearLand);
+		endsList.Valuate(AIMap.DistanceManhattan, nearLand)
 		local end = endsList.Begin();
 
 		local boundCount = 0;
 		local myCoast = false;
 		local firstLink = null;
 		
-		//local end = AIMap.GetTileIndex(1,y);
+//		local end = AIMap.GetTileIndex(1,y);
 		local tileList = AITileList();
 		tileList.AddRectangle(nearLand,end);
 		tileList.Valuate(function(t){
-			if(AITile.IsSeaTile(t)) { //TODO: ブイ等で誤動作する
-				return 1;
-			}
 			if(Coasts.IsCoastTile(t)) {
 				return 2;
+			}
+			if(AITile.IsSeaTile(t)) { //TODO: ブイ等で誤動作する
+				return 1;
 			}
 			return 3;
 		});
 		tileList.Sort(AIList.SORT_BY_ITEM, nearLand < end ? true : false);
 		local tileList2 = AITileList();
 		tileList2.AddList(tileList);
-		tileList.Valuate(function(t):(tileList2){
-			return tileList2.GetValue(t-1) == tileList2.GetValue(t) ? 0 : tileList2.GetValue(t);
+		local distance = AIMap.DistanceManhattan(nearLand,end);
+		local nextIdx = distance >= 1 ? (end - nearLand) / distance : 0;
+		//HgLog.Info("nextIdx:"+nextIdx+" end:"+HgTile(end)+" nl:"+HgTile(nearLand));
+		tileList.Valuate(function(t):(tileList2,nextIdx){
+			return tileList2.GetValue(t + nextIdx) == tileList2.GetValue(t) ? 0 : tileList2.GetValue(t);
 		});
 		tileList.RemoveValue(0);
 		local prevType = 3; // landから始まる
 		foreach(tile,tileType in tileList) {
-			//HgLog.Info("tile:"+HgTile(tile)+" tileType:"+tileType);
+			//HgLog.Info("tile:"+HgTile(tile)+" tileType:"+tileType+" bc:"+boundCount);
 			if(tileCoastId.rawin(tile) && tileCoastId[tile] == id) {
 				myCoast = true;
 			} else {
@@ -1311,6 +1311,7 @@ class Coasts {
 				prevType = tileType;
 			}
 		}
+		if(myCoast) boundCount ++;
 		
 		/*
 		local cur = nearLand;
@@ -1339,14 +1340,19 @@ class Coasts {
 		} else {
 			coastType = CT_ISLAND;
 			if(firstLink != null) {
-				Coasts.GetCoasts(firstLink).AddIsland(this);
-//				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":ISLAND parent");
+				local par = Coasts.GetCoasts(firstLink);
+				par.AddIsland(this);
+				//HgLog.Info("SearchCoastType "+HgTile(nearLand)+":ISLAND parent:"+par);
 			} else {
 				GlobalCoasts.AddIsland(this);
-//				HgLog.Info("SearchCoastType "+HgTile(nearLand)+":GlobalCoasts");
+				//HgLog.Info("SearchCoastType "+HgTile(nearLand)+":GlobalCoasts");
 			}
 		}
-		HgLog.Info("SearchCoastType "+HgTile(nearLand)+":"+this);
+/*		{
+			local execMode = AIExecMode();
+			AISign.BuildSign (nearLand, "type:"+coastType+(parentSea!=null? " par["+parentSea.id+"]":"")+" fl:"+(firstLink==null?"null":HgTile(firstLink).tostring()));
+		}*/
+		HgLog.Info("SearchCoastType "+HgTile(nearLand)+","+HgTile(end)+" bc:"+boundCount+",fl:"+(firstLink==null?"null":HgTile(firstLink).tostring())+","+this);
 	}
 	
 	function AddIsland(coasts) {

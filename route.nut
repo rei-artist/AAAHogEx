@@ -1217,7 +1217,7 @@ class CommonRoute extends Route {
 		
 		local start = AIDate.GetCurrentDate();
 		vehicleList.Valuate(AIVehicle.GetLocation);
-		HogeAI.Get().WaitDays(3);
+		HogeAI.Get().WaitDays(3,true);
 		vehicleList.Valuate(function(v) : (vehicleList,start) {
 			if(AIVehicle.GetState(v) != AIVehicle.VS_RUNNING) {
 				return -1;
