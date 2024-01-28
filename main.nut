@@ -1175,7 +1175,7 @@ class HogeAI extends AIController {
 					return place.GetFutureExpectedProduction(cargo,vehicleType);
 				});
 				vtPlaceList.RemoveValue(0);*/
-				stdProduction = 0;
+				if(roiBase) stdProduction = 0;
 				foreach(placeIndex,_ in vtPlaceList) {
 					local place = places[placeIndex];
 /*					if(!place.CanUseNewRoute(cargo, vehicleType)) {
@@ -1202,7 +1202,7 @@ class HogeAI extends AIController {
 						place = place
 						production = production
 					});
-					stdProduction = max(stdProduction,production);
+					if(roiBase) stdProduction = max(stdProduction,production);
 				}
 				if(cargoResult.len() == 0) {
 					continue;
