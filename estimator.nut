@@ -173,7 +173,7 @@ CommonEstimation <- delegate Estimation : {
 			if(vehicleType == AIVehicle.VT_AIR) {
 				incomePerOneTime += cargoIncome * capacity; // dest側も満タン待機
 			} else {
-				incomePerOneTime += cargoIncome * min(capacity, intervalStock * 2 / 3);
+				incomePerOneTime += cargoIncome * min(capacity, intervalStock);
 			}
 		}
 		cargoIncomes = {};

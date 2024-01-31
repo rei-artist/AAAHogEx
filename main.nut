@@ -724,6 +724,7 @@ class HogeAI extends AIController {
 		bests.Extend( GetMeetPlaceCandidates() );
 		
 		//bests = bests.slice(0, min(bests.len(), 50));
+		local minValue = 0;
 		foreach(e in bests.GetAll()) {
 			local s = "ScanPlaces.score "+e.estimate+" "+e.routeClass.GetLabel()
 				+" "+e.dest.GetName() + "<-" + e.src.GetName()+" distance:"+e.distance;
@@ -732,6 +733,7 @@ class HogeAI extends AIController {
 			if(e.vehicleType == AIVehicle.VT_AIR) {
 				s += " infraType:"+e.estimate.infrastractureType;
 			}
+			minValue = e.estimate.value;
 			HgLog.Info(s);
 		}
 		local searchDays = AIDate.GetCurrentDate() - startDate;
@@ -839,6 +841,10 @@ class HogeAI extends AIController {
 			if(t.estimate.value < 0) {
 				HgLog.Info("t.estimate.value < 0 ("+t.estimate.value+") "+explain);
 				continue;
+			}
+			if(t.estimate.value < minValue) {
+				HgLog.Info("t.estimate.value("+t.estimate.value+") < minValue("+minValue+") "+explain);
+				return;
 			}
 			HgLog.Info("Try "+routeBuilder+" production:"+t.production+" distance:"+t.distance+" value:"+t.estimate.value);
 			local newRoute = routeBuilder.Build();
@@ -1648,7 +1654,7 @@ class HogeAI extends AIController {
 		if(originalRoute == null) {
 			HgLog.Info("# start GetTransferCandidates ALL");
 		}
-		
+		local startDate = AIDate.GetCurrentDate();
 		local notTreatDest = options.rawin("notTreatDest") ? options.notTreatDest : false;
 		local destOnly = options.rawin("destOnly") ? options.destOnly : false;
 		local isDest = options.rawin("isDest") ? options.isDest : null;
@@ -1669,9 +1675,14 @@ class HogeAI extends AIController {
 			routes = [originalRoute];
 		} else {
 			routes = Route.GetAllRoutes();
+			routes = ArrayUtils.Shuffle(routes);
 		}
 		local result = [];
 		foreach(route in routes) {
+			if(startDate + 365 < AIDate.GetCurrentDate()) {
+				HgLog.Warning("GetTransferCandidates reached limit time(365 days).");
+				break;
+			}
 			local routeResult = [];
 			if(route.IsClosed()) {
 				continue;

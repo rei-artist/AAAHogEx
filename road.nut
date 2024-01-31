@@ -165,23 +165,23 @@ class RoadRoute extends CommonRoute {
 	
 	function Load(t) {
 		CommonRoute.Load(t);
-		depots = savedData.depots;
-		roadType = savedData.roadType;
-		usedTiles = savedData.usedTiles;
-		myTileNum = savedData.myTileNum ;
-		lastRebuildDate = savedData.lastRebuildDate;
-		usedTiles = savedData.usedTiles ;
+		depots = saveData.depots;
+		roadType = saveData.roadType;
+		usedTiles = saveData.usedTiles;
+		myTileNum = saveData.myTileNum ;
+		lastRebuildDate = saveData.lastRebuildDate;
+		usedTiles = saveData.usedTiles ;
 	}
 	
 	function UpdateSavedData() {
 		CommonRoute.UpdateSavedData();
 
-		savedData.depots <- depots;
-		savedData.roadType <- roadType;
-		savedData.usedTiles <- usedTiles;
-		savedData.myTileNum <- myTileNum;
-		savedData.lastRebuildDate <- lastRebuildDate;
-		savedData.usedTiles <- usedTiles;
+		saveData.depots <- depots;
+		saveData.roadType <- roadType;
+		saveData.usedTiles <- usedTiles;
+		saveData.myTileNum <- myTileNum;
+		saveData.lastRebuildDate <- lastRebuildDate;
+		saveData.usedTiles <- usedTiles;
 	}
 	
 	function Initialize() {

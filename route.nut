@@ -1021,7 +1021,7 @@ class Route {
 			}
 			if(!IsClosed() && !acceptedCargo) {
 				HgLog.Warning("Route Close (dest can not accept)"+this);
-				savedData.lastDestClosedDate = lastDestClosedDate = AIDate.GetCurrentDate();
+				saveData.lastDestClosedDate = lastDestClosedDate = AIDate.GetCurrentDate();
 				local destPlace = destHgStation.place.GetProducing();
 				if(destPlace instanceof HgIndustry && !destPlace.IsClosed()) {
 					Close();
@@ -1379,7 +1379,7 @@ class CommonRoute extends Route {
 				this.AppendRemoveOrder(v);
 				this.maxVehicles = min(vehicleList.Count(), this.maxVehicles);
 				this.maxVehicles = max(0, this.maxVehicles - 1);
-				savedData.maxVehicles = this.maxVehicles;
+				saveData.maxVehicles = this.maxVehicles;
 			}
 		}
 	}
@@ -1420,7 +1420,7 @@ class CommonRoute extends Route {
 	stopppedVehicles = null;
 	profits = null;
 	
-	savedData = null;
+	saveData = null;
 	
 	constructor() {
 		Route.constructor();
@@ -1433,7 +1433,7 @@ class CommonRoute extends Route {
 		profits = [];
 		isTransfer = false;
 		isBiDirectional = false;
-		savedData = {};
+		saveData = {};
 	}
 	
 	function Initialize() {
@@ -1452,27 +1452,27 @@ class CommonRoute extends Route {
 	
 	function Save() {
 		return {
-			savedData = savedData
+			savedData = saveData
 		};
 	}
 	
 	function Load(t) {
-		savedData = t.savedData;
+		saveData = t.savedData;
 	
-		cargo = savedData.cargo;
-		srcHgStation = HgStation.worldInstances[savedData.srcHgStation];
-		destHgStation = HgStation.worldInstances[savedData.destHgStation];
+		cargo = saveData.cargo;
+		srcHgStation = HgStation.worldInstances[saveData.srcHgStation];
+		destHgStation = HgStation.worldInstances[saveData.destHgStation];
 
-		isTransfer = savedData.isTransfer;
-		isBiDirectional = savedData.isBiDirectional;
-		vehicleGroup = savedData.vehicleGroup;
-		depot = savedData.depot;
-		destDepot = savedData.destDepot;
-		useDepotOrder = savedData.useDepotOrder;
-		isDestFullLoadOrder = savedData.isDestFullLoadOrder;
+		isTransfer = saveData.isTransfer;
+		isBiDirectional = saveData.isBiDirectional;
+		vehicleGroup = saveData.vehicleGroup;
+		depot = saveData.depot;
+		destDepot = saveData.destDepot;
+		useDepotOrder = saveData.useDepotOrder;
+		isDestFullLoadOrder = saveData.isDestFullLoadOrder;
 		
-		if(savedData.rawin("isClosed")) {
-			t = savedData;
+		if(saveData.rawin("isClosed")) {
+			t = saveData;
 		}
 		isClosed = t.isClosed;
 		isRemoved = t.isRemoved;
@@ -1481,19 +1481,19 @@ class CommonRoute extends Route {
 		cannotChangeDest = t.cannotChangeDest;
 		latestEngineSet = t.latestEngineSet != null ? delegate CommonEstimation : t.latestEngineSet : null;
 		maxVehicles = t.maxVehicles;
-		if(!savedData.rawin("isClosed")) {
-			savedData.isClosed <- isClosed
-			savedData.isRemoved <- isRemoved
-			savedData.isWaitingProduction <- isWaitingProduction
-			savedData.lastDestClosedDate <- lastDestClosedDate
-			savedData.cannotChangeDest <- cannotChangeDest
-			savedData.latestEngineSet <- latestEngineSet
-			savedData.maxVehicles <- maxVehicles		
+		if(!saveData.rawin("isClosed")) {
+			saveData.isClosed <- isClosed
+			saveData.isRemoved <- isRemoved
+			saveData.isWaitingProduction <- isWaitingProduction
+			saveData.lastDestClosedDate <- lastDestClosedDate
+			saveData.cannotChangeDest <- cannotChangeDest
+			saveData.latestEngineSet <- latestEngineSet
+			saveData.maxVehicles <- maxVehicles		
 		}
 	}
 	
 	function UpdateSavedData() {
-		savedData = {
+		saveData = {
 			cargo = cargo
 			srcHgStation = srcHgStation.id
 			destHgStation = destHgStation.id
@@ -1516,7 +1516,7 @@ class CommonRoute extends Route {
 	}
 
 	function SetCannotChangeDest(cannotChangeDest) {
-		savedData.cannotChangeDest = this.cannotChangeDest = cannotChangeDest;
+		saveData.cannotChangeDest = this.cannotChangeDest = cannotChangeDest;
 	}
 
 	function SetPath(path) {
@@ -1641,7 +1641,7 @@ class CommonRoute extends Route {
 		StartVehicle(vehicle);
 		
 		if(GetVehicleType() != AIVehicle.VT_ROAD || maxVehicles==1/*ルート作成直後(とは限らないが…)*/) { // ROADのmaxVehiclesは渋滞に関する情報の為リセットしない
-			savedData.maxVehicles = maxVehicles = GetMaxVehicles();
+			saveData.maxVehicles = maxVehicles = GetMaxVehicles();
 		}
 		//HgLog.Info("maxVehicles:"+maxVehicles+" "+this);
 		
@@ -1835,7 +1835,7 @@ class CommonRoute extends Route {
 				HgLog.Warning("Not found suitable engine. production:"+production+" "+this);
 				return null;
 			}
-			savedData.latestEngineSet = latestEngineSet = clone engineSet;
+			saveData.latestEngineSet = latestEngineSet = clone engineSet;
 			latestEngineSet.date <- AIDate.GetCurrentDate();
 			latestEngineSet.isValid <- true;
 			latestEngineSet.productionIndex <- HogeAI.Get().GetEstimateProductionIndex(production);
@@ -1853,7 +1853,7 @@ class CommonRoute extends Route {
 	}
 	
 	function SetLatestEngineSet(engineSet) {
-		savedData.latestEngineSet = latestEngineSet = clone engineSet;
+		saveData.latestEngineSet = latestEngineSet = clone engineSet;
 		latestEngineSet.date <- AIDate.GetCurrentDate();
 		latestEngineSet.isValid <- true;
 	}
@@ -1962,7 +1962,7 @@ class CommonRoute extends Route {
 			maxVehicles = max(!GetDestRoute() || (IsDestOverflow() && NeedsAdditionalProducing()) ? 0 : 5, maxVehicles);
 		}
 		maxVehicles = min(maxVehicles, GetMaxVehicles());
-		savedData.maxVehicles = maxVehicles;
+		saveData.maxVehicles = maxVehicles;
 		//HgLog.Info("maxVehicles:"+maxVehicles+" "+this);
 		if(maxVehicles == 0 && !IsTransfer()) {
 			HgLog.Warning("Route Remove (maxVehicles reach zero)"+this);
@@ -2026,7 +2026,7 @@ class CommonRoute extends Route {
 					if(vehicleType == AIVehicle.VT_ROAD) { //多すぎて赤字の場合は減らしてもNeedsAdditionalProducing==falseのはず。渋滞がひどくて赤字のケースがあるのでROADだけケア
 						maxVehicles = min(vehicleList.Count(), maxVehicles);  // TODO: リセッションで一時的に利益がでていないケースがありうる。継続的に利益が出ていない路線をどうするか
 						maxVehicles = max(0, maxVehicles - 1);
-						savedData.maxVehicles = maxVehicles;
+						saveData.maxVehicles = maxVehicles;
 						HgLog.Info("maxVehicles:"+maxVehicles+" notProfitable:"+notProfitable+" "+this);
 					}
 					//HgLog.Info("SendVehicleToDepot(road) "+AIVehicle.GetName(vehicle)+" "+this);
@@ -2056,7 +2056,7 @@ class CommonRoute extends Route {
 					AIVehicle.StartStopVehicle(v);
 					maxVehicles = min(vehicleList.Count(), maxVehicles);
 					maxVehicles = max(0, maxVehicles - 1);
-					savedData.maxVehicles = maxVehicles;
+					saveData.maxVehicles = maxVehicles;
 					break;
 				}
 			}
@@ -2094,7 +2094,7 @@ class CommonRoute extends Route {
 				}
 				maxVehicles = min(currentVehicles, maxVehicles);
 				maxVehicles = max(0, maxVehicles - vehicleList.Count());
-				savedData.maxVehicles = maxVehicles;
+				saveData.maxVehicles = maxVehicles;
 				HgLog.Info("maxVehicles:"+maxVehicles+" stopped:"+vehicleList.Count()+" "+this);
 			}
 		}
@@ -2117,7 +2117,7 @@ class CommonRoute extends Route {
 			if(GetProduction() == 0) {
 				return;
 			}
-			savedData.isWaitingProduction = isWaitingProduction = false;
+			saveData.isWaitingProduction = isWaitingProduction = false;
 		}
 
 		//local c0 = PerformanceCounter.Start("c00");
@@ -2259,7 +2259,7 @@ class CommonRoute extends Route {
 				if(HogeAI.Get().buildingTimeBase && (!tooMany || AIBase.RandRange(100) < vehicleList.Count())) {
 					local old = maxVehicles;
 					maxVehicles = max(0,min(maxVehicles, vehicleList.Count()-reduce));
-					savedData.maxVehicles = maxVehicles;
+					saveData.maxVehicles = maxVehicles;
 					if(old != maxVehicles) {
 						HgLog.Info("maxVehicles:"+maxVehicles+"(isDestOverflow) "+this);
 					}
@@ -2298,7 +2298,7 @@ class CommonRoute extends Route {
 				local finallyMax = GetMaxVehicles();
 				maxVehicles += max(1,finallyMax / 12);
 				maxVehicles = min(finallyMax, maxVehicles);
-				savedData.maxVehicles = maxVehicles;
+				saveData.maxVehicles = maxVehicles;
 				//HgLog.Info("maxVehicles:"+maxVehicles+" "+this);
 			}
 			//c22.Stop();
@@ -2525,8 +2525,8 @@ class CommonRoute extends Route {
 			HgLog.Warning("Cannot Remove Route (IsBuilding == true) "+this);
 			return;
 		}
-		savedData.isClosed = isClosed = true;
-		savedData.isRemoved = isRemoved = true;
+		saveData.isClosed = isClosed = true;
+		saveData.isRemoved = isRemoved = true;
 		SendAllVehiclesToDepot();
 	}
 	
@@ -2546,17 +2546,17 @@ class CommonRoute extends Route {
 	}
 	
 	function Close() {
-		savedData.isClosed = isClosed = true;
+		saveData.isClosed = isClosed = true;
 //		if(!HogeAI.Get().ecs) {
 			SendAllVehiclesToDepot();
 //		}
 	}
 	
 	function ReOpen() {
-		savedData.isRemoved = isRemoved = false;
-		savedData.isClosed = isClosed = false;
+		saveData.isRemoved = isRemoved = false;
+		saveData.isClosed = isClosed = false;
 		this.maxVehicles = GetMaxVehicles(); // これで良いのだろうか？
-		savedData.maxVehicles = maxVehicles;
+		saveData.maxVehicles = maxVehicles;
 		//HgLog.Info("maxVehicles:"+maxVehicles+" "+this);
 		PlaceDictionary.Get().AddRoute(this);
 		HgLog.Warning("Route ReOpen."+this);

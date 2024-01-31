@@ -1222,7 +1222,7 @@ class Place {
 	}
 	
 	function _GetExpectedProduction(cargo, vehicleType, isMine = false) {
-		return AdjustUsing( GetExpectedProductionAll(cargo, vehicleType), cargo, isMine );
+		return GetExpectedProductionAll(cargo, vehicleType, isMine);
 	}
 	
 	function GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
@@ -1389,7 +1389,11 @@ class Place {
 		}
 	}
 	
-	function GetExpectedProductionAll(cargo, vehicleType) {
+	function GetExpectedProductionAll(cargo, vehicleType, isMine = false) {
+		return AdjustUsing(_GetExpectedProductionAll(cargo, vehicleType), cargo, isMine);
+	}
+	
+	function _GetExpectedProductionAll(cargo, vehicleType) {
 		local production = GetLastMonthProduction(cargo);
 		local placeProduction = PlaceProduction.Get();
 		if(HogeAI.Get().firs && !HogeAI.Get().roiBase) {
@@ -2119,7 +2123,7 @@ class TownCargo extends Place {
 	}
 	
 	function GetRadius() {
-		return max(3,(pow(AITown.GetPopulation(town), 0.4) * 0.5).tointeger());
+		return max(3,(pow(AITown.GetPopulation(town), 0.4) * 0.3).tointeger());
 //		return (sqrt(AITown.GetPopulation(town))/5).tointeger() + 2;
 	}
 	
@@ -2218,7 +2222,7 @@ class TownCargo extends Place {
 	}
 
 	function _GetCurrentExpectedProduction(cargo, vehicleType, isMine = false) {
-		return GetExpectedProductionAll(cargo, vehicleType, true, isMine );
+		return GetExpectedProductionAll(cargo, vehicleType, isMine );
 	}
 	
 	function GetCurrentProduction(cargo, isMine) {
@@ -2230,14 +2234,14 @@ class TownCargo extends Place {
 		return 200 + d * d * 2;
 	}
 
-	function GetExpectedProductionAll(cargo, vehicleType, isCurrent = false, isMine = false) {
+	function GetExpectedProductionAll(cargo, vehicleType, isMine = false) {
 		local production;
 		/*if(isCurrent) {
 			production = GetCurrentProduction(cargo, isMine);
 		} else {
 			production = GetLastMonthProduction(cargo);
 		}*/
-		production = GetLastMonthProduction(cargo);
+		production = AdjustUsing( GetLastMonthProduction(cargo), cargo, isMine );
 		if(HogeAI.Get().IsDistantJoinStations()) {
 			return min( production , cargo == HogeAI.Get().GetPassengerCargo()
 				? GetExpectedUsingDistantJoinStations() : GetExpectedUsingDistantJoinStations() * 2 / 5 );
@@ -2249,10 +2253,13 @@ class TownCargo extends Place {
 			}
 		} else {
 			local minValue = cargo == HogeAI.Get().GetPassengerCargo() ? 200 : 80;
-			if(vehicleType == AIVehicle.VT_ROAD || vehicleType == AIVehicle.VT_WATER) {
+			if(vehicleType == AIVehicle.VT_ROAD) {
 				minValue /= 2;
 				production /= 2;
-			}			
+			} else if(vehicleType == AIVehicle.VT_WATER) {
+				minValue = minValue / 2;
+				production = production / 2;
+			}
 			return min(minValue, production);
 		}
 		HgLog.Error("unknown vt:"+vehicleType);
