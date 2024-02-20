@@ -41,8 +41,8 @@ class TrainRoute extends Route {
 			}
 		}
 		local stations = HgStation.worldInstances;
-		HgStation srcStation = stations.rawin(t.srcHgStation) ? stations.rawget(t.srcHgStation) : null;
-		HgStation destStation = stations.rawin(t.destHgStation) ? stations.rawget(t.destHgStation) : null;
+		local srcStation = stations.rawin(t.srcHgStation) ? stations.rawget(t.srcHgStation) : null;
+		local destStation = stations.rawin(t.destHgStation) ? stations.rawget(t.destHgStation) : null;
 		
 		if(srcStation == null || destStation == null) {
 			local src = srcStation == null ? "not found" : srcStation.GetName();
