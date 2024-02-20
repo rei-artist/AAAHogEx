@@ -45,10 +45,16 @@ Estimation <- {
 	}
 
 	function GetValue() {
-		local lostOpportunity = routeIncome * (days / 2 + waitingInStationTime) / 365;
+		local lostOpportunity;
+		if(isBidirectional) {
+			lostOpportunity = routeIncome / 2 * (days / 2 + waitingInStationTime) / 365;
+			lostOpportunity += routeIncome / 2 * (days + waitingInStationTime) / 365;
+		} else {
+			lostOpportunity = routeIncome * (days / 2 + waitingInStationTime) / 365;
+		}
 		local cost = max(1,price * vehiclesPerRoute + buildingCost + lostOpportunity);
 		roi = routeIncome * 1000 / cost;
-		local incomePerVehicle = routeIncome / vehiclesPerRoute; 
+		local incomePerVehicle = routeIncome / (vehiclesPerRoute + additionalVehiclesPerRoute); 
 		local incomePerBuildingTime = routeIncome * 100 / buildingTime;
 		return HogeAI.Get().GetValue(roi,incomePerBuildingTime,incomePerVehicle);
 	}
@@ -58,10 +64,28 @@ Estimation <- {
 			return;
 		}*/
 	
+		local vehicleType = GetVehicleType();
+		
+		if(transferedRoute == null && (vehicleType == AIVehicle.VT_AIR || vehicleType == AIVehicle.VT_WATER)) {
+			local p1 = src.GetLocation();
+			local p2 = dest.GetLocation();
+			local w = abs(AIMap.GetTileX(p1) - AIMap.GetTileX(p2));
+			local h = abs(AIMap.GetTileY(p1) - AIMap.GetTileY(p2));
+			local pathDistance = max(1,(min(w,h).tofloat() * 0.414 + max(w,h)).tointeger());
+			days = days * pathDistance / AIMap.DistanceManhattan(p1,p2);
+			if(vehicleType == AIVehicle.VT_WATER) {
+				local landRate = WaterRoute.CheckLandRate(p1, p2, max(4,pathDistance/16) ) * 0.36;
+				infraBuildingTime += (infraBuildingTime * landRate).tointeger();
+				days += (days * landRate).tointeger();
+			}
+			CalculateIncome();
+		}
+
 		if(transferedRoute != null) {
 			local finalDestStation = transferedRoute.GetFinalDestStation( null, dest );
 			totalDistance = AIMap.DistanceManhattan( finalDestStation.GetLocation(), src.GetLocation() );
 			additionalCruiseDays = transferedRoute.GetTotalCruiseDays();
+			additionalVehiclesPerRoute = transferedRoute.GetAdditionalVehicles(capacity * vehiclesPerRoute * 30 / days, cargo);
 			if(transferedRoute instanceof TrainReturnRoute || (transferedRoute.IsBiDirectional() && transferedRoute.destHgStation.stationGroup == dest)) {
 				additionalRunningCostPerCargo = 0;
 			} else {
@@ -95,7 +119,6 @@ Estimation <- {
 				}
 			}
 		}
-		local vehicleType = GetVehicleType();
 		if(!subCargo && vehicleType == AIVehicle.VT_RAIL) {
 			foreach(eachCargo in src.GetProducingCargos()) {
 				//HgLog.Warning("additional.EstimateAdditional GetProducingCargos:"+AICargo.GetName(eachCargo)+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
@@ -121,7 +144,6 @@ Estimation <- {
 		}
 	}
 	
-	
 	function AppendSupportRouteEstimate( srcPlace, cargo, supportEstimate ) {
 		if(supportEstimate.production > 0) {
 			local routeCapacity = max(0, GetRouteCapacity(cargo) - srcPlace.GetLastMonthProduction(cargo));
@@ -131,10 +153,17 @@ Estimation <- {
 		}
 	}
 	
+	function EstimateOneWay( onewayEstimate ) {
+		routeIncome += onewayEstimate.routeIncome;
+		vehiclesPerRoute += onewayEstimate.vehiclesPerRoute;
+		value = GetValue();
+	}
+	
+	
 	function GetExplain() {
 		return  value+" roi:"+roi
 //			+ " income:"+income+" rc:"+runningCost+" ic:"+infrastractureCost+" ad:"+(capacity * vehiclesPerRoute * 365 / (days + waitingInStationTime - loadingTime))
-			+ " route:"+routeIncome+"("+incomePerOneTime+")" + " speed:"+cruiseSpeed + "("+ days +"d)"
+			+ " route:"+routeIncome+"("+incomePerOneTime+")" + " speed:"+cruiseSpeed + "("+ days + "+" + waitingInStationTime + "d)"
 			+ " ACD:"+additionalCruiseDays+" TD:"+totalDistance +" DRCI:"+destRouteCargoIncome+(additionalRouteIncome>=1?"("+additionalRouteIncome+")":"")
 			+ " ARC:"+additionalRunningCostPerCargo + " BT:" + buildingTime;
 	}
@@ -689,6 +718,7 @@ class CommonEstimator extends Estimator {
 					destRouteCargoIncome = destRouteCargoIncome
 					additionalRouteIncome = 0
 					additionalCruiseDays = additionalCruiseDays
+					additionalVehiclesPerRoute = 0
 					additionalRunningCostPerCargo = additionalRunningCostPerCargo
 					totalDistance = totalDistance
 					isBidirectional = isBidirectional
@@ -736,21 +766,24 @@ class CommonEstimator extends Estimator {
 			case AIVehicle.VT_WATER:
 		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
 		//		return distance * 2 + 1800; //TODO: 海率によって異なる
-				if(distance == WaterRoute.IF_CANAL) {
-					return (250 + pow(distance,1.5) / 5).tointeger();// distance * 2;
+				if(infrastracture == WaterRoute.IF_CANAL) {
+					//return (250 + pow(distance,1.5) / 5).tointeger();
+					return 250 + distance * 2;
+					//return 150 + distance;
 				} else {
-					return (125 + pow(distance,1.5) / 5).tointeger();// distance * 2;
+					//return (125 + pow(distance,1.5) / 5).tointeger();
+					return 125 + distance * 2;
+					//return 70 + distance;
 				}
-
 				local x = distance / 10;
 				return x*x / 5 + x / 5 + 6;
 				
 			case AIVehicle.VT_ROAD:
 	//		return distance + 1200;
 				if(HogeAI.Get().IsInfrastructureMaintenance()) {
-					return 125 + distance * 2;
+					return 125 + distance * 3;
 				} else {
-					return 125 + distance * 2;
+					return 125 + distance * 3;
 				}
 			case AIVehicle.VT_AIR:
 				return 300;
@@ -1316,6 +1349,7 @@ class TrainEstimator extends Estimator{
 					stationRate = stationRate
 					platformLength = platformLength
 					additionalCruiseDays = additionalCruiseDays
+					additionalVehiclesPerRoute = 0
 					additionalRunningCostPerCargo = additionalRunningCostPerCargo
 					destRouteCargoIncome = destRouteCargoIncome
 					additionalRouteIncome = 0

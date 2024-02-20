@@ -29,11 +29,11 @@ class HgArray {
 	
 	static function Generator(gen) {
 		local e;
-		local array = [];
+		local a = [];
 		while((e=resume gen)!=null) {
-			array.push(e);
+			a.push(e);
 		}
-		return HgArray(array);
+		return HgArray(a);
 	}
 	
 	function GetArray() {
@@ -249,6 +249,7 @@ class ListUtils {
 		result.AddList(list);
 		return result;
 	}
+
 }
 
 class TableUtils {
@@ -258,6 +259,15 @@ class TableUtils {
 			keys.push(k);
 		}
 		return keys;
+	}
+}
+
+class StringUtils {
+	static function SliceMaxLen(str,length) {
+		if(str.len() > length) {
+			return str.slice(0,length);
+		}
+		return str;
 	}
 }
 
@@ -297,6 +307,18 @@ class SortedList {
 		local result = null;
 		if(list.Count() >= 0) {
 			local i = list.Begin();
+			result = arr[i];
+		}
+		return result;
+	}
+	
+	function PeekBottom() {
+		local l = AIList();
+		l.Sort( AIList.SORT_BY_VALUE, true );
+		l.AddList(list);
+		local result = null;
+		if(l.Count() >= 0) {
+			local i = l.Begin();
 			result = arr[i];
 		}
 		return result;
@@ -626,6 +648,12 @@ class BuildUtils {
 	static function RemoveRoadStationSafe(tile) {
 		return BuildUtils.BuildSafe( function():(tile) {
 			return AIRoad.RemoveRoadStation(tile);
+		});
+	}
+	
+	static function BuildDockSafe(a,b) {
+		return BuildUtils.BuildSafe( function():(a,b) {
+			return AIMarine.BuildDock(a,b);
 		});
 	}
 	
@@ -962,21 +990,24 @@ class CargoUtils {
 	}
 	
 	static function GetStationRateWaitTimeFullLoad(prodictionPerMonth, initialRate, capacity, maxSpeed) {
-		local capacityTime = capacity / (prodictionPerMonth.tofloat() / 30);
+		local prodPerDay = prodictionPerMonth.tofloat() / 30;
+		local capacityTime = capacity / prodPerDay;
 		local iniRate = initialRate / 255.0;
 		local endRate = (CargoUtils.GetStationRate(maxSpeed) + 170) / 255.0;
-		local a = 0.003137; //0.8 / 255;
-		local t0 = abs(endRate - iniRate) / a;
-		local c0 = (iniRate + endRate) * t0 / 2;
-		if(capacityTime < c0) {
-			local t = (-iniRate+pow(iniRate * iniRate + 2 * a * capacityTime, 0.5)) / a;
+		local a = 0.0078; // 0.78%/day //0.003137; //0.8 / 255;
+		local t0 = abs(endRate - iniRate) / a; // rateが上がりきるまでの日数
+		local c0 = (iniRate + endRate) / 2 * t0 * prodPerDay ; // t0の間に増えるproduction
+		if(capacityTime < t0) {
+			local iniProd = iniRate * prodPerDay;
+			local aProd = a * prodPerDay;
+			local t = (-iniProd+pow(iniProd * iniProd + 2 * aProd * capacity, 0.5)) / aProd;
 			local rate = (iniRate + t * a) * 255;
-			//HgLog.Info("1 t0:"+t0+" ct:"+capacityTime+" endR:"+endRate+" c0:"+c0+" capacity:"+capacity+" p:"+prodictionPerMonth);
+			//HgLog.Info("FullLoad 1 prod:"+prodPerDay+" capa:"+capacity+" iniRate:"+iniRate+" rate:"+(rate/255)+" t:"+t);
 			return [rate.tointeger(), t.tointeger()];
 		} else {
-			local t = t0 + (capacityTime - c0) / endRate;
+			local t = t0 + (capacity - c0) / endRate; // rateが上がりきる日数 + 上がりきってから溜まるまでの日数
 			local rate = endRate * 255;
-			//HgLog.Info("2 t0:"+t0+" ct:"+capacityTime+" endR:"+endRate+" c0:"+c0+" capacity:"+capacity+" p:"+prodictionPerMonth);
+			//HgLog.Info("FullLoad 2 prod:"+prodPerDay+" capa:"+capacity+" iniRate:"+iniRate+" rate:"+(rate/255)+" t:"+t);
 			return [rate.tointeger(), t.tointeger()];
 		}
 	}
@@ -1056,7 +1087,10 @@ class CargoUtils {
 	}*/
 	
 	static function IsPaxOrMail(cargo) {
-		return HogeAI.GetPassengerCargo() == cargo || HogeAI.GetMailCargo() == cargo;
+		foreach(c in HogeAI.Get().GetPaxMailCargos()) {
+			if(c==cargo) return true;
+		}
+		return false;
 	}
 
 }

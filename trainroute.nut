@@ -40,13 +40,28 @@ class TrainRoute extends Route {
 				destHgStations.push(HgStation.worldInstances[stationId]);
 			}
 		}
+		local stations = HgStation.worldInstances;
+		HgStation srcStation = stations.rawin(t.srcHgStation) ? stations.rawget(t.srcHgStation) : null;
+		HgStation destStation = stations.rawin(t.destHgStation) ? stations.rawget(t.destHgStation) : null;
+		
+		if(srcStation == null || destStation == null) {
+			local src = srcStation == null ? "not found" : srcStation.GetName();
+			local dest = destStation == null ? "not found" : destStation.GetName();
+			HgLog.Warning("Broken TrainRoute["+t.id+"] save data. dest:"+dest+" src:"+src+" cargo:"+AICargo.GetName(t.cargo));
+			return null;
+		}
 		local trainRoute = TrainRoute(
 			t.routeType, 
 			t.cargo, 
-			HgStation.worldInstances[t.srcHgStation], 
-			HgStation.worldInstances[t.destHgStation], 
+			srcStation, destStation, 
 			BuildedPath(Path.Load(t.pathSrcToDest)),
 			t.pathDestToSrc == null ? null : BuildedPath(Path.Load(t.pathDestToSrc)));
+			
+		/*if(trainRoute.srcHgStation.GetName().find("0167") != null) {
+			foreach(tile in t.pathDestToSrc) {
+				HgLog.Info("pathDestToSrc:"+HgTile(tile));
+			}
+		}*/
 		trainRoute.id = t.id;
 		TrainRoute.idCounter.Skip(trainRoute.id);
 		trainRoute.subCargos = t.subCargos;
@@ -102,10 +117,11 @@ class TrainRoute extends Route {
 	
 	static function LoadStatics(data) {
 		TrainRoute.instances.clear();
-		local idMap = {};
 		foreach(t in data.trainRoutes) {
 			local trainRoute = TrainRoute.Load(t);
-			idMap[t.id] <- trainRoute;
+			if(trainRoute==null) { 
+				continue;
+			}
 			TrainRoute.instances.push(trainRoute);
 
 			if(!trainRoute.isRemoved) {
@@ -357,14 +373,14 @@ class TrainRoute extends Route {
 		return result;
 	}
 	
-	
-	function HasCargo(cargo) {
+	function HasCargo(cargo) { //受け入れ可能かつrefit可能か
 		if(cargo == this.cargo) {
 			return true;
 		}
-		if(!IsTransfer() /*transferルートは要求があれば応えられる事を意味する*/ && GetCargoCapacity(cargo) == 0) {
+		/* 
+		if(!IsTransfer() && GetCargoCapacity(cargo) == 0) {
 			return false; // このルートへのtransferを停止させる
-		}
+		}*/
 		foreach(subCargo in subCargos) {
 			if(subCargo == cargo) {
 				return true;
@@ -372,7 +388,6 @@ class TrainRoute extends Route {
 		}
 		return false;
 	}
-
 	
 	function GetVehicleType() {
 		return AIVehicle.VT_RAIL;
@@ -388,6 +403,16 @@ class TrainRoute extends Route {
 	
 	function GetMaxTotalVehicles() {
 		return HogeAI.Get().maxTrains;
+	}
+
+	function GetNumVehicles() {
+		return engineVehicles.len();
+	}
+	
+	function GetVehicleList() {
+		local result = AIList();
+		AIList.AddList(engineVehicles);
+		return result;
 	}
 
 	function GetThresholdVehicleNumRateForNewRoute() {
@@ -524,7 +549,7 @@ class TrainRoute extends Route {
 				result[cargo] <- production;
 			}
 		}
-		saveData.oldCargoProduction = oldCargoProduction;
+		saveData.oldCargoProduction = oldCargoProduction = result;
 		return result;
 	
 /*
@@ -1150,9 +1175,9 @@ class TrainRoute extends Route {
 	
 	function AddForkPath(path) {
 		forkPaths.push(path);
+		path.route = this;
 		Save();
 	}
-	
 
 	function GetLastDestHgStation() {
 		return destHgStations[destHgStations.len()-1];
@@ -1746,21 +1771,24 @@ class TrainRoute extends Route {
 			return;
 		}
 
-
-		if(AIBase.RandRange(100) < 10 && CargoUtils.IsPaxOrMail(cargo)) { // 作った時には転送が無い時がある
-			foreach(townCargo in [HogeAI.Get().GetPassengerCargo(), HogeAI.Get().GetMailCargo()]) {
-				if(NeedsAdditionalProducingCargo(townCargo, null, false)) {
+		
+		local isBiDirectional = IsBiDirectional();
+		local needsAddtinalProducing = NeedsAdditionalProducing(null,false,false);
+		if( AIBase.RandRange(100) < 10 && CargoUtils.IsPaxOrMail(cargo)) { // 作った時には転送が無い時がある
+			foreach(townCargo in HogeAI.Get().GetPaxMailCargos()) {
+				if(!HasCargo(townCargo)) continue;
+				if(needsAddtinalProducing) {
 					CommonRouteBuilder.CheckTownTransferCargo(this,srcHgStation,townCargo);
 				}
-				if(IsBiDirectional() && NeedsAdditionalProducingCargo(townCargo, null, true)) {
+				if(isBiDirectional && NeedsAdditionalProducing(null, true, false)) {
 					CommonRouteBuilder.CheckTownTransferCargo(this,destHgStation,townCargo);
 				}
 			}
 		}
+
 		
-		local isBiDirectional = IsBiDirectional();
 		
-		if(lastChangeDestDate != null && lastChangeDestDate + 120 < AIDate.GetCurrentDate()) {
+		if(lastChangeDestDate != null && lastChangeDestDate + 120 < AIDate.GetCurrentDate() && !IsChangeDestination()) {
 			local removed = [];
 			foreach(station in destHgStations) {
 				if(station != destHgStation && station != destHgStations[destHgStations.len()-1]) {
@@ -2078,6 +2106,12 @@ class TrainRoute extends Route {
 	function NotifyAddTransfer(callers=null) {
 		Route.NotifyAddTransfer(callers);
 		saveData.engineSetsCache = engineSetsCache = null;
+		foreach(cargo,production in GetCargoProductions()) {
+			if(production >= 1 && GetCargoCapacity(cargo) == 0) {
+				InvalidateEngineSet();
+				break;
+			}
+		}
 	}
 	
 }
@@ -2196,6 +2230,10 @@ class TrainReturnRoute extends Route {
 		return originalRoute.GetCargoCapacity(cargo);
 	}
 	
+	function GetVehicleList() {
+		return originalRoute.GetVehicleList();
+	}
+	
 	/* function IsOverflow(isDest = false, hgStation = null) {
 		if(hgStation == null) {
 			hgStation = isDest ? destHgStation : srcHgStation;
@@ -2220,6 +2258,10 @@ class TrainReturnRoute extends Route {
 			default: 
 				throw("the index '" + idx + "' does not exist");
 		}
+	}
+	
+	function GetNumVehicles() {
+		return originalRoute.GetNumVehicles();
 	}
 	
 	function GetCargos() {

@@ -300,7 +300,7 @@ function RoadPathFinder::_Neighbours(self, path, cur_node)
 					(path.GetParent() == null || AIRoad.CanBuildConnectedRoadPartsHere(cur_node, path.GetParent().GetTile(), next_tile))) {
 				if(AIRoad.BuildRoad(cur_node, next_tile)) {
 					tiles.push([next_tile, self._GetDirection(cur_node, next_tile, false), path.mode]);
-				} else if( !AIRoad.IsRoadDepotTile(cur_node) //接続方向が制限されるので除外
+				} else if( !AIRoad.IsRoadDepotTile(cur_node) //接続方向が制限されるので除外 TODO:接続方向は調べられる
 						&& !AIRoad.IsRoadStationTile(cur_node) 
 						&& !self.IsBusyRoad(cur_node)
 						&& self.IsTownBuilding(next_tile)) {

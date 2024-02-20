@@ -8,7 +8,7 @@ class HgTile {
 	static DIR_SW = 3;
 	static DIR_INVALID = 4;
 	
-			
+	// [NE,NW,SE,SW]
 	static DIR4Index = [AIMap.GetTileIndex(-1, 0), AIMap.GetTileIndex(0, -1),
 	                 AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
 
@@ -203,7 +203,9 @@ class HgTile {
 		return max(a[0], a[1]);
 	}
 	
-	static function LevelBound( t1, t2, level ) {
+	static function LevelBound( t1, t2, level, checkWaterLeak = true) {
+		local lowerCorners = 0;
+		local raiseCorners = 0;
 		foreach(c in HgTile(t1).GetConnectionCorners(HgTile(t2))) {
 			local currentLevel = AITile.GetCornerHeight( t1 ,c );
 			if(abs(currentLevel-level) >= 2) {
@@ -213,18 +215,21 @@ class HgTile {
 				return false;
 			}
 			if(currentLevel > level) {
-				if(level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
+				if(checkWaterLeak && level==0 && HgTile.IsAroundCoastCorner(HgTile.GetCornerTile(t1,c))) {
 					return false;
 				}
-				if(!AITile.LowerTile(t1, HgTile.GetSlopeFromCorner(c))) {
-					return false;
-				}
+				lowerCorners = lowerCorners | HgTile.GetSlopeFromCorner(c);
 			} else if(currentLevel < level) {
-				if(!AITile.RaiseTile(t1, HgTile.GetSlopeFromCorner(c))) {
-					return false;
-				}
+				raiseCorners = raiseCorners | HgTile.GetSlopeFromCorner(c);
 			}
 		}
+		if(lowerCorners != 0 && !AITile.LowerTile(t1, lowerCorners)) {
+			return false;
+		}
+		if(raiseCorners != 0 && !AITile.RaiseTile(t1, raiseCorners)) {
+			return false;
+		}
+		
 		return true;
 	}
 	static function ForceLevelBound( t1, t2, level, options = {} ) {
@@ -269,19 +274,14 @@ class HgTile {
 	}
 	
 	function GetMaxHeightCount() {
-		local corners = HgTile.Corners;
-		local heights = array(corners.len());
-		foreach(i,c in corners) {
-			heights[i] = AITile.GetCornerHeight(tile,c);
-		}
-		local maxHeight = GetMaxHeight();
-		local maxHeightCount = 0;
-		foreach(h in heights) {
-			if(h == maxHeight) {
-				maxHeightCount ++;
+		local maxHeight = AITile.GetMaxHeight(tile);
+		local result = 0;
+		foreach(c in HgTile.Corners) {
+			if(maxHeight == AITile.GetCornerHeight(tile,c)) {
+				result ++;
 			}
 		}
-		return maxHeightCount;
+		return result;
 	}
 	
 	function _tostring() {
@@ -562,7 +562,7 @@ class HgTile {
 			if(level == 0) { // 水没する事があるので
 				return null;
 			}
-			TileListUtil.LevelHeightTiles([p1,p2,tile],level);
+			TileListUtils.LevelHeightTiles([p1,p2,tile],level);
 			AIRail.RemoveSignal(tile, from);
 			AIRail.RemoveSignal(tile, to);
 			if(BuildDepot(p1,from,to)) {
@@ -671,11 +671,11 @@ class HgTile {
 				/*&& AIMarine.AreWaterTilesConnected(front, depotTile) 向きが違ってても再利用できるはず*/) {
 			return true; // 再利用
 		}
+		local isCanal = AIMarine.IsCanalTile(front);
 		local back = front - (front - depotTile) * 3;
-		if(!WaterPathFinder.CanThroughShipTile(back)) {
+		if(!isCanal && !WaterPathFinder.IsSea(back)) {
 			return false;
 		}
-		
 		local d2;
 		if(depotTile < front) {
 			d2 = depotTile;
@@ -689,20 +689,32 @@ class HgTile {
 		if(WaterRoute.usedTiles.rawin(d2)) {
 			return false;
 		}
-		/*
-		foreach(tile in [depotTile,d2]) {
-			foreach(d in HgTile.DIR8Index) {
-				if(!AITile.IsWaterTile(tile + d)) {
+		HogeAI.WaitForMoney(10000);
+		
+		if(!AIMarine.BuildWaterDepot(depotTile, front)) {
+			if(isCanal) {
+				{
+					local aiTest = AITestMode();
+					if(!AITile.IsWaterTile(depotTile) && !AIMarine.BuildCanal(depotTile)) {
+						return false;
+					} else if(!AITile.IsWaterTile(d2) && !AIMarine.BuildCanal(d2)) {
+						return false;
+					}
+				}
+				if(!AITile.IsWaterTile(depotTile) && !AIMarine.BuildCanal(depotTile)) {
+					return false;
+				} else if(!AITile.IsWaterTile(d2) && !AIMarine.BuildCanal(d2)) {
 					return false;
 				}
+				if(!AIMarine.BuildWaterDepot(depotTile, front)) {
+					return false;
+				}
+			} else {
+				return false;
 			}
-		}*/
-		HogeAI.WaitForMoney(10000);
-		if(!AIMarine.BuildWaterDepot (depotTile, front)) {
-			return false;
 		}
-		AIMarine.BuildBuoy (back);
-		AIMarine.BuildBuoy (front);
+		AIMarine.BuildBuoy(back);
+		AIMarine.BuildBuoy(front);
 		return true;
 	}
 	
@@ -830,17 +842,19 @@ class Rectangle {
 	}
 	
 	function GetTileList() {
-		/*local result = AIList();
-		for(local y=Top(); y<Bottom(); y++) {
-			for(local x=Left(); x<Right(); x++) {
-				local tile = AIMap.GetTileIndex (x,y)
-				if(AIMap.IsValidTile(tile)) {
-					result.AddItem(tile,tile);
-				}
-			}
-		}*/
 		local result = AITileList();
-		result.AddRectangle(lefttop.tile, HgTile.InMapXY(rightbottom.X() - 1, rightbottom.Y() - 1).tile);
+		result.AddRectangle(lefttop.tile, (rightbottom-HgTile.XY(1,1)).tile);
+		return result;
+	}
+	
+	function GetEdgeTileList() {
+		local result = AITileList();
+		local one = HgTile.XY(1,1);
+		local rb = rightbottom-one;
+		result.AddRectangle(lefttop.tile, rb.tile);
+		if(Width()>=3 && Height()>=3) {
+			result.RemoveRectangle((lefttop+one).tile, (rb-one).tile);
+		}
 		return result;
 	}
 	
@@ -854,6 +868,14 @@ class Rectangle {
 				}
 			}
 		}
+		return result;
+	}
+	
+	function GetAroundTileList() {
+		local result = AITileList();
+		local one = HgTile.XY(1,1);
+		result.AddRectangle((lefttop-one).tile, rightbottom.tile);
+		result.RemoveRectangle(lefttop.tile, (rightbottom-one).tile);
 		return result;
 	}
 	
@@ -938,7 +960,7 @@ class Rectangle {
 	}
 	
 	function LevelTiles(track, isTestMode = false) {
-		return TileListUtil.LevelAverage(GetTileListIncludeEdge(), track, isTestMode);
+		return TileListUtils.LevelAverage(GetTileListIncludeEdge(), track, isTestMode);
 	}
 	
 	function GetRandomTile() {
@@ -974,8 +996,17 @@ class Rectangle {
 	}
 }
 
-class TileListUtil {
+class TileListUtils {
 
+	static function Generator(gen) {
+		local e;
+		local result = AITileList();
+		while((e=resume gen)!=null) {
+			result.AddTile(e);
+		}
+		return result;
+	}
+	
 	static function GetLevelTileList(tiles) {
 		local tileList = AIList();
 		local d1 = HgTile.XY(1,0).tile;
@@ -991,7 +1022,7 @@ class TileListUtil {
 	}
 	
 	static function LevelAverageTiles(tiles, track, isTestMode = false) {
-		return LevelAverage(TileListUtil.GetLevelTileList(tiles), track, isTestMode);
+		return LevelAverage(TileListUtils.GetLevelTileList(tiles), track, isTestMode);
 	}
 
 	static function CalculateAverageLevel(tileList) {
@@ -1006,7 +1037,7 @@ class TileListUtil {
 	static function LevelAverage(tileList, track, isTestMode = false, average = null, force = false) {
 		local landfill = AICompany.GetBankBalance(AICompany.COMPANY_SELF) > HogeAI.Get().GetInflatedMoney(2000000);
 		if(average == null) {
-			average = TileListUtil.CalculateAverageLevel(tileList);
+			average = TileListUtils.CalculateAverageLevel(tileList);
 		}
 
 		foreach(tile,level in tileList) { // 山岳マップは失敗する事が多いので、先にはじくことでパフォーマンス改善
@@ -1015,7 +1046,7 @@ class TileListUtil {
 			}
 		}			
 		
-		local raiseTileMap = track != null ? TileListUtil.CalculateRaiseTileMap(HgArray.AIListKey(tileList).GetArray(), track) : null;
+		local raiseTileMap = track != null ? TileListUtils.CalculateRaiseTileMap(HgArray.AIListKey(tileList).GetArray(), track) : null;
 		
 		local around = [AIMap.GetTileIndex(-1,-1),AIMap.GetTileIndex(-1,0),AIMap.GetTileIndex(0,-1),0];
 		foreach(tile,level in tileList) {
@@ -1035,7 +1066,7 @@ class TileListUtil {
 							}
 						}
 					}
-					if(!TileListUtil.RaiseTile(tile, AITile.SLOPE_N) && !force) {
+					if(!TileListUtils.RaiseTile(tile, AITile.SLOPE_N) && !force) {
 						if(!isTestMode) {
 							HgLog.Warning("RaiseTile failed tile:"+HgTile(tile)+ " "+ AIError.GetLastErrorString());
 						}
@@ -1047,11 +1078,11 @@ class TileListUtil {
 					return false;
 				}
 				if(isTestMode) {
-					if(!TileListUtil.LowerTile(tile, TileListUtil.GetTerraformSlope(tile,tileList,average))) {
+					if(!TileListUtils.LowerTile(tile, TileListUtils.GetTerraformSlope(tile,tileList,average))) {
 						return false;
 					}
 				} else {
-					if(!TileListUtil.LowerTile(tile, AITile.SLOPE_N) && !force) {
+					if(!TileListUtils.LowerTile(tile, AITile.SLOPE_N) && !force) {
 						if(!isTestMode) {
 							HgLog.Warning("LowerTile failed tile:"+HgTile(tile)+ " "+ AIError.GetLastErrorString());
 						}
@@ -1134,7 +1165,7 @@ class TileListUtil {
 	}
 	
 	static function LevelHeightTiles(tiles, height) {
-		return TileListUtil.LevelHeight(TileListUtil.GetLevelTileList(tiles), height);
+		return TileListUtils.LevelHeight(TileListUtils.GetLevelTileList(tiles), height);
 	}
 
 	static function LevelHeight(tileList, height) {
@@ -1143,12 +1174,12 @@ class TileListUtil {
 		foreach(tile,level in tileList) {
 			for(local i=level; i<min(height,level+2); i++) {
 				
-				if(!TileListUtil.RaiseTile (tile, AITile.SLOPE_N)) {
+				if(!TileListUtils.RaiseTile (tile, AITile.SLOPE_N)) {
 					break;
 				}
 			}
 			for(local i=level; i>max(height,level-2); i--) {
-				if(!TileListUtil.LowerTile (tile, AITile.SLOPE_N)) {
+				if(!TileListUtils.LowerTile (tile, AITile.SLOPE_N)) {
 					break;
 				}
 			}
@@ -1159,7 +1190,7 @@ class TileListUtil {
 	static function CalculateRaiseTileMap(tiles, track) {
 		local result = {};
 		foreach(tile in tiles) {
-			if(TileListUtil.GetBothCount(tile,tiles,track) == 1 && TileListUtil.GetSequenceCount(tile,tiles,track) >= 2) {
+			if(TileListUtils.GetBothCount(tile,tiles,track) == 1 && TileListUtils.GetSequenceCount(tile,tiles,track) >= 2) {
 			} else {
 				result.rawset(tile,0);
 			}
@@ -1208,7 +1239,10 @@ class TileListUtil {
 	}
 	
 	
-	static function RaiseTile(tile, slope) {		
+	static function RaiseTile(tile, slope, testMode = false) {
+		if(testMode) {
+			return AITile.RaiseTile(tile, slope);
+		}
 		while(true) {
 			local result = BuildUtils.WaitForMoney( function():(tile, slope) {
 				return AITile.RaiseTile(tile, slope);

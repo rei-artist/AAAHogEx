@@ -8,6 +8,7 @@ class WaterRoute extends CommonRoute {
 	static instances = [];
 	static usedTiles = {};
 	static canBuildCache = {};
+	static landRateCache = {};
 
 
 	static function SaveStatics(data) {
@@ -112,14 +113,15 @@ class WaterRoute extends CommonRoute {
 		local execMode = AIExecMode();
 		local count = 0;
 		while(path != null) {
-			WaterRoute.usedTiles.rawset(path.GetTile(),true);
+			local tile = path.GetTile();
+			WaterRoute.usedTiles.rawset(tile,true);
 			if(count % 32 == 31) {
-				local tile = path.GetTile();
 				if(AIMarine.IsBuoyTile(tile) || AIMarine.BuildBuoy(tile)) {
 					buoys.push(tile);
 				}
 			}
 			count ++;
+
 			path = path.GetParent();
 		}
 	}
@@ -157,7 +159,123 @@ class WaterRoute extends CommonRoute {
 		return false;
 	}
 
-	function GetNearestCoastTile(from, to, limit) {
+
+	static function CheckLandRate(from, to, skip = 5) {
+		local key = from+"-"+to;
+		if(WaterRoute.landRateCache.rawin(key)) {
+			return WaterRoute.landRateCache.rawget(key);
+		} else {
+			local result = WaterRoute._CheckLandRate(from, to, skip);
+			WaterRoute.landRateCache.rawset(key,result);
+			return result;
+		}
+	}
+	
+	// pathfinderはtoからfrom
+	static function _CheckLandRate(from, to, skip = 5) {
+		local curX = AIMap.GetTileX(from);
+		local curY = AIMap.GetTileY(from);
+		
+		local toX = AIMap.GetTileX(to);
+		local toY = AIMap.GetTileY(to);
+		
+		local water = 0;
+		local land = 0;
+		while(true) {
+			local cur = AIMap.GetTileIndex(curX, curY);
+			if(AITile.IsWaterTile(cur) || AIMarine.IsBuoyTile(cur)) {
+				water ++;
+			} else {
+				land ++;
+			}
+			local dx = abs(toX - curX);
+			local dy = abs(toY - curY);
+			if(dx < skip && dy < skip) {
+				break;
+			}
+			if(dx > dy) {
+				curX += toX > curX ? skip : -skip;
+			} else {
+				curY += toY > curY ? skip : -skip;
+			}
+		}
+		return land.tofloat() / (water+land).tofloat();
+	}
+
+	static function GetDirection(from, to) {
+		local fromX = AIMap.GetTileX(from);
+		local fromY = AIMap.GetTileY(from);
+		local toX = AIMap.GetTileX(to);
+		local toY = AIMap.GetTileY(to);
+		local dx = toX - fromX;
+		local dy = toY - fromY;
+		return [dx>0?1:-1,0, dy>0?1:-1];
+	}
+
+	static function GetLongerDistance(from,to) {
+		local fromX = AIMap.GetTileX(from);
+		local fromY = AIMap.GetTileY(from);
+		local toX = AIMap.GetTileX(to);
+		local toY = AIMap.GetTileY(to);
+		return max(abs(fromX-toX),abs(fromY-toY));
+	}
+	
+	static function GetNearestCoastTileDir(dir, from, limit) {
+		local cur = from;
+		for(local i=0; i<limit; i++) {
+			if(AITile.IsCoastTile(cur)) {
+				return [cur,i];
+			}
+			cur += dir;
+		}
+		return null;
+	}
+
+	static function GetNearestCoastTile(from, to, limit) {
+	/*
+		local fromX = AIMap.GetTileX(from);
+		local fromY = AIMap.GetTileY(from);
+		local toX = AIMap.GetTileX(to);
+		local toY = AIMap.GetTileY(to);
+		local dx = toX - fromX;
+		local dy = toY - fromY;
+		dx = dx < 0 ? -1 : 1;
+		dy = dy < 0 ? -1 : 1;
+		if(limit == null) limit = IntegerUtils.IntMax;
+		local r1 = WaterRoute.GetNearestCoastTileDir(dx, from, min(limit,abs(fromX-toX)));
+		if(r1 != null) limit = min(limit, r1[1]);
+		local r2 = WaterRoute.GetNearestCoastTileDir(dy * AIMap.GetMapSizeX(), from, min(limit,abs(fromY-toY)));
+		if(r1!=null && r2!=null) {
+			if(r1[1] < r2[1]) {
+				return r1[0];
+			} else {
+				return r2[0];
+			}
+		}
+		if(r1!=null) return r1[0];
+		if(r2!=null) return r2[0];
+		return null;*/
+		
+		
+		
+		local dirXY = WaterRoute.GetDirection(from,to);
+		local d = dirXY[0] + dirXY[1] * AIMap.GetMapSizeX();
+		local cur = from;
+		if(limit == null) {
+			limit = WaterRoute.GetLongerDistance(from,to);
+		} else {
+			limit = min(WaterRoute.GetLongerDistance(from,to),limit);
+		}
+		for(local i=0; i<limit; i++) {
+			if(AITile.IsCoastTile(cur)) {
+				return cur;
+			}
+			cur += d;
+		}
+		return null;
+
+
+/*	
 		local distance = sqrt(AIMap.DistanceSquare(from, to));
 		local dx = (AIMap.GetTileX(to).tofloat()-AIMap.GetTileX(from)) / distance;
 		local dy = (AIMap.GetTileY(to).tofloat()-AIMap.GetTileY(from)) / distance;
@@ -174,22 +292,22 @@ class WaterRoute extends CommonRoute {
 			x += dx;
 			y += dy;
 		}
-		return null;
+		return null;*/
 	}
 	
-	static function CanBuild(from, to, cargo) {
+	static function CanBuild(from, to, cargo, isBidirectional) {
 		//local usableTrain = !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute) && !HogeAI.Get().roiBase;
 		local key = from.GetLocation() + "-" + to.GetLocation() +"-" + cargo +"-" + HogeAI.Get().roiBase; // +"-" + usableTrain;
 		if(WaterRoute.canBuildCache.rawin(key)) {
 			return WaterRoute.canBuildCache[key];
 		}
-		local result = WaterRoute._CanBuild(from, to, cargo);
+		local result = WaterRoute._CanBuild(from, to, cargo, isBidirectional);
 		WaterRoute.canBuildCache.rawset(key,result);
 		return result;
 	}
 	
-	static function _CanBuild(from, to, cargo) {
-		local usableTrain = !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute); // && !HogeAI.Get().roiBase;
+	static function _CanBuild(from, to, cargo, isBidirectional) {
+		local usableTrain = !isBidirectional && !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute); // && !HogeAI.Get().roiBase;
 		local coastsA = to.GetCoasts(cargo);
 		local coastsB = from.GetCoasts(cargo);
 		if(HogeAI.Get().roiBase) {
@@ -197,23 +315,37 @@ class WaterRoute extends CommonRoute {
 				return false;
 			}
 		}
-		if(!usableTrain && coastsA == null && coastsB == null) {
+		local toTile = to.GetLocation();
+		local fromTile = from.GetLocation();
+		local distance = AIMap.DistanceManhattan(toTile, fromTile);
+		if(!usableTrain && coastsA == null && coastsB == null && distance > 100) {
 			return false;
 		}
 		if(coastsA == null) {
-			local coastTile = WaterRoute.GetNearestCoastTile( to.GetLocation(), from.GetLocation(), usableTrain ? null : 35);
+/*			if( AITile.GetMinHeight(toTile) >= 4 ) {
+				return false;
+			}*/
+			local coastTile = WaterRoute.GetNearestCoastTile( toTile, fromTile, usableTrain ? null : 35);
 			if(coastTile != null) {
 				coastsA = Coasts.GetCoasts(coastTile);
 			}
 		}
 		if(coastsB == null) {
-			local coastTile = WaterRoute.GetNearestCoastTile( from.GetLocation(), to.GetLocation(), usableTrain ? null : 35);
+/*			if( AITile.GetMinHeight(fromTile) >= 4 ) {
+				return false;
+			}*/
+			local coastTile = WaterRoute.GetNearestCoastTile( fromTile, toTile, usableTrain ? null : 35);
 			if(coastTile != null) {
 				coastsB = Coasts.GetCoasts(coastTile);
 			}
 		}
 		if(coastsA != null && coastsB != null && coastsA.IsConnectedOnSea(coastsB)) {
 			return true;
+		}
+		if(distance <= 100) {
+			if(HgStation.SearchStation(to, AIStation.STATION_DOCK, cargo, true) != null) {
+				return true;
+			}
 		}
 		return false;
 		
@@ -238,7 +370,8 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 	constructor(dest, src, cargo, options={}) {
 		CommonRouteBuilder.constructor(dest, src, cargo, options);
 		makeReverseRoute = false;//true;
-		retryIfNoPathUsingSharableStation = true;
+		retryIfNoPathUsingSharableStation = false;// あんまり成功率高くない true;
+		checkSharableStationFirst = true;
 		/*if(dest.IsNearWater(cargo) && src.IsNearWater(cargo)) {
 			options.buildPathBeforeStation <- true;
 		}*/
@@ -252,7 +385,8 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 		if(HogeAI.Get().roiBase) {
 			return WaterStationFactory();
 		}
-		if(target.GetCoasts(cargo) == null) {
+		local coasts = target.GetCoasts(cargo);
+		if(coasts == null) {
 			return CanalStationFactory();
 		} else {
 			return PriorityStationFactory([WaterStationFactory(),CanalStationFactory()]);
@@ -345,7 +479,9 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 				&& !notUseCompoundRoute && !isBiDirectional && result == null && !TrainRoute.IsTooManyVehiclesForNewRoute(TrainRoute)) {
 			local destTile = dest.GetLocation();
 			local srcTile = src.GetLocation();
-		
+			if(destTile==null || srcTile==null) {
+				return null;
+			}
 			local isDestFarFromSea = IsFarFromSea( destTile, srcTile );
 			local isSrcFarFromSea = IsFarFromSea( srcTile, destTile );
 			if((isDestFarFromSea && isSrcFarFromSea) || (!isDestFarFromSea && !isSrcFarFromSea)) {
@@ -457,7 +593,7 @@ class WaterStationFactory extends StationFactory {
 	}
 	
 	function Create(platformTile,stationDirection) {
-		return WaterStation(platformTile);
+		return WaterStation(platformTile,stationDirection);
 	}
 }
 
@@ -497,8 +633,8 @@ class WaterStation extends HgStation {
 	
 	depot = null;
 	
-	constructor(platformTile) {
-		HgStation.constructor(platformTile, 0);
+	constructor(platformTile,stationDirection) {
+		HgStation.constructor(platformTile, stationDirection);
 		this.originTile = platformTile;
 		this.platformNum = 1; 
 		this.platformLength = 1;
@@ -523,7 +659,11 @@ class WaterStation extends HgStation {
 	}
 	
 	function BuildStation(joinStation,isTestMode) {
-		return AIMarine.BuildDock(platformTile, joinStation)
+		if(isTestMode) {
+			return AIMarine.BuildDock(platformTile, joinStation);
+		} else {
+			return BuildUtils.BuildDockSafe(platformTile, joinStation);
+		}
 	}
 	
 	function IsBuildablePreCheck() {
@@ -532,84 +672,133 @@ class WaterStation extends HgStation {
 	
 	function Build(levelTiles=false,isTestMode=true) {
 		local water = AITile.IsWaterTile(platformTile)
-		if(!AITile.IsCoastTile(platformTile) && !water) {
-			return false;
+		if(!water) {
+			local coast = AITile.IsCoastTile(platformTile);
+			if(!coast /*完全に水が無いcoastかどうかをしらべないといけない || (coast && !AITile.IsBuildable(platformTile))*/) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build !water && !coast");
+				}
+				return false;
+			}
+			if(BuildPlatform(isTestMode,true)) {
+				stationDirection = GetStationDirectionFromSlope(AITile.GetSlope(platformTile));
+				return true;
+			}
+			if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
+				return false;
+			}
 		}
-		if(BuildPlatform(isTestMode,true)) {
-			return true;
-		}
-		if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
-			return false;
-		}
-		local waterRemovable = HogeAI.Get().clearWaterCost < max(HogeAI.Get().GetQuarterlyIncome() / 10,HogeAI.Get().GetUsableMoney() / 100); //別にそんなに費用かからない。AICompany.GetBankBalance(AICompany.COMPANY_SELF) > GetInflatedMoney(2000000);
+		//別にそんなに費用かからない。AICompany.GetBankBalance(AICompany.COMPANY_SELF) > GetInflatedMoney(2000000);
 		local hgTile = HgTile(platformTile);
-		if(!waterRemovable) {
+		if(!HogeAI.Get().waterRemovable) {
 			if(water) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build water");
+				}
 				return false;
 			}
 			if(hgTile.GetMaxHeightCount() != 3) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build hgTile.GetMaxHeightCount() != 3");
+				}
 				return false;
 			}
 		}
-		foreach(next in hgTile.GetDir4()) {
-			//HgLog.Warning("WaterStation step3 "+next+" "+AITile.IsWaterTile(next.tile)+" "+(AITile.GetSlope(next.tile) != AITile.SLOPE_FLAT)+" "+AIMarine.IsWaterDepotTile(next.tile));
-			if(WaterRoute.usedTiles.rawin(next)) {
-				continue;
-			}
-			if(waterRemovable) {
-				local back = platformTile - (next.tile - platformTile);
-				local edge = platformTile + (next.tile - platformTile);
-				if(!AITile.IsWaterTile(edge)) { // ここのlowerはやらない。たぶん地面に池ができるだけ
-					continue;
-				}
-				if(!HgTile.LevelBound(platformTile, next.tile, 0)) {
-					continue;
-				}
-				if(!HgTile.LevelBound(platformTile, back, 1)) {
-					continue;
-				}
-			} else {
-				if(!(AITile.IsCoastTile(next.tile) && next.GetMaxHeightCount() == 1)) {
-					continue;
-				}
-				//HgLog.Warning("WaterStation hgTile("+hgTile+").GetConnectionCorners:"+next);
-				local success = false;
-				foreach(corner in hgTile.GetConnectionCorners(next)) {
-					//HgLog.Warning("WaterStation GetCornerHeight("+hgTile+" "+next+" "+corner+"):"+AITile.GetCornerHeight(hgTile.tile, corner));
-					if(AITile.GetCornerHeight(hgTile.tile, corner) == 1) {
-						if(!AITile.LowerTile (hgTile.tile, HgTile.GetSlopeFromCorner(corner))) {
-							//HgLog.Info("WaterStation AITile.LowerTile failed:" + hgTile+" corner:"+corner+" isTest"+isTestMode);
-							continue;
-						} else {
-							success = true;
-							break;
-						}
-					}
-				}
-				if(!success) {
-					continue;
-				}
-				if(!AITile.IsWaterTile(platformTile + (next.tile - platformTile))){
-					continue;
+		
+		if(isTestMode) {
+			foreach(i,dir in HgTile.DIR4Index) {
+				if(_Build( dir, isTestMode)) {
+					stationDirection = GetStationDirectionFromDir4Index(i);
+					return true;
 				}
 			}
-			if(!AITile.IsWaterTile(platformTile + (next.tile - platformTile) * 2)) { 
-				continue;
-			}
-			if(isTestMode) {
+		} else {
+			if(_Build( HgTile.DIR4Index[GetDir4Index()], isTestMode)) {
 				return true;
 			}
-			for(local i=0; !AITile.IsWaterTile(next.tile) && i<100; i++) {
-				AIController.Sleep(3); // 少し待たないと海にならない
-			}
-			if(BuildPlatform(isTestMode)) {
-				//HgLog.Info("WaterStation.BuildPlatform succeeded:"+hgTile);
-				return true;
-			}
-			HgLog.Warning("WaterStation.BuildPlatform failed:"+hgTile+" "+AIError.GetLastErrorString());
 		}
 		return false;
 	}
+	
+	function _Build(dir, isTestMode=true,) {
+		local next = platformTile + dir;
+		if(HogeAI.Get().waterRemovable) {
+			if(!AITile.IsWaterTile(next) && !AITile.IsCoastTile(next)) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build !AITile.IsWaterTile(next) && !AITile.IsCoastTile(next)");
+				}
+				return false;
+			}
+			if(AIMarine.IsBuoyTile(next) || AIMarine.IsWaterDepotTile(next) || AITile.IsStationTile(next)) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build AIMarine.IsBuoyTile(next) || AIMarine.IsWaterDepotTile(next) || AITile.IsStationTile(next)");
+				}
+				return false;
+			}
+			if(!WaterPathFinder.LowerToZero(next)) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build WaterPathFinder.LowerToZero");
+				}
+				return false;
+			}
+			local back = platformTile - dir;
+			if(!HgTile.LevelBound(platformTile, back, 1, false)) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build HgTile.LevelBound(platformTile, back, 1, false)");
+				}
+				return false;
+			}
+		} else {
+			if(!(AITile.IsCoastTile(next) && HgTile(next).GetMaxHeightCount() == 1)) {
+				return false;
+			}
+			//HgLog.Warning("WaterStation hgTile("+hgTile+").GetConnectionCorners:"+next);
+			local success = false;
+			foreach(corner in HgTile(platformTile).GetConnectionCorners(HgTile(next))) {
+				//HgLog.Warning("WaterStation GetCornerHeight("+hgTile+" "+next+" "+corner+"):"+AITile.GetCornerHeight(hgTile.tile, corner));
+				if(AITile.GetCornerHeight(platformTile, corner) == 1) {
+					if(!AITile.LowerTile (platformTile, HgTile.GetSlopeFromCorner(corner))) {
+						//HgLog.Info("WaterStation AITile.LowerTile failed:" + hgTile+" corner:"+corner+" isTest"+isTestMode);
+						continue;
+					} else {
+						success = true;
+						break;
+					}
+				}
+			}
+			if(!success) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build !success");
+				}
+				return false;
+			}
+		}
+		if(WaterRoute.usedTiles.rawin(next)) {
+			if(!isTestMode) {
+				HgLog.Warning("WaterStation.Build WaterRoute.usedTiles.rawin(next)");
+			}
+			return false;
+		}
+		local next2 = next + dir;
+		if(!AITile.IsWaterTile(next2)) { 
+			if(!isTestMode) {
+				HgLog.Warning("WaterStation.Build !AITile.IsWaterTile(next2)");
+			}
+			return false;
+		}
+		if(isTestMode) {
+			return true;
+		}
+		for(local i=0; !AITile.IsWaterTile(next) && i<100; i++) {
+			AIController.Sleep(3); // 少し待たないと海にならない
+		}
+		if(BuildPlatform(isTestMode)) {
+			//HgLog.Info("WaterStation.BuildPlatform succeeded:"+hgTile);
+			return true;
+		}
+		return false;
+	}
+	
 
 	function Demolish() {
 		AIMarine.RemoveDock(platformTile);
@@ -626,37 +815,53 @@ class WaterStation extends HgStation {
 	}
 	
 	function GetTiles() {
-		return [platformTile];
+		return [At(0,0),At(0,1)];
 	}
-	
+
 	function GetEntrances() {
-		local stationId = AIStation.GetStationID (platformTile);
-		foreach(d in HgTile.DIR4Index) {
-			if(AIStation.GetStationID(platformTile + d) != stationId) {
-				continue;
-			}
-			foreach(d2 in HgTile.DIR4Index) {
-				if(WaterPathFinder.CanThroughShipTile(platformTile + d + d2)) {
-					return [platformTile + d + d2];
-				}
+		local next2 = At(0,2);	
+		// TODO:buildされる前に呼ばれる事がある。その場合、stationIdは無効なので向きが確定していない
+		foreach(d2 in HgTile.DIR4Index) {
+			if(WaterPathFinder.IsSea(next2 + d2)) {
+				return [next2 + d2];
 			}
 		}
 		HgLog.Warning("Not found entrance tile(WaterStation):"+HgTile(platformTile));
-		return [platformTile];
+		return [next2];
+	}
+
+	function CanBuildJoinableDriveThroughRoadStation(tile) {
+		if(!CanBuildDriveThroughRoadStation(tile)) {
+			return false;
+		}
+		foreach(d in HgTile.DIR8Index) {
+			if(AITile.IsStationTile(tile+d) && AICompany.IsMine(AITile.GetOwner(tile+d))) {
+				return false;
+			}
+		}
+		return true;
 	}
 	
 	function CanBuildDriveThroughRoadStation(tile) {
-		if(AIRoad.BuildDriveThroughRoadStation(tile, tile + 1, AIRoad.ROADVEHTYPE_BUS, AIStation.STATION_NEW)
-			|| AIRoad.BuildDriveThroughRoadStation(tile, tile + AIMap.GetTileIndex(0, 1), AIRoad.ROADVEHTYPE_BUS, AIStation.		
-STATION_NEW)) {
-			foreach(d in HgTile.DIR8Index) {
-				if(AITile.IsStationTile(tile+d) && AICompany.IsMine(AITile.GetOwner(tile+d))) {
-					return false;
-				}
-			}
+		if(AIRoad.BuildDriveThroughRoadStation(tile, tile + 1, AIRoad.ROADVEHTYPE_BUS, AIStation.STATION_NEW)) {
 			return true;
 		}
-		return false;
+		if(AIRoad.BuildDriveThroughRoadStation(tile, tile + AIMap.GetTileIndex(0, 1), AIRoad.ROADVEHTYPE_BUS, AIStation.STATION_NEW)) {
+			return true;
+		}
+		if(AITile.GetSlope(platformTile) != AITile.SLOPE_FLAT) {
+			return false;
+		}
+		if(AITile.IsBuildable(tile)) {
+			return false;
+		}
+		if(AITile.GetOwner(tile) != AICompany.COMPANY_INVALID){ 
+			return false;
+		}
+		if(AIRoad.IsRoadTile(tile) || AITile.IsWaterTile(tile) || AIMarine.IsBuoyTile(tile)) {
+			return false;
+		}
+		return true;
 	}
 	
 	function GetBuildableScore() {
@@ -667,8 +872,8 @@ STATION_NEW)) {
 				&& TownBus.CanUse(place.cargo)) {
 			foreach(d in HgTile.DIR8Index) {
 				local busStopTile = platformTile + d;
-				if(CanBuildDriveThroughRoadStation(busStopTile)) {
-					result += 10;
+				if(CanBuildJoinableDriveThroughRoadStation(busStopTile)) {
+					result += 20;
 					if(AIRoad.IsRoadTile(busStopTile)) {
 						result += 10;
 					}
@@ -687,6 +892,70 @@ STATION_NEW)) {
 		}
 		
 		return result;
+	}
+	
+	function CheckBuildTownBus(isForTownPaxMail) {
+		Rectangle.Center(HgTile(platformTile),3).AppendToTileList(TownBus.ngTileList);
+		HgStation.CheckBuildTownBus(isForTownPaxMail);
+		TownBus.ngTileList.Clear();
+	}
+	
+	function GetDockSlope() {
+		switch(stationDirection) {
+			case HgStation.STATION_SE:
+				return AITile.SLOPE_NW;
+			case HgStation.STATION_NW:
+				return AITile.SLOPE_SE;
+			case HgStation.STATION_NE:
+				return AITile.SLOPE_SW;
+			case HgStation.STATION_SW:
+				return AITile.SLOPE_NE;
+			default:
+				HgLog.Error("Unknown stationDirection (GetDockSlope):"+stationDirection);
+		}
+	}
+	function GetStationDirectionFromSlope(slopeDirection) {
+		switch(slopeDirection) {
+			case AITile.SLOPE_NW:
+				return HgStation.STATION_SE;
+			case AITile.SLOPE_NE:
+				return HgStation.STATION_SW;
+			case AITile.SLOPE_SW:
+				return HgStation.STATION_NE;
+			case AITile.SLOPE_SE:
+				return HgStation.STATION_NW;
+			default:
+				HgLog.Error("Unknown slopeDirection (GetStationDirectionFromSlope):"+slopeDirection);
+		}
+	}
+	function GetStationDirectionFromDir4Index(dir4Index) {
+		switch(dir4Index) {
+			case 0:
+				return HgStation.STATION_NE;
+			case 1:
+				return HgStation.STATION_NW;
+			case 2:
+				return HgStation.STATION_SE;
+			case 3:
+				return HgStation.STATION_SW;
+			default:
+				HgLog.Error("Unknown Dir4Index (GetStationDirectionFromDir4Index):"+dir4Index);
+		}
+	}
+	
+	function GetDir4Index() {
+		switch(stationDirection) {
+			case HgStation.STATION_NE:
+				return 0;
+			case HgStation.STATION_NW:
+				return 1;
+			case HgStation.STATION_SE:
+				return 2;
+			case HgStation.STATION_SW:
+				return 3;
+			default:
+				HgLog.Error("Unknown stationDirection (GetDir4Index):"+stationDirection);
+		}
 	}
 }
 
@@ -712,19 +981,19 @@ class CanalStation extends HgStation {
 	}
 	
 	function IsBuildablePreCheck() {
-		local height = AITile.GetMinHeight(platformTile);
-		return AITile.IsBuildable(platformTile) &&  (height == 1 || height == 0);
+		//local height = AITile.GetMinHeight(platformTile);
+		return AITile.IsBuildable(platformTile);// && 0 <= height && height <= 2;
 	}
 	
 
 	function Build(levelTiles=true,isTestMode=true) {
-		local waterRemovable = !HogeAI.Get().roiBase && HogeAI.Get().clearWaterCost < max(HogeAI.Get().GetQuarterlyIncome() / 10,HogeAI.Get().GetUsableMoney() / 100); 
+		local waterRemovable = HogeAI.Get().waterRemovable;
 		local canals = [At(0,1),At(0,2)];
 		if(isTestMode) {
 			foreach(t in canals) {
-				if(AITile.GetMinHeight(t) >= 2) {
+				/*if(AITile.GetMinHeight(t) >= 3) {
 					return false;
-				}
+				}*/
 				if(!AIMarine.IsCanalTile(t) && !AIMarine.BuildCanal(t)) {
 					return false;
 				}
@@ -761,22 +1030,9 @@ class CanalStation extends HgStation {
 	}
 	
 	function BuildRaiseMode(isTestMode) {
-		if(isTestMode) {
-			foreach(t in [At(-1,-1),At(-1,0),At(0,-1),At(1,-1),At(1,0)]) {
-				if(!AITile.IsBuildable(t)) {
-					return false;
-				}
-			}
-		}
-		local boundCorners = HgTile.GetCorners( HgTile(platformTile).GetDirection(HgTile(At(0,-1))) );
-		foreach(corner in boundCorners) {
-			if(AITile.GetCornerHeight(platformTile,corner) == 1) {
-				if(!TileListUtil.RaiseTile(platformTile,HgTile.GetSlopeFromCorner(corner))) {
-					return false;
-				}
-			}
-		}
-		return true;
+		HogeAI.WaitForMoney(20000);
+		local baseHeight = AITile.GetMinHeight(At(0,1)) + 1;
+		return HgTile.LevelBound(platformTile, At(0,-1), baseHeight);
 	}
 	
 	
@@ -791,7 +1047,7 @@ class CanalStation extends HgStation {
 		if(AITile.GetMaxHeight(platformTile)!=1) {
 			return false;
 		}
-		return TileListUtil.LevelAverage( GetTileListForLevelTiles( [[0,1],[0,2]] ), null, isTestMode, 0 );*/
+		return TileListUtils.LevelAverage( GetTileListForLevelTiles( [[0,1],[0,2]] ), null, isTestMode, 0 );*/
 	}
 	
 	function GetTiles() {
@@ -808,6 +1064,20 @@ class CanalStation extends HgStation {
 	}
 	
 	function GetBuildableScore() {
+		local tileList = AITileList();
+		tileList.AddRectangle(At(-1,1),At(1,3));
+		tileList.Valuate(function(t){
+			if( AITile.IsWaterTile(t) 
+					|| AITile.IsCoastTile(t) 
+					|| (AITile.GetSlope(t) == AITile.SLOPE_FLAT && AITile.IsBuildable(t))) {
+				return 1;
+			} else {
+				return 0;
+			}
+		});
+		tileList.KeepValue(1);
+		return tileList.Count() - AITile.GetMinHeight(platformTile)*5;
+/*	
 		local result = 0;
 		local slope = AITile.GetSlope(platformTile);
 		if(GetCanalSlope() != slope) {
@@ -818,7 +1088,7 @@ class CanalStation extends HgStation {
 				result ++;
 			}
 		}
-		return result;
+		return result;*/
 	}
 	
 	function GetPlatformRectangle() {
@@ -856,10 +1126,10 @@ class WaterPathBuilder {
 		this.distance = distance;
 	}
 	
-	function BuildPath(starts ,goals, suppressInterval=false) {
+	function BuildPath(starts /*dst*/, goals /*src*/, suppressInterval=false) {
 		local swapGoalStart = false;
 		foreach(goal in goals) {
-			if(AIMarine.IsCanalTile(goal)) {
+			if(AIMarine.IsCanalTile(goal) || AITile.GetMinHeight(goal)>=1) {
 				swapGoalStart = true;
 				local t = starts;
 				starts = goals;
@@ -871,7 +1141,7 @@ class WaterPathBuilder {
 		local pathfinder = WaterPathFinder();
 		local pathFindLimit = max(HogeAI.Get().roiBase ? 15 : 15, distance / 10);
 		pathfinder.InitializePath(starts, goals);		
-		HgLog.Info("WaterPathBuilder Pathfinding...limit:"+pathFindLimit);
+		HgLog.Info("WaterPathBuilder Pathfinding...limit:"+pathFindLimit+" swapGoalStart:"+swapGoalStart);
 		local counter = 0;
 		local path = false;
 		while (path == false && counter < pathFindLimit) {
@@ -890,19 +1160,34 @@ class WaterPathBuilder {
 		}
 		this.path = Path.FromPath(path);
 		if(swapGoalStart) {
-			this.path = this.path.Reverse();
+			path = this.path = this.path.Reverse();
 		}
 		local lowerToZeroTiles = [];
+		local prev = null;
+		//local showLog = false;
+		//local checkTile = HgTile.XY(708,1313).tile;
 		while(path != null) {
 			local cur_tile = path.GetTile();
-			if(path.mode >= 1 
+			local parentPath = path.GetParent();
+			/*if(cur_tile == checkTile) showLog = true;
+			if(showLog) {
+				HgLog.Info("cur:"+HgTile(cur_tile)+(prev!=null?" prev:"+HgTile(prev):"")+" mode:"+path.mode);
+			}*/
+			local parentTile = parentPath != null ? parentPath.GetTile() : null;
+			if(parentTile!=null && AIMap.DistanceManhattan(cur_tile, parentTile) == 2) {
+				HogeAI.WaitForMoney(50000);
+				if(!WaterPathFinder.IsLock(cur_tile,parentTile) && !WaterPathFinder.BuildLock(cur_tile, parentTile, true)) {
+					HgLog.Warning("BuildLock failed."+HgTile(cur_tile)+"-"+HgTile(parentTile)+" "+AIError.GetLastErrorString());
+					return false;
+				}
+			} else if(path.mode >= 1 
 					&& (AIMarine.IsBuoyTile(cur_tile) 
 						|| (AITile.IsRiverTile(cur_tile) && AITile.GetSlope(cur_tile) == AITile.SLOPE_FLAT)
 						|| AITile.IsSeaTile(cur_tile) 
 						|| AIMarine.IsCanalTile(cur_tile) 
 						|| AIMarine.IsLockTile(cur_tile))) {
 			} else if(path.mode >= 256) {
-				HogeAI.WaitForMoney(15000);
+				HogeAI.WaitForMoney(50000);
 				if(!WaterPathFinder.LowerToZero(cur_tile)) {
 					HgLog.Warning("Cannot lower to zero."+HgTile(cur_tile)+" "+AIError.GetLastErrorString());
 					return false;
@@ -911,14 +1196,13 @@ class WaterPathBuilder {
 				lowerToZeroTiles.push(cur_tile);
 			} else if(path.mode >= 1) {
 				HogeAI.WaitForMoney(10000);
-				if(AIMarine.BuildCanal(cur_tile)) {
-				} else if(AIMarine.BuildLock(cur_tile)) {
-				} else {
-					HgLog.Warning("Cannot build canal or lock."+HgTile(cur_tile)+" "+AIError.GetLastErrorString());
+				if(!AIMarine.BuildCanal(cur_tile)) {
+					HgLog.Warning("BuildCanal failed."+HgTile(cur_tile)+AIError.GetLastErrorString());
 					return false;
 				}
 			}
-			path = path.GetParent();
+			prev = cur_tile;
+			path = parentPath;
 		}
 		/*
 		foreach(index,t in lowerToZeroTiles) {
@@ -941,34 +1225,117 @@ class WaterPathBuilder {
 
 class WaterPathFinder {
 	
-	static function CanThroughShipTile(tile) {
-		return (AITile.IsSeaTile(tile) && !AIMarine.IsWaterDepotTile(tile) 
-			) || AIMarine.IsBuoyTile(tile);
+	static function IsSea(tile) {
+		return (AITile.IsSeaTile(tile) && !AIMarine.IsWaterDepotTile(tile) ) 
+			|| AIMarine.IsBuoyTile(tile) 
+			|| (AITile.IsCoastTile(tile) && HgTile(tile).GetMaxHeightCount()==1);
 	}
 	
 	static function LowerToZero(tile) {
+		return WaterPathFinder.LowerTo(tile,0);
+	}
+	static function LowerTo(tile,toHeight) {
 		local lowerSlopes = 0;
 		foreach(corner in [AITile.CORNER_W, AITile.CORNER_S, AITile.CORNER_E, AITile.CORNER_N]) {
 			local height = AITile.GetCornerHeight(tile, corner);
-			if(height == 1) {
+			if(height - 1 ==  toHeight) {
 				lowerSlopes = lowerSlopes | HgTile.GetSlopeFromCorner(corner);
-			} else if(height >= 2) {
+			} else if(height != toHeight) {
 				return false;
 			}
 		}
 		return lowerSlopes == 0 || AITile.LowerTile(tile, lowerSlopes);
 	}
 	
+	static function RaiseTo(tile,toHeight) {
+		local raiseSlopes = 0;
+		foreach(corner in [AITile.CORNER_W, AITile.CORNER_S, AITile.CORNER_E, AITile.CORNER_N]) {
+			local height = AITile.GetCornerHeight(tile, corner);
+			if(height + 1 ==  toHeight) {
+				raiseSlopes = raiseSlopes | HgTile.GetSlopeFromCorner(corner);
+			} else if(height != toHeight) {
+				return false;
+			}
+		}
+		return raiseSlopes == 0 || AITile.RaiseTile(tile, raiseSlopes);
+	}
+	
+	static function BuildLock(prev,next,execMode=false) {
+		local tile = (prev + next) / 2;
+		if(prev==null || AITile.GetSlope(tile) == AITile.SLOPE_FLAT
+				|| WaterRoute.usedTiles.rawin(next) || WaterRoute.usedTiles.rawin(prev)) {
+			return false;
+		}
+		if(AIMarine.BuildLock(tile)) {
+			return true;
+		}
+		if(!AITile.IsBuildable(next) && !AITile.IsWaterTile(next) && !AITile.IsCoastTile(next)) {
+			return false;
+		}
+		foreach(t in [next,tile,prev]) {
+			if(AIMarine.IsWaterDepotTile(t) || AITile.IsStationTile(t) || AIMarine.IsLockTile(t)) {
+				return false;
+			}
+		}
+		if(AITile.GetSlope(prev) == AITile.SLOPE_FLAT) {
+			local prevLevel = AITile.GetMinHeight(prev);
+			if(AITile.GetMaxHeight(next)-1 == prevLevel) {
+				if(!WaterPathFinder.RaiseTo(next,prevLevel+1)) {
+					return false;
+				}
+			} else if(AITile.GetMinHeight(next)+1 == prevLevel) {
+				if(!WaterPathFinder.LowerTo(next,prevLevel-1)) {
+					return false;
+				}
+			} else {
+				return false;
+			}
+		} else if(AITile.GetSlope(next) == AITile.SLOPE_FLAT) {
+			local nextLevel = AITile.GetMinHeight(next);
+			if(AITile.GetMaxHeight(prev)-1 == nextLevel) {
+				if(!WaterPathFinder.RaiseTo(prev,nextLevel+1)) {
+					return false;
+				}
+			} else if(AITile.GetMinHeight(prev)+1 == nextLevel) {
+				if(!WaterPathFinder.LowerTo(prev,nextLevel-1)) {
+					return false;
+				}
+			} else {
+				return false;
+			}
+		}
+		if(execMode) {
+			return AIMarine.BuildLock(tile);
+		}
+		return true;
+	}
+
+	static function IsCenterLock(tile) {
+		return AIMarine.IsLockTile(tile) && AITile.GetSlope(tile) != AITile.SLOPE_FLAT;
+	}
+	
+	static function IsLock(prev,next) {
+		local cur = (prev + next) / 2;
+		if(!AIMarine.IsLockTile(prev) || !AIMarine.IsLockTile(cur) || !AIMarine.IsLockTile(next)) {
+			return false;
+		}
+		if (!AIMarine.AreWaterTilesConnected(prev,cur)) {
+			return false;
+		}
+		if (!AIMarine.AreWaterTilesConnected(cur,next)) {
+			return false;
+		}
+		return true;
+	}
+
 	_aystar_class = AyStar;//import("graph.aystar", "", 6);
 	_pathfinder = null;
 	_max_cost = null;
 	_running = null;
-	canalCostConsider = null;
 	
 	constructor() {
 		this._max_cost = 10000000;
 		this._pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
-		this.canalCostConsider = true; //!HogeAI.Get().IsRich();
 	}
 	
 	function InitializePath(sources, goals, ignoreTiles=[]) {
@@ -995,7 +1362,7 @@ class WaterPathFinder {
 			if(par.mode == 0 && mode == 1) {
 				return path.GetCost() + 5000;
 			} else if(par.mode >= 1 && AITile.GetMaxHeight(par.GetTile()) < AITile.GetMaxHeight(new_tile) ) {
-				return path.GetCost() + 1000;
+				return path.GetCost() + 500;
 			}
 		}
 		return path.GetCost() + 100;
@@ -1016,7 +1383,7 @@ class WaterPathFinder {
 		local tiles = [];
 		local mode = path.mode;
 		if(mode == null) {
-			if(!WaterPathFinder.CanThroughShipTile(cur_tile)) {
+			if(!WaterPathFinder.IsSea(cur_tile)) {
 				if(AITile.GetMaxHeight(cur_tile)==0) {
 					mode = 257;
 				} else {
@@ -1028,54 +1395,62 @@ class WaterPathFinder {
 		}
 		local lowerMode = mode >= 256;
 		local canalBuildMode = !lowerMode && mode >= 1;
-		if(self.canalCostConsider) {
-			if(canalBuildMode) { // TODO dockが遠くなりすぎてたどりつけなくなる問題
-				if (mode >= 40) return [];		
-			} else if(lowerMode) {
-				if ((mode - 256) >= 30) return [];		
-			}
+		if(canalBuildMode) { // TODO dockが遠くなりすぎてたどりつけなくなる問題
+			if (mode >= 200) return [];		
+		} else if(lowerMode) {
+			if ((mode - 256) >= 30) return [];		
 		}
-		local lockBuilded = (canalBuildMode || !self.canalCostConsider) && (AIMarine.BuildLock(cur_tile) || self.IsCenterLock(cur_tile));
 		local par = path.GetParent();
 		local prev = par != null ? par.GetTile() : null;
-		if(lockBuilded && prev == null) {
-			return [];
-		}
-		foreach (offset in lockBuilded ? [(cur_tile - prev)*2] : HgTile.DIR4Index) {
+		local haveLock =  prev != null && AIMap.DistanceManhattan(prev,cur_tile) == 2;
+		//HgLog.Info("cur_tile"+HgTile(cur_tile)+" "+HgTile(prev));
+		
+		/*{
+			local execMode = AIExecMode();
+			AISign.BuildSign(cur_tile, path.GetCost().tostring());
+		}*/
+		foreach (offset in haveLock ? [(cur_tile - prev)/2] : HgTile.DIR4Index) {
 			local next_tile = cur_tile + offset;
-			if (AIMarine.AreWaterTilesConnected(cur_tile,next_tile)) {
-				if(lowerMode && AITile.GetMaxHeight(next_tile)>=1) {
+			if(haveLock) {
+				local nextHeight = AITile.GetMaxHeight(next_tile);
+				local prevHeight = AITile.GetMaxHeight(prev);
+				if(abs(prevHeight-nextHeight)!=1) {
 					continue;
 				}
-				tiles.push([next_tile, 0xFF, (canalBuildMode || lowerMode) ? mode : 0]);
+			}
+			if (AIMarine.AreWaterTilesConnected(cur_tile,next_tile)) {
+				local nextHeight = AITile.GetMaxHeight(next_tile);
+				if(lowerMode && nextHeight>=1) { // これ要る？
+					continue;
+				}
+				local curHeight = AITile.GetMaxHeight(cur_tile);
+				if(AIMarine.IsLockTile(cur_tile) && AIMarine.IsLockTile(next_tile) && AITile.GetSlope(next_tile) != AITile.SLOPE_FLAT) {
+					tiles.push([next_tile + offset, 0xFF, ((canalBuildMode && nextHeight >= 1)|| lowerMode) ? mode : 0]);
+				} else {
+					tiles.push([next_tile, 0xFF, ((canalBuildMode && nextHeight >= 1)|| lowerMode) ? mode : 0]);
+				}
 				//HgTile(next_tile).BuildSign(""+mode);
 			} else if(lowerMode) {
-				if(WaterPathFinder.CanThroughShipTile(next_tile)) {
+				if(WaterPathFinder.IsSea(next_tile)) {
 					tiles.push([next_tile, 0xFF, 0]);
 				} else if(WaterPathFinder.LowerToZero(next_tile)) {
 					tiles.push([next_tile, 0xFF, mode + 1]);
 				}
 			} else if(canalBuildMode) {
-				if(lockBuilded && WaterPathFinder.CanThroughShipTile(next_tile)) {
+				if(haveLock && WaterPathFinder.IsSea(next_tile)) {
 					tiles.push([next_tile, 0xFF, 0]);
 				} else if(AIMarine.BuildCanal(next_tile)) {
 					tiles.push([next_tile, 0xFF, mode + 1]);
-				} else if(prev == cur_tile - offset && (AIMarine.BuildLock(next_tile) || self.IsCenterLock(next_tile))) {
-					tiles.push([next_tile, 0xFF, mode + 1]);
-				}
-			} else if(!self.canalCostConsider) {
-				if(lockBuilded) {
-					tiles.push([next_tile, 0xFF, 1]);
+				} else if(((AITile.IsWaterTile(next_tile) && AITile.GetSlope(next_tile) == AITile.SLOPE_FLAT) || AIMarine.IsBuoyTile(next_tile))
+						&& !AIMarine.IsLockTile(next_tile) && !AIMarine.IsWaterDepotTile(next_tile)) {
+					tiles.push([next_tile, 0xFF, mode]);
+				} else if(!haveLock && prev == cur_tile - offset && WaterPathFinder.BuildLock(cur_tile,next_tile+offset)) {
+					tiles.push([next_tile+offset, 0xFF, mode + 1]);
 				}
 			}
 		}
 		return tiles;
 	}
-	
-	function IsCenterLock(tile) {
-		return AIMarine.IsLockTile(tile) && AITile.GetSlope(tile) != AITile.SLOPE_FLAT;
-	}
-
 	function _CheckDirection(self, tile, existing_direction, new_direction) {
 		return false;
 	}
@@ -1215,11 +1590,10 @@ class Coasts {
 	function SearchCoastTiles(coastTile) {
 		local tiles = [coastTile];
 		local count = 0;
-		local w = AIMap.GetMapSizeX();
-		local h = AIMap.GetMapSizeY();
+		local tileIdMap = Coasts.tileCoastId;
 		while(tiles.len() >= 1) {
 			local tile = tiles.pop();
-			Coasts.tileCoastId.rawset(tile,id);
+			tileIdMap.rawset(tile,id);
 			count ++;
 /*			{
 				local execMode = AIExecMode();
@@ -1227,10 +1601,23 @@ class Coasts {
 			}*/
 			foreach(d in HgTile.DIR4Index) {
 				local check = tile + d;
-				if(nearLand == null && AITile.GetMinHeight(check) >= 1) {
-					nearLand = check;
+				if( !tileIdMap.rawin(check) && IsCoastTile(check) ) {
+					tiles.push(check);
 				}
-				if( !Coasts.tileCoastId.rawin(check) && IsCoastTile(check) ) {
+			}
+		}
+		tiles = [coastTile];
+		local checked = {};
+		while(nearLand==null && tiles.len() >= 1) {
+			local tile = tiles.pop();
+			checked.rawset(tile,id);
+			foreach(d in HgTile.DIR4Index) {
+				local check = tile + d;
+				if(AITile.GetMinHeight(check) >= 1) {
+					nearLand = check;
+					break;
+				}
+				if( !checked.rawin(check) && IsCoastTile(check) ) {
 					tiles.push(check);
 				}
 			}
@@ -1239,10 +1626,13 @@ class Coasts {
 	}
 	
 	function IsCoastTile(tile) {
+		if(AITile.GetMinHeight(tile)!=0) {
+			return false;
+		}
 		if(AITile.IsCoastTile(tile)) {
 			return true;
 		}
-		if(AITile.GetMinHeight(tile)==0 && AITile.GetMaxHeight(tile)==1) {
+		if(AITile.GetMaxHeight(tile)==1) {
 			return true;
 		}
 		if(AITile.IsSeaTile(tile) && AIMap.DistanceFromEdge(tile) == 1) {

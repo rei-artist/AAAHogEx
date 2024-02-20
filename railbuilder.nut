@@ -658,14 +658,19 @@ class BuildedPath {
 	route = null;
 	
 	constructor(path) {
-		this.path = path;
 		BuildedPath.instances.rawset(this,this);
+		this.path = path;
 		array_ = path.GetTiles();
 		BuildedPath.AddTiles(array_);
 	}
 	
 	function ChangePath() {
 		array_ = path.GetTiles();
+		if(route != null) {
+			route.Save(); // 保存するためにrouteのsavedataの更新が必要
+		} else {
+			HgLog.Info("route == null (BuildedPath.ChangePath)");
+		}
 		BuildedPath.AddTiles(array_);
 	}
 
@@ -1180,9 +1185,9 @@ class RailBuilder {
 				}
 			} else {
 				local testMode = AITestMode();
-				if(TileListUtil.LevelAverage(sameLevel.boundTileList, null, true, level)) {
+				if(TileListUtils.LevelAverage(sameLevel.boundTileList, null, true, level)) {
 					local execMode = AIExecMode();
-					TileListUtil.LevelAverage(sameLevel.boundTileList, null, false, level);
+					TileListUtils.LevelAverage(sameLevel.boundTileList, null, false, level);
 				}
 			}
 			prev = orgPrev;
@@ -1452,11 +1457,11 @@ class RailBuilder {
 		}
 		local result = BuildUtils.RetryUntilFree(function():(t0,boundCorner) {
 			local success = false;
-			if(TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[1]))) {
+			if(TileListUtils.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[1]))) {
 				//HgLog.Warning("RaiseTile:"+HgTile(t0)+HgTile.GetCornerString(boundCorner[1]));
 				success = true;
 			}
-			if(!success && TileListUtil.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]))) {
+			if(!success && TileListUtils.RaiseTile(t0,HgTile.GetSlopeFromCorner(boundCorner[0]))) {
 				//HgLog.Warning("RaiseTile:"+HgTile(t0)+HgTile.GetCornerString(boundCorner[0]));
 				success = true;
 			}
@@ -1471,12 +1476,15 @@ class RailBuilder {
 
 	function ChangeBridge(prev,next) {
 		HgLog.Info("ChangeBridge: "+HgTile(prev)+"-"+HgTile(next));
-		local orgPath = GetBuildedPath(prev);
-		if(orgPath == null) {
+		local pathBuildedPath = SearchPathBuildedPath(prev);
+		if(pathBuildedPath == null) {
 			HgLog.Warning("Demolish(ChangeBridge). No builded path:"+HgTile(prev));
 			DemolishTile(prev);
 			return true;
-		} else if(orgPath.GetParent()==null || AIMap.DistanceManhattan(orgPath.GetTile(),orgPath.GetParent().GetTile())!=1) {
+		}
+		local orgPath = pathBuildedPath[0];
+		local orgBuildedPath = pathBuildedPath[1];
+		if(orgPath.GetParent()==null || AIMap.DistanceManhattan(orgPath.GetTile(),orgPath.GetParent().GetTile())!=1) {
 			HgLog.Warning("ChangeBridge failed.(Illegal existing rail)"+HgTile(prev));
 			return false;
 		}
@@ -1538,25 +1546,16 @@ class RailBuilder {
 			return false;
 		}
 		
-		ChangeBridgeBuildedPath(startTile, endTile);
+		if(!ChangeBridgePath(orgBuildedPath, startTile, endTile)) {
+			HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(startTile)+" "+HgTile(endTile));
+		} else {
+			orgBuildedPath.ChangePath();
+		}
 		
 		AIRail.SetCurrentRailType(currentRailType);
 		return true;
 	}
 	
-	
-	function ChangeBridgeBuildedPath(startTile, endTile) {
-		local succeeded = false;
-		foreach(path,v in BuildedPath.instances) {
-			if(ChangeBridgePath(path, startTile, endTile)) {
-				path.ChangePath();
-				succeeded = true;
-			}
-		}
-		if(!succeeded) {
-			HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(startTile)+" "+HgTile(endTile));
-		}
-	}
 	
 	function ChangeBridgePath(buildedPath, startTile, endTile) {
 		local path = buildedPath.path;
@@ -1574,6 +1573,7 @@ class RailBuilder {
 				while(path != null) {
 					if(path.GetTile() == endTile || path.GetTile() == startTile) {
 						startPath.parent_ = path;
+						HgLog.Info(HgTile(startPath.GetTile())+".parent = "+HgTile(path.GetTile())+" route:"+buildedPath.route);
 						if(buildSignal && path.GetParent()!=null && path.GetParent().GetParent()!=null) {
 							BuildUtils.RemoveSignalSafe (path.GetParent().GetTile(), path.GetParent().GetParent().GetTile());
 							BuildUtils.BuildSignalSafe( path.GetParent().GetTile(), path.GetParent().GetParent().GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY);
@@ -1591,14 +1591,14 @@ class RailBuilder {
 		return false;
 	}
 	
-	function GetBuildedPath(t) {
-		foreach(path,v in BuildedPath.instances) {
-			local c = path.path;
-			while(c != null) {
-				if(c.GetTile() == t) {
-					return c;
+	function SearchPathBuildedPath(tile) {
+		foreach(buildedPath,v in BuildedPath.instances) {
+			local path = buildedPath.path;
+			while(path != null) {
+				if(path.GetTile() == tile) {
+					return [path, buildedPath];
 				}
-				c = c.GetParent();
+				path = path.GetParent();
 			}
 		}
 		return null;
