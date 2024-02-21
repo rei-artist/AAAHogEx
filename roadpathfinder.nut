@@ -252,7 +252,7 @@ function RoadPathFinder::_Estimate(self, cur_tile, cur_direction, goal_tiles)
 	/* As estimate we multiply the lowest possible cost for a single tile with
 	 * with the minimum number of tiles we need to traverse. */
 	foreach (tile in goal_tiles) {
-		min_cost = min(AIMap.DistanceManhattan(cur_tile, tile) * self._cost_tile, min_cost);
+		min_cost = min(AIMap.DistanceManhattan(cur_tile, tile) * 100 /*self._cost_tile*/, min_cost);
 	}
 	return min_cost * self._estimate_rate;
 }

@@ -644,7 +644,8 @@ class RoadBuilder {
 		pathfinder._cost_drivethroughstation = costDrivethroughstation == null ? 500 : costDrivethroughstation;
 		pathfinder._cost_demolish_tile = 1000;
 		pathfinder._cost_coast = 50;
-		pathfinder._cost_slope = 0;
+		pathfinder._cost_slope = 50;
+		pathfinder._cost_turn = 0;
 		pathfinder._cost_bridge_per_tile = 100;
 		pathfinder._cost_tunnel_per_tile = 100;
 		pathfinder._max_bridge_length = 50; //20;
@@ -665,9 +666,14 @@ class RoadBuilder {
 		}*/
 		local distance = AIMap.DistanceManhattan(starts[0],goals[0]);
 		if(HogeAI.Get().IsInfrastructureMaintenance()) {
-			pathfinder._cost_no_existing_road = 40; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
+//			pathfinder._cost_no_existing_road = 40; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
+			pathfinder._cost_tile = 50;
+			pathfinder._cost_no_existing_road = 140;
 		} else {
-			pathfinder._cost_no_existing_road = 40;
+			pathfinder._cost_tile = 50;
+			pathfinder._cost_no_existing_road = 140;
+//			pathfinder._cost_tile = 100;
+//			pathfinder._cost_no_existing_road = 40;
 		}
 		/*
 		if(distance > 200) {

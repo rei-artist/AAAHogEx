@@ -12,6 +12,8 @@ class PlaceProduction {
 	
 	pieceNumX = null;
 	pieceNumY = null;
+	largePieceNumX = null;
+	largePieceNumY = null;
 
 	lastCheckMonth = null;
 	history = null;
@@ -22,8 +24,10 @@ class PlaceProduction {
 	constructor() {
 		history = {};
 		currentProduction = {};
-		pieceNumX = AIMap.GetMapSizeX() / PlaceProduction.PIECE_SIZE + 1;
-		pieceNumY = AIMap.GetMapSizeY() / PlaceProduction.PIECE_SIZE + 1;
+		pieceNumX = Utils.DivCeil(AIMap.GetMapSizeX(), PlaceProduction.PIECE_SIZE);
+		pieceNumY = Utils.DivCeil(AIMap.GetMapSizeY(), PlaceProduction.PIECE_SIZE);
+		largePieceNumX = Utils.DivCeil(pieceNumX, 4);
+		largePieceNumY = Utils.DivCeil(pieceNumY, 4);
 	}
 	
 	static function Save(data) {
@@ -165,30 +169,22 @@ class PlaceProduction {
 
 	function CalculateProductionInfos(cargo) {
 		local pieceInfos = array(pieceNumX * pieceNumY);
+		foreach(i,_ in pieceInfos) {
+			pieceInfos[i] = {
+				sum = 0
+				count = 0
+				usable = true //使ってない？
+				dirty = false
+				places = []
+			};
+		}
 		foreach(place in Place.GetCargoPlaces(cargo,true)) {
 			local prod = place.GetLastMonthProduction(cargo);
-			//f(prod >= 50) {
-				local pieceIndex = GetPieceIndex(place.GetLocation());
-				local pieceInfo;
-				if(pieceInfos[pieceIndex] == null) {
-					pieceInfo = {
-						sum = 0
-						count = 0
-						usable = true
-						dirty = false
-						places = []
-					};
-					pieceInfos[pieceIndex] = pieceInfo;
-				} else {
-					pieceInfo = pieceInfos[pieceIndex]
-				}
-				//local usable = PlaceDictionary.Get().CanUseAsSource(place, cargo) && place.GetLastMonthTransportedPercentage(cargo) < 30;
-				//if(usable) {
-					pieceInfo.sum += prod;
-					pieceInfo.count ++;
-					pieceInfo.places.push(place);
-				//}
-			//}
+			local pieceIndex = GetPieceIndex(place.GetLocation());
+			local pieceInfo = pieceInfos[pieceIndex];
+			pieceInfo.sum += prod;
+			pieceInfo.count ++;
+			pieceInfo.places.push(place);
 		}
 		return pieceInfos;
 	}
@@ -272,6 +268,33 @@ class PlaceProduction {
 	
 	function GetCargoInfos(cargo,isProducing) {
 		return isProducing ? GetProductionInfos(cargo) : GetAcceptInfos(cargo);
+	}
+	
+	// largeIndexは4*4 piece単位
+	function GetPlacesInLargeIndex(cargo, isProducing, largeIndex) {
+		local result = [];
+		local xIndex = (largeIndex % largePieceNumX)  * 4;
+		local yIndex = (largeIndex / largePieceNumX)  * 4;
+		local topLeftIndex = xIndex + yIndex * pieceNumX;
+		local pieceInfos = GetCargoInfos(cargo,isProducing);
+		for(local y=0; y<4; y++) {
+			for(local x=0; x<4; x++) {
+				local index = topLeftIndex + y * pieceNumX + x;
+				if(index < pieceInfos.len()) {
+					result.extend(pieceInfos[index].places);
+				}
+			}
+		}
+		return result;
+	}
+
+	function GetPlacesInIndexes(cargo, isProducing, indexes) {
+		local pieceInfos = GetCargoInfos(cargo,isProducing);
+		local result = [];
+		foreach(index in indexes) {
+			result.extend(pieceInfos[index].places);
+		}
+		return result;
 	}
 	
 	function GetArroundPlaces(cargo, isProducing, location, minDistance, maxDistance) {
@@ -389,6 +412,99 @@ class PlaceProduction {
 		if(!indexes.rawin(index)) {
 			indexes.rawset(index,1);
 		}
+	}
+
+	function GetIndexesInSegment(segmentIndex, segmentNum) {
+		if(pieceNumX * pieceNumY < segmentNum) {
+			return null;
+		}
+		local samples = {};
+		for(local i=1; i<=4; i++) {
+			if(segmentNum % i == 0) {
+				local w = segmentNum / i;
+				local h = i;
+				local nmin = min(w,h);
+				local nmax = max(w,h);
+				samples.rawset(nmin + "-" + nmax,[nmin,nmax]);
+			}
+		}
+		local pieceNumMin = min(pieceNumX, pieceNumY);
+		local pieceNumMax = max(pieceNumX, pieceNumY);
+		local best = null;
+		local maxMinPiece = -1;
+		foreach(s,a in samples) {
+			//HgLog.Info("s:"+s+" pieceNumMin"+pieceNumMin+" a[0]"+a[0]);
+			if(pieceNumMin % a[0] != 0) {
+				continue;
+			}
+			local minPiece = min(pieceNumMin / a[0], pieceNumMax / a[1]);
+			if(maxMinPiece < minPiece) {
+				maxMinPiece = minPiece;
+				best = a;
+			}
+		}
+		if(best==null) {
+			return null;
+		}
+		local pieceNum = pieceNumX * pieceNumY;
+		local minSeg = best[0];
+		local maxSeg = best[1];
+		//HgLog.Info("minSeg:"+minSeg+" maxSeg:"+maxSeg);
+		local result = [];
+		if(pieceNumY < pieceNumX) {
+			local segNumX = maxSeg;
+			local segNumY = minSeg;
+			local segH = pieceNumY / segNumY;
+			local segY = segmentIndex / segNumX;
+			local segPieceNum = segH * pieceNumX / segNumX;
+			local segPieceNumM = segH * pieceNumX % segNumX;
+			local currentSegIndex = segY * segNumX;
+			local countPiece = 0;
+			local countSeg = 0;
+			for(local x=0; x<pieceNumX; x++) {
+				for(local y=0; y<segH; y++) {
+					if(currentSegIndex == segmentIndex) {
+						result.push((segY * segH + y) * pieceNumX + x);
+					}
+					countPiece ++;
+					if( countPiece == segPieceNum + (countSeg < segPieceNumM ? 1 : 0)) {
+						if(currentSegIndex == segmentIndex) {
+							return result;
+						}
+						countSeg ++;
+						currentSegIndex+=segNumY;
+						countPiece = 0;
+					}
+				}
+			}
+		} else {
+			local segNumX = minSeg;
+			local segNumY = maxSeg;
+			local segW = pieceNumX / segNumX;
+			local segX = segmentIndex % segNumX;
+			local segPieceNum = segW * pieceNumY / segNumY
+			local segPieceNumM = segW * pieceNumY % segNumY;
+			local currentSegIndex = segX;
+			local countPiece = 0;
+			local countSeg = 0;
+			for(local y=0; y<pieceNumY; y++) {
+				for(local x=0; x<segW; x++) {
+					if(currentSegIndex == segmentIndex) {
+						result.push(y * pieceNumX + segX * segW + x);
+					}
+					countPiece ++;
+					if( countPiece == segPieceNum + (countSeg < segPieceNumM ? 1 : 0)) {
+						if(currentSegIndex == segmentIndex) {
+							return result;
+						}
+						currentSegIndex+=segNumX;
+						countSeg ++;
+						countPiece = 0;
+					}
+				}
+			}
+		}
+		return null;
 	}
 }
 
@@ -956,9 +1072,14 @@ class Place {
 	}
 	
 
-	static function GetNotUsedProducingPlaces( cargo, limit = IntegerUtils.IntMax ) {
+	static function GetNotUsedProducingPlaces( cargo, limit = IntegerUtils.IntMax, indexes = null ) {
 		local placeDictionary = PlaceDictionary.Get();
-		local places = Place.GetCargoPlaces( cargo, true );
+		local places;
+		if(indexes == null) {
+			places = Place.GetCargoPlaces( cargo, true );
+		} else {
+			places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
+		}
 		local result = [];
 		if(places.len() > limit) {
 			local list = AIList();

@@ -1,4 +1,10 @@
 ﻿
+class Utils {
+	static function DivCeil(a,b) {
+		return (a+b-1)/b;
+	}
+}
+
 class IntegerUtils {
 	static IntMax = 2147483647;
 }
