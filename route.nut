@@ -1662,17 +1662,14 @@ class CommonRoute extends Route {
 
 	function BuildDepot(path) {
 		local execMode = AIExecMode();
-		if(srcHgStation instanceof WaterStation) {
+		if(srcHgStation instanceof CanalStation || srcHgStation instanceof WaterStation) {
 			depot = srcHgStation.GetDepot();
 			if(depot != null) {
 				return true;
 			}
 		}
-		if(GetVehicleType() == AIVehicle.VT_WATER) {
-			//path = path.SubPathIndex(5);
-		}
 		depot = path.BuildDepot(GetVehicleType());
-		if(srcHgStation instanceof WaterStation) {
+		if(srcHgStation instanceof CanalStation || srcHgStation instanceof WaterStation) {
 			srcHgStation.SetDepot(depot);
 		}
 		if(depot == null && srcHgStation instanceof RoadStation) {
@@ -1687,18 +1684,16 @@ class CommonRoute extends Route {
 	
 	function BuildDestDepot(path) {
 		local execMode = AIExecMode();
-		path = path.Reverse();
-		if(destHgStation instanceof WaterStation) {
+		path = path.Reverse();		
+		
+		if(destHgStation instanceof CanalStation || destHgStation instanceof WaterStation) {
 			destDepot = destHgStation.GetDepot();
 			if(destDepot != null) {
 				return true;
 			}
 		}
-		if(GetVehicleType() == AIVehicle.VT_WATER) {
-			//path = path.SubPathIndex(5);
-		}
 		destDepot = path.BuildDepot(GetVehicleType());
-		if(destHgStation instanceof WaterStation) {
+		if(destHgStation instanceof CanalStation || destHgStation instanceof WaterStation) {
 			destHgStation.SetDepot(destDepot);
 		}
 		return destDepot != null;
@@ -1766,7 +1761,7 @@ class CommonRoute extends Route {
 
 		local nonstopIntermediate = GetVehicleType() == AIVehicle.VT_ROAD ? AIOrder.OF_NON_STOP_INTERMEDIATE : 0;
 
-		if(useDepotOrder && HogeAI.Get().IsEnableVehicleBreakdowns()) {
+		if(useDepotOrder && HogeAI.Get().IsEnableVehicleBreakdowns() && !(this instanceof WaterRoute)) {
 			AIOrder.AppendOrder(vehicle, depot, nonstopIntermediate );
 		}
 		local isBiDirectional = IsBiDirectional();
@@ -1788,7 +1783,7 @@ class CommonRoute extends Route {
 		
 		AppendSrcToDestOrder(vehicle);
 		
-		if(useDepotOrder && destDepot != null && HogeAI.Get().IsEnableVehicleBreakdowns()) {
+		if(useDepotOrder && destDepot != null && HogeAI.Get().IsEnableVehicleBreakdowns() && !(this instanceof WaterRoute)) {
 			AIOrder.AppendOrder(vehicle, destDepot, nonstopIntermediate );
 		}
 		local destOrderPosition = AIOrder.GetOrderCount(vehicle);
@@ -2548,6 +2543,7 @@ class CommonRoute extends Route {
 							foreach(v,_ in AIVehicleList_Depot(depot)) { // 共通のdepotに他のgroupの使えるvehicleがいるかも
 								if(AIVehicle.IsStoppedInDepot(v) 
 										&& choosenEngine == AIVehicle.GetEngineType(v)
+										&& AIVehicle.GetCapacity(v, cargo) >= 1
 										&& (!HogeAI.Get().IsEnableVehicleBreakdowns() || AIVehicle.GetAgeLeft(v) >= 1000)) {
 									AIOrder.ShareOrders(v, latestVehicle);
 									AIGroup.MoveVehicle(vehicleGroup, v);

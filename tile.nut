@@ -663,7 +663,7 @@ class HgTile {
 		return false;
 	}
 	
-	function BuildWaterDepot(depotTile,front) {
+	function BuildWaterDepot(depotTile,front,force=false) {
 		local aiExec = AIExecMode();
 		
 		if(AIMarine.IsWaterDepotTile(depotTile) 
@@ -683,10 +683,10 @@ class HgTile {
 		} else {
 			d2 = depotTile + (depotTile - front);
 		}
-		if(WaterRoute.usedTiles.rawin(depotTile)) {
+		if(!force && WaterRoute.usedTiles.rawin(depotTile)) {
 			return false;
 		}
-		if(WaterRoute.usedTiles.rawin(d2)) {
+		if(!force && WaterRoute.usedTiles.rawin(d2)) {
 			return false;
 		}
 		HogeAI.WaitForMoney(10000);

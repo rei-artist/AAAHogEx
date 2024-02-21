@@ -148,6 +148,16 @@ class Path {
 		return result;
 	}
 	
+	function GetTilesLen(maxLen) {
+		local result = [];
+		local path = this;
+		while(path != null && result.len() < maxLen) {
+			result.push(path.GetTile());
+			path = path.GetParent();
+		}
+		return result;
+	}
+	
 	function GetIndexOf(tile) {
 		local count = 0;
 		local path = this;
@@ -433,7 +443,7 @@ class Path {
 		if(vehicleType == AIVehicle.VT_RAIL) {
 			return BuildDepotForRail();
 		} else {
-			local prevprev = null;
+			local prev2 = null;
 			local prev = null;
 			local path = this;
 			while(path != null) {
@@ -443,18 +453,30 @@ class Path {
 						path = path.GetParent();
 					} else {
 						local curHgTile = HgTile(prev);
-						foreach(hgTile in curHgTile.GetDir4()) {
-							if(hgTile.tile == path.GetTile() || hgTile.tile == prevprev) {
-								continue;
+						if(vehicleType == AIVehicle.VT_WATER && AIMarine.IsCanalTile(prev)) {
+							local tiles = path.GetTilesLen(3);
+							if(tiles.len() == 3) {
+								local dir = tiles[0] - prev;
+								if(tiles[1] - tiles[0] == dir && tiles[2] - tiles[1] == dir) {
+									if(curHgTile.BuildWaterDepot(tiles[0],prev,true)) {
+										return tiles[0];
+									}
+								}
 							}
-							if(curHgTile.BuildCommonDepot(hgTile.tile, prev, vehicleType)) {
-								return hgTile.GetTileIndex();
+						} else {
+							foreach(hgTile in curHgTile.GetDir4()) {
+								if(hgTile.tile == path.GetTile() || hgTile.tile == prev2) {
+									continue;
+								}
+								if(curHgTile.BuildCommonDepot(hgTile.tile, prev, vehicleType)) {
+									return hgTile.GetTileIndex();
+								}
 							}
 						}
 					}
 				}
 				if(path != null) {
-					prevprev = prev;
+					prev2 = prev;
 					prev = path.GetTile();
 					path = path.GetParent();
 				}
