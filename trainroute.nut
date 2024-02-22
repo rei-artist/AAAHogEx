@@ -33,7 +33,7 @@ class TrainRoute extends Route {
 		data.unsuitableEngineWagons <- TrainRoute.unsuitableEngineWagons;
 	}
 	
-	static function Load(t) {
+	static function Create(t) {
 		local destHgStations = [];
 		foreach(stationId in t.destHgStations) {
 			if(stationId != null) {
@@ -62,8 +62,7 @@ class TrainRoute extends Route {
 				HgLog.Info("pathDestToSrc:"+HgTile(tile));
 			}
 		}*/
-		trainRoute.id = t.id;
-		TrainRoute.idCounter.Skip(trainRoute.id);
+		trainRoute.Load(t);
 		trainRoute.subCargos = t.subCargos;
 		trainRoute.isTransfer = t.transferRoute;
 		trainRoute.latestEngineVehicle = t.latestEngineVehicle;
@@ -87,7 +86,7 @@ class TrainRoute extends Route {
 		}
 		trainRoute.depots = t.depots;
 		if(t.returnRoute != null) {
-			trainRoute.returnRoute = TrainReturnRoute.Load(t.returnRoute, trainRoute);
+			trainRoute.returnRoute = TrainReturnRoute.Create(t.returnRoute, trainRoute);
 			trainRoute.returnRoute.saveData = t.returnRoute;
 		}
 		trainRoute.reduceTrains = t.rawin("reduceTrains") ? t.reduceTrains : false;
@@ -118,7 +117,7 @@ class TrainRoute extends Route {
 	static function LoadStatics(data) {
 		TrainRoute.instances.clear();
 		foreach(t in data.trainRoutes) {
-			local trainRoute = TrainRoute.Load(t);
+			local trainRoute = TrainRoute.Create(t);
 			if(trainRoute==null) { 
 				continue;
 			}
@@ -139,7 +138,7 @@ class TrainRoute extends Route {
 		TrainRoute.removed.clear();
 		if(data.rawin("removedTrainRoute")) {
 			foreach(t in data.removedTrainRoute) {
-				local trainRoute = TrainRoute.Load(t);
+				local trainRoute = TrainRoute.Create(t);
 				TrainRoute.removed.push(trainRoute);
 			}
 		}
@@ -205,9 +204,6 @@ class TrainRoute extends Route {
 	}*/
 	
 	
-	static idCounter = IdCounter();
-	
-	id = null;
 	routeType = null;
 	cargo = null;
 	srcHgStation = null;
@@ -285,7 +281,7 @@ class TrainRoute extends Route {
 	
 	function Save() {
 		local t = {};
-		t.id <- id;
+		Route.SaveTo(t);
 		t.routeType <- routeType;
 		t.cargo <- cargo;
 		t.srcHgStation <- srcHgStation.id;
@@ -2151,6 +2147,7 @@ class TrainReturnRoute extends Route {
 	
 	function Save() {
 		local t = {};
+		Route.SaveTo(t);
 		t.srcHgStation <- srcHgStation.id;
 		t.destHgStation <- destHgStation.id;
 		t.srcArrivalPath <- srcArrivalPath.path.Save();
@@ -2162,7 +2159,7 @@ class TrainReturnRoute extends Route {
 		saveData = t;
 	}
 	
-	static function Load(t, originalRoute) {
+	static function Create(t, originalRoute) {
 		local result = TrainReturnRoute(
 			originalRoute,
 			HgStation.worldInstances[t.srcHgStation],
@@ -2171,6 +2168,7 @@ class TrainReturnRoute extends Route {
 			BuildedPath(Path.Load(t.srcDeparturePath)),
 			BuildedPath(Path.Load(t.destArrivalPath)),
 			BuildedPath(Path.Load(t.destDeparturePath)));
+		result.Load(t);
 		result.depots = t.rawin("depots") ? t.depots : [];
 		result.subCargos = t.subCargos;
 		return result;

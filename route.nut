@@ -2,6 +2,8 @@
 class Route {
 	static allVehicleTypes = [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD, AIVehicle.VT_WATER, AIVehicle.VT_AIR];
 
+	static allRoutes = {}
+
 	static checkedNewRoute = ExpirationRawTable(365);
 	static availableVehicleTypesCache = ExpirationTable(30);
 	static tooManyVehiclesForNewRouteCache = ExpirationTable(30);
@@ -155,8 +157,20 @@ class Route {
 		needsAdditionalCache = ExpirationTable(30);
 		overflowCache = ExpirationTable(30);
 		isBuilding = false;
+		allRoutes.rawset(id,this);
 	}
 	
+	function Load(t) {
+		allRoutes.rawdelete(id); // コンストラクタで仮発行されたidを削除
+		id = t.id;
+		idCounter.Skip(id);
+		allRoutes.rawset(id,this);
+	}
+
+	function SaveTo(t) {
+		t.id <- id;
+	}
+
 	function GetRouteClass() {
 		return Route.GetRouteClassFromVehicleType(GetVehicleType());
 	}
@@ -1572,6 +1586,8 @@ class CommonRoute extends Route {
 	
 	function Load(t) {
 		saveData = t.savedData;
+
+		Route.Load(saveData);
 	
 		cargo = saveData.cargo;
 		srcHgStation = HgStation.worldInstances[saveData.srcHgStation];
@@ -1627,6 +1643,7 @@ class CommonRoute extends Route {
 			latestEngineSet = latestEngineSet
 			maxVehicles = maxVehicles
 		};
+		Route.SaveTo(saveData);
 	}
 
 	function SetCannotChangeDest(cannotChangeDest) {
@@ -2884,31 +2901,6 @@ class RouteBuilder {
 		supportRoutes = [];
 		
 		if(srcPlace != null && !GetOption("notNeedToMeetDemand",false)) {
-			// if( HogeAI.Get().firs ) {
-				// if(srcPlace.IsIncreasable()) {
-					// HgLog.Warning("RouteBuilder.Build firs "+srcPlace.GetName()+" "+this);
-					// if(srcPlace.IsProcessing()) {
-						// foreach(cargo in srcPlace.GetNotToMeetCargos()) {
-							// HgLog.Warning("RouteBuilder.Build GetNotToMeetCargos "+AICargo.GetName(cargo)+" "+srcPlace.GetName()+" "+this);
-							// needsToMeetDemand = true;
-							// local cargoPlan = {
-								// place = srcPlace.GetAccepting()
-								// cargo = cargo
-							// };
-							// local routePlans = SortedList(function(plan) {
-								// return plan.estimate.value; /*-plan.estimate.buildingTime;*/
-							// });
-							// routePlans.Extend( HogeAI.Get().CreateRoutePlans(cargoPlan,null/*,{useLastMonthProduction=true}*/) );
-							// HogeAI.Get().DoRoutePlans( routePlans, {capacity = 1}, {searchTransfer = false,notNeedToMeetDemand=true,useLastMonthProduction=true} );
-						// }
-					// } else {
-						// if( srcPlace.GetToMeetCargos().len() == 0 ) {
-							// supportRoutes.extend( HogeAI.Get().SearchAndBuildToMeetSrcDemandMin( srcPlace, null, {capacity = 1},
-								// {searchTransfer = false,notNeedToMeetDemand=true,useLastMonthProduction=true}));
-						// }
-					// }
-				// }
-			// } else {
 				local currentProduction = srcPlace.GetLastMonthProduction( cargo );
 				if(currentProduction<200 || currentProduction < srcPlace.GetExpectedProduction( cargo, GetVehicleType())) {
 					needsToMeetDemand = true;
@@ -2916,9 +2908,6 @@ class RouteBuilder {
 				if(needsToMeetDemand && currentProduction<50) {
 					// 場所がなくなる可能性があるので少量生産以外は後からやる
 					local routePlans = GetOption("routePlans", null);
-					if(routePlans == null) {
-						routePlans = HogeAI.Get().GetSortedRoutePlans([]); // optionsにnullがセットされている事があるので
-					}
 					supportRoutes.extend( HogeAI.Get().SearchAndBuildToMeetSrcDemandMin( srcPlace, null, 
 						{capacity = 1}, 
 						{searchTransfer = false, routePlans = routePlans, noDoRoutePlans = true}));
@@ -2967,10 +2956,6 @@ class RouteBuilder {
 		
 		local searchTransfer = GetOption("searchTransfer",true);
 		local routePlans = GetOption("routePlans", null);
-		if(routePlans == null) {
-			routePlans = HogeAI.Get().GetSortedRoutePlans([]); // optionsにnullがセットされている事があるので
-		}
-		local noDoRoutePlans = GetOption("noDoRoutePlans",false);
 		
 		local vehicleType = GetVehicleType();
 		builtRoute.isBuilding = true;// resultのrouteはまだ不完全な場合がある。(WaterRouteBuilder.BuildCompoundRoute)
@@ -3002,41 +2987,37 @@ class RouteBuilder {
 				}
 				foreach(route,_ in callers) {
 					route.ChooseEngineSet();
-					routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( route )));
+					if(routePlans != null) {
+						routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( route )));
+					}
 				}
 			}
 			
 			foreach(route in supportRoutes) { // 本線建設前に作ったルート
 				limit -= route.GetTotalDelivableProduction() / 2;
-				routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( route )));
+				if(routePlans != null) {
+					routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( route )));
+				}
 				HgLog.Info("remainCapacity:"+limit+" "+builtRoute);
 			}
-			routePlans.Extend( ShowPlansLog( HogeAI.Get().GetMeetPlacePlans( srcPlace, builtRoute ) ) );
-			/*
-			
-			local newRoutes = HogeAI.Get().SearchAndBuildToMeetSrcDemandMin( srcPlace, builtRoute, 
-					builtRoute.GetMaxRouteCapacity( cargo ) - srcPlace.GetLastMonthProduction( cargo ) - deliver, 
-					{ searchTransfer = false } );
-			supportRoutes.extend( newRoutes	);*/
+			if(routePlans != null) {
+				routePlans.Extend( ShowPlansLog( HogeAI.Get().GetMeetPlacePlans( srcPlace, builtRoute ) ) );
+			}
 		}
 		if(searchTransfer) {
-			routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( builtRoute, 
-				{ notTreatDest = true, noCheckNeedsAdditionalProducing = true } )));
+			if(routePlans != null) {
+				routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( builtRoute, 
+					{ notTreatDest = true, noCheckNeedsAdditionalProducing = true } )));
+			}
 		}
 		local value = engineSet.value;
-		if(limit > 0 && !noDoRoutePlans) {
-			if(CargoUtils.IsPaxOrMail(cargo)) {
-				limit /= 6;
-			}
-			HogeAI.Get().DoRoutePlans( routePlans, 
-				{ capacity = limit / 2, value = value },
-				{ routePlans = routePlans, noDoRoutePlans = true } );
-		}
 		if(searchTransfer && !builtRoute.cannotChangeDest && vehicleType == AIVehicle.VT_RAIL) {
 			local returnRoute = HogeAI.Get().CheckBuildReturnRoute(builtRoute, value);
 			if(returnRoute != null) {
-				routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( returnRoute, 
-					{ noCheckNeedsAdditionalProducing = true } ) ) );
+				if(routePlans != null) {
+					routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( returnRoute, 
+						{ noCheckNeedsAdditionalProducing = true } ) ) );
+				}
 			}
 		}
 		if(isBiDirectional) {
@@ -3050,39 +3031,12 @@ class RouteBuilder {
 			}
 			local transferCandidates = HogeAI.Get().GetTransferCandidates( builtRoute, 
 				{ destOnly = true } )
-			if(noDoRoutePlans) {
+			if(routePlans != null) {
 				routePlans.Extend( ShowPlansLog(transferCandidates) );
-			} else {
-				local revRoutePlans = HogeAI.Get().GetSortedRoutePlans(transferCandidates);
-				HogeAI.Get().DoRoutePlans(revRoutePlans ,
-					{ capacity = limit, value = value },
-					{ routePlans = revRoutePlans, noDoRoutePlans = true } );	
 			}
-			
-				
 			
 		}
 
-		/* どこかのタイミングで対向のtransferチェックする。scanplaceかな？
-		if(IsTransfer()) {
-			local destRoute = builtRoute.GetDestRoute();
-			if(destRoute != false && destRoute.IsBiDirectional()) {
-				local isDest = builtRoute.destHgStation.stationGroup == destRoute.destHgStation.stationGroup;
-				if(destRoute.GetDestStationGroup(isDest).GetExpectedProduction(cargo,destRoute.GetVehicleType(),true) == 0) {
-					HogeAI.Get().SearchAndBuildTransferRoute( destRoute, { isDest = isDest, cargo = cargo });
-				}
-			}
-		}*/
-		/*
-		foreach(supportRoute in supportRoutes) {
-			if(CheckClose()) {
-				builtRoute.isBuilding = false;
-				return null;
-			}
-			HogeAI.Get().SearchAndBuildTransferRoute( supportRoute, {
-				notTreatDest = true 
-				useLastMonthProduction = true });
-		}*/
 		builtRoute.isBuilding = false;
 	}
 	
@@ -3130,14 +3084,6 @@ class CommonRouteBuilder extends RouteBuilder {
 			HgLog.Error("destStationGroup.hgStations.len() == 0 "+this);
 			return null;
 		}
-		/*
-		if(!(dest instanceof StationGroup) && vehicleType == AIVehicle.VT_WATER) {
-			local currentProduction = srcPlace.GetLastMonthProduction(cargo);
-			if(currentProduction==0 || currentProduction < srcPlace.GetExpectedProduction(cargo, vehicleType)) {
-				HogeAI.Get().SearchAndBuildToMeetSrcDemandMin(srcPlace);
-			}
-		}*/
-
 		local buildPathBeforeStation = false; //GetOption("buildPathBeforeStation",false);
 		local path = GetOption("path",null);
 		local noDepot = GetOption("noDepot",false);

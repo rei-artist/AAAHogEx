@@ -819,6 +819,8 @@ class Place {
 	
 	static function Load(t) {		
 		switch(t.name) {
+			case "StationGroup":
+				return HgStation.stationGroups.rawget( t.id );
 			case "HgIndustry":
 				return HgIndustry( t.industry, t.isProducing, t.date );
 			case "TownCargo":

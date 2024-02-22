@@ -25,6 +25,13 @@ class StationGroup {
 	function GetGId() {
 		return "StationGroup:"+id;
 	}
+	
+	function Save() {
+		return {
+			name="StationGroup"
+			id = id
+		};
+	}
 
 	function AddHgStation(hgStation) {
 		hgStations.push(hgStation);
@@ -1267,6 +1274,7 @@ class TerminalStationFactory extends RailStationFactory {
 
 class HgStation {
 	static worldInstances = {};
+	static stationGroups = {};
 	static savedDatas = {};
 	static idCounter = IdCounter();
 	static ngStationTiles = {}
@@ -1283,7 +1291,7 @@ class HgStation {
 	}
 	
 	static function LoadStatics(data) {
-		local groups = {};
+		HgStation.stationGroups.clear();
 		foreach(id,t in data.savedStations) {
 			HgStation.savedDatas.rawset(id,t);
 			local station;
@@ -1338,13 +1346,13 @@ class HgStation {
 			station.cargo = t.cargo;
 			station.buildedDate = t.buildedDate;
 			local stationGroup;
-			if(!groups.rawin(t.stationGroup)) {
+			if(!HgStation.stationGroups.rawin(t.stationGroup)) {
 				stationGroup = StationGroup();
 				stationGroup.id = t.stationGroup;
 				StationGroup.idCounter.Skip(stationGroup.id);
-				groups[stationGroup.id] <- stationGroup;
+				HgStation.stationGroups[stationGroup.id] <- stationGroup;
 			} else {
-				stationGroup = groups[t.stationGroup];
+				stationGroup = HgStation.stationGroups[t.stationGroup];
 			}
 			HgLog.Info("load station:"+station.GetName()+" "+station.GetTypeName()+" "+stationGroup.id+" "+(station.place != null ? station.place : ""));
 			station.stationGroup = stationGroup;
@@ -1487,6 +1495,7 @@ class HgStation {
 		this.stationId = AIStation.GetStationID(platformTile);
 		if(stationGroup == null) {
 			stationGroup = StationGroup();
+			HgStation.stationGroups[stationGroup.id] <- stationGroup;
 		}
 		
 		SetName();
