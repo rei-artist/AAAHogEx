@@ -457,6 +457,7 @@ class RoadRoute extends CommonRoute {
 					if(!BuildUtils.RemoveRoadStationSafe(tile)) {
 						HgLog.Warning("RemoveRoadStation failed:"+HgTile(tile)+" "+AIError.GetLastErrorString());
 						RoadRoute.pendingDemolishLines.push([tile]);
+						continue;
 					}
 				}
 				if(AIBridge.IsBridgeTile(tile) || AITunnel.IsTunnelTile(tile)) {
@@ -729,7 +730,7 @@ class RoadBuilder {
 							}
 							HgLog.Warning("Attempt DemolishTile:"+HgTile(par.GetTile())+" (BuildRoud failed:"+AIError.GetLastErrorString()+")");
 							HogeAI.WaitForMoney(2000);
-							if(!AITile.DemolishTile(par.GetTile())) {
+							if( !AITile.DemolishTile(par.GetTile())) {
 								HgLog.Warning("DemolishTile failed."+HgTile(par.GetTile())+AIError.GetLastErrorString());
 							}
 							builtRoad = RoadRouteBuilder.BuildRoadUntilFree(path.GetTile(), par.GetTile());
@@ -741,7 +742,7 @@ class RoadBuilder {
 						
 					}
 				} else {
-					if (!isBridgeOrTunnel && AIRoad.IsRoadTile(path.GetTile())) {
+					if (!isBridgeOrTunnel && AIRoad.IsRoadTile(path.GetTile()) && !AITile.IsStationTile(path.GetTile())) {
 						AITile.DemolishTile(path.GetTile());
 					}
 					if (AITunnel.GetOtherTunnelEnd(path.GetTile()) == par.GetTile()) {

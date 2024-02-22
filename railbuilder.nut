@@ -858,11 +858,11 @@ class RailBuilder {
 					if(prevprevprev!=null) {
 						BuildSignal(prevprevprev, prevprev, prev);
 					}
-					if(CanTryToDemolish(prev)) {
+					if(BuildUtils.CanTryToDemolish(prev)) {
 						HgLog.Info("Demolish tile for bridge or tunnel start:"+HgTile(prev)+"(end:"+HgTile(path.GetTile())+")");
 						DemolishTile(prev);
 					}
-					if(CanTryToDemolish(path.GetTile())) {
+					if(BuildUtils.CanTryToDemolish(path.GetTile())) {
 						HgLog.Info("Demolish tile for bridge or tunnel end:"+HgTile(path.GetTile())+"(start:"+HgTile(prev)+")");
 						DemolishTile(path.GetTile());
 					}
@@ -980,18 +980,6 @@ class RailBuilder {
 		return BuildDone();
 	}
 	
-	function CanTryToDemolish(tile) {
-		if(AITile.IsBuildable(tile)) {
-			return false;
-		}
-		if(!AICompany.IsMine(AITile.GetOwner(tile))) {
-			return true;
-		}
-		if(AIRail.IsRailTile(tile) || AIBridge.IsBridgeTile(tile) || AITunnel.IsTunnelTile(tile)) {
-			return !BuildedPath.Contains(tile);
-		}
-		return true;
-	}
 	
 	function BuildBridgeSafe(vehicleType, bridge, p1, p2) {
 		if(!BuildUtils.BuildBridgeSafe(vehicleType, bridge, p1, p2)){

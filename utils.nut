@@ -502,6 +502,22 @@ class BuildUtils {
 		return false;
 	}	
 	
+	static function CanTryToDemolish(tile) {
+		if(AITile.IsBuildable(tile)) {
+			return false;
+		}
+		if(!AICompany.IsMine(AITile.GetOwner(tile))) {
+			return true;
+		}
+		if(AIRail.IsRailTile(tile) || AIBridge.IsBridgeTile(tile) || AITunnel.IsTunnelTile(tile)) {
+			return !BuildedPath.Contains(tile);
+		}
+		if(AITile.IsStationTile(tile)) {
+			return false;
+		}
+		return true;
+	}
+	
 	static function DemolishTileUntilFree(tile) {
 		return BuildUtils.RetryUntilFree( function():(tile) {
 			return AITile.DemolishTile(tile);

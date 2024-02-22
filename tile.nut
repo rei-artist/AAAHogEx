@@ -655,7 +655,7 @@ class HgTile {
 			if( AIRoad.GetRoadTramType( AIRoad.GetCurrentRoadType() ) ==  AIRoad.ROADTRAMTYPES_TRAM ) {
 				AITile.DemolishTile(depotTile);
 			}
-			if(!AIRoad.BuildRoadDepot (depotTile, front)) {
+			if(!AIRoad.BuildRoadDepot( depotTile, front )) {
 				return false;
 			}
 			return true;
