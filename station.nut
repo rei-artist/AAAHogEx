@@ -561,6 +561,7 @@ class StationFactory {
 	
 	levelTiles = null;
 	nearestFor = null;
+	nearestFor2 = null;
 	checked = null;
 	ignoreDirectionScore = null;
 	ignoreDirection = null; // assume platformLength=Y, platformNum=X
@@ -634,6 +635,7 @@ class StationFactory {
 			this.nearestFor = toTile;
 		} else {
 			this.nearestFor = stationGroup.hgStations[0].platformTile;
+			this.nearestFor2 = toTile;
 		}
 		local result = this.SelectBestHgStation( 
 			stationGroup.GetStationCandidatesInSpread(this),
@@ -722,7 +724,12 @@ class StationFactory {
 			}
 			
 			if(nearestFor != null) {
-				local distance = min(AIMap.DistanceManhattan(platformRect.lefttop.tile, nearestFor), AIMap.DistanceManhattan(platformRect.rightbottom.tile, nearestFor));
+				local p1 = platformRect.lefttop.tile;
+				local p2 = platformRect.rightbottom.tile;
+				local distance = min(AIMap.DistanceManhattan(p1, nearestFor), AIMap.DistanceManhattan(p2, nearestFor));
+				if(nearestFor2 != null) {
+					distance += min(AIMap.DistanceManhattan(p1, nearestFor2), AIMap.DistanceManhattan(p2, nearestFor2)) / 2;
+				}
 				station.score -= distance;
 			}
 			

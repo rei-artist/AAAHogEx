@@ -1136,7 +1136,7 @@ class CanalStation extends HgStation {
 			}
 		});
 		tileList.KeepValue(1);
-		return tileList.Count() - AITile.GetMinHeight(platformTile)*5;
+		return tileList.Count() - AITile.GetMinHeight(platformTile);
 /*	
 		local result = 0;
 		local slope = AITile.GetSlope(platformTile);
