@@ -752,7 +752,7 @@ class BuildedPath {
 
 
 
-class RailBuilder {
+class RailBuilder extends Construction {
 	static function RemoveSignalUntilFree(p1,p2) {
 		return BuildUtils.RetryUntilFree( function():(p1,p2) {
 			return BuildUtils.RemoveSignalSafe(p1,p2);
@@ -815,6 +815,7 @@ class RailBuilder {
 	distance = null;
 
 	constructor(pathSrcToDest,isReverse,ignoreTiles,eventPoller) {
+		Construction.constructor();
 		this.pathSrcToDest = pathSrcToDest;
 		this.isReverse = isReverse;
 		this.ignoreTiles = ignoreTiles;
@@ -838,13 +839,15 @@ class RailBuilder {
 		}
 	}
 
-	function Build() {
+	function DoBuild() {
 		local execMode = AIExecMode();
 		if(pathSrcToDest == null) {
 			HgLog.Warning("pathSrcToDest == null(RailBuilder.Build)");
 			return false;
 		}
 		HgLog.Info("Start Build:"+HgTile(pathSrcToDest.GetTile()));
+		local rollbackRails = [];
+		AddRollback(rollbackRails);
 		local path = pathSrcToDest;
 		local prevPath = null;
 		local prev = null;
@@ -900,6 +903,7 @@ class RailBuilder {
 					prevprevprev = prevprev;
 					prevprev = prev;
 					prev = path.GetTile();
+					rollbackRails.push(prev);
 					prevPath = path;
 					path = path.GetParent();
 					if(path != null) {
@@ -969,6 +973,7 @@ class RailBuilder {
 				prevprevprev = prevprev;
 				prevprev = prev;
 				prev = path.GetTile();
+				rollbackRails.push(prev);
 				prevPath = path;
 				path = path.GetParent();
 			}
@@ -1072,7 +1077,7 @@ class RailBuilder {
 		local railBuilder = RailToAnyRailBuilder(isReverse?startPath.Reverse():startPath, 
 			goalsArray, ignoreTiles, !isReverse, 150, eventPoller, pathFinder);
 		railBuilder.isNoSignal = isNoSignal;
-		local result = railBuilder.Build();
+		local result = railBuilder.Build(); // TODO: Rollback対応
 		tmpBuildedPath.Remove(false);
 		if(result) {
 			local newPath = railBuilder.pathSrcToDest.Reverse();
@@ -1992,7 +1997,7 @@ class TailedRailBuilder {
 	}
 }
 
-class TwoWayPathToStationRailBuilder {
+class TwoWayPathToStationRailBuilder extends Construction {
 	pathDepatureGetter = null; // 駅の出発タイルへ向けたパス
 	pathArrivalGetter = null; // 駅の到着タイルへ向けたパス
 	isReverse = null; // 上記を逆にする
@@ -2012,6 +2017,7 @@ class TwoWayPathToStationRailBuilder {
 	depots = null;
 	
 	constructor(pathDepatureGetter=null, pathArrivalGetter=null, destHgStation=null, limitCount=null, eventPoller=null) {
+		Construction.constructor();
 		this.pathDepatureGetter = pathDepatureGetter; 
 		this.pathArrivalGetter = pathArrivalGetter; 
 		this.isReverse = false;
@@ -2023,7 +2029,7 @@ class TwoWayPathToStationRailBuilder {
 		this.depots = [];
 	}
 	
-	function Build() {
+	function DoBuild() {
 		
 		local b1 = TailedRailBuilder.PathToStation(pathDepatureGetter, destHgStation, limitCount, eventPoller, null, !isReverse );
 		b1.cargo = cargo;
@@ -2037,6 +2043,7 @@ class TwoWayPathToStationRailBuilder {
 			return false;
 		}
 		buildedPath1 = b1.buildedPath;
+		AddRollback(buildedPath1);
 		if(isBuildDepotsDestToSrc) {
 			depots.extend(buildedPath1.path.Reverse().SubPathIndex(4).BuildDoubleDepot());
 		}
@@ -2049,7 +2056,7 @@ class TwoWayPathToStationRailBuilder {
 		b2.isReverse = !isReverse;
 		b2.isRevReverse = isReverse;
 		if(!b2.BuildTails()) {
-			b1.Remove();
+			Rollback();
 			return false;
 		}
 		buildedPath2 = b2.buildedPath;
@@ -2072,7 +2079,7 @@ class TwoWayPathToStationRailBuilder {
 	}
 }
 
-class TwoWayStationRailBuilder {
+class TwoWayStationRailBuilder extends Construction {
 	srcHgStation = null;
 	destHgStation = null;
 	limitCount = null;
@@ -2090,6 +2097,7 @@ class TwoWayStationRailBuilder {
 	depots = null;
 	
 	constructor(srcHgStation, destHgStation, limitCount, eventPoller) {
+		Construction.constructor();
 		this.srcHgStation = srcHgStation;
 		this.destHgStation = destHgStation;
 		this.limitCount = limitCount;
@@ -2099,7 +2107,7 @@ class TwoWayStationRailBuilder {
 		this.depots = [];
 	}
 	
-	function Build() {
+	function DoBuild() {
 		local b1 = TailedRailBuilder.StationToStation(destHgStation, srcHgStation, limitCount, eventPoller );
 		b1.engine = engine;
 		b1.cargo = cargo;
@@ -2115,6 +2123,7 @@ class TwoWayStationRailBuilder {
 			}
 		}
 		buildedPath2 = b1.buildedPath;
+		AddRollback(buildedPath2);
 		if(isBuildDepotsDestToSrc) {
 			depots.extend(buildedPath2.path.BuildDoubleDepot());
 		}
@@ -2126,13 +2135,13 @@ class TwoWayStationRailBuilder {
 		b2.platformLength = platformLength;
 		b2.distance = distance;
 		if(!b2.BuildTails()) {
-			b1.Remove();
+			Rollback();
 			return false;
 		}
+		AddRollback(b2.buildedPath);
 		if(!b2.IsFoundGoal()) {
-			if(!b2.Build()) {
-				b2.Remove();
-				b1.Remove();
+			if(!b2.Build()) { // 現状呼ばれることはなさそう
+				Rollback();
 				return false;
 			}
 		}
@@ -2150,7 +2159,7 @@ class TwoWayStationRailBuilder {
 }
 
 
-class SingleStationRailBuilder {
+class SingleStationRailBuilder extends Construction{
 	srcHgStation = null;
 	destHgStation = null;
 	limitCount = null;
@@ -2165,6 +2174,7 @@ class SingleStationRailBuilder {
 	depots = null;
 	
 	constructor(srcHgStation, destHgStation, limitCount, eventPoller) {
+		Construction.constructor();
 		this.srcHgStation = srcHgStation;
 		this.destHgStation = destHgStation;
 		this.limitCount = limitCount;
@@ -2172,7 +2182,7 @@ class SingleStationRailBuilder {
 		this.depots = [];
 	}
 	
-	function Build() {
+	function DoBuild() {
 		local b1 = TailedRailBuilder.StationToStationSingle(destHgStation, srcHgStation, limitCount, eventPoller );
 		b1.engine = engine;
 		b1.cargo = cargo;
@@ -2182,7 +2192,7 @@ class SingleStationRailBuilder {
 			return false;
 		}
 		if(!b1.IsFoundGoal()) {
-			if(!b1.Build()) {
+			if(!b1.Build()) { // 現状呼ばれることはなさそう
 				b1.Remove();
 				return false;
 			}

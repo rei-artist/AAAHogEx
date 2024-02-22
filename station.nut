@@ -1490,6 +1490,10 @@ class HgStation {
 		return HgStation.savedDatas.rawget(id);
 	}
 
+	function GetId() {
+		return id;
+	}
+
 	function AddWorld() {
 		this.id = idCounter.Get();
 		this.stationId = AIStation.GetStationID(platformTile);

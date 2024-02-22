@@ -720,6 +720,7 @@ class CommonEstimator extends Estimator {
 					additionalCruiseDays = additionalCruiseDays
 					additionalVehiclesPerRoute = 0
 					additionalRunningCostPerCargo = additionalRunningCostPerCargo
+					distance = distance
 					totalDistance = totalDistance
 					isBidirectional = isBidirectional
 					infrastractureType = engineInfrastractureType

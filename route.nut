@@ -2768,7 +2768,98 @@ class CommonRoute extends Route {
 }
 
 
-class RouteBuilder {
+class Construction {
+	parent_ = null;
+	rollbackFacilities = null;
+	saveData = null;
+
+	static function RollbackFromSaveData(saveData) {
+		local a = [];
+		foreach(f in saveData.rollbackFacilities) {
+			local typeName = typeof f;
+			if(typeName == "integer") {
+				a.push( f );
+			} else if(typeName == "array") {
+				a.push( BuildedPath( Path.Load(f) ) );
+			} else {
+				// station:xxx
+				a.push( HgStation.worldInstances[f.slice(8).tointeger()] );
+			}
+		}
+		Construction.DoRollback(a);
+		if(saveData.parent_ != null) {
+			Construction.RollbackFromSaveData(saveData.parent_);
+		}
+	}
+
+	static function DoRollback(facilities) {
+		local execMode = AIExecMode();
+		foreach(f in facilities) {
+			if(f != null) {
+				local typeName = typeof f;
+				if(typeName == "integer") {
+					AITile.DemolishTile(f);
+				} else {
+					f.Remove();
+				}
+			}
+		}
+	}
+	
+	constructor() {
+		rollbackFacilities = [];
+		saveData = { 
+			rollbackFacilities = []
+			parent_ = null
+		};
+	}
+	
+	function Build() {
+		StartConstraction();
+		local result = DoBuild();
+		EndConstraction();
+		return result;
+	}
+	
+	function StartConstraction() {
+		local current = HogeAI.Get().currentConstraction;
+		if(current != null) {
+			parent_ = current;
+			saveData.parent_ = current.saveData;
+		}
+		HogeAI.Get().currentConstraction = this;
+	}
+	
+	function EndConstraction() {
+		HogeAI.Get().currentConstraction = parent_;
+		parent_ = null;
+	}
+	
+	function AddRollback(facility) {
+		if(typeof facility == "array" || typeof facility == "integer") {
+			saveData.rollbackFacilities.push(facility);
+		} else if(facility instanceof HgStation) {
+			saveData.rollbackFacilities.push("station:"+facility.GetId());
+		} else if(facility instanceof BuildedPath) {
+			saveData.rollbackFacilities.push(facility.array_);
+		} else {
+			HgLog.Error("AddRollback error:"+facility);
+		}
+		rollbackFacilities.push(facility);
+	}
+	
+	function Rollback() {
+		Construction.DoRollback(rollbackFacilities);
+		ClearRollback();
+	}
+	
+	function ClearRollback() {
+		saveData.rollbackFacilities.clear();
+		rollbackFacilities.clear();
+	}
+}
+
+class RouteBuilder extends Construction {
 	dest = null;
 	src = null;
 	cargo = null;
@@ -2785,7 +2876,9 @@ class RouteBuilder {
 	routePlans = null;
 	needsToMeetDemand = null;
 	
+
 	constructor(dest, src, cargo, options = {}) {
+		Construction.constructor();
 		this.options = options;
 		this.dest = dest;
 		if(dest instanceof StationGroup) {
@@ -2806,6 +2899,7 @@ class RouteBuilder {
 		this.cargo = cargo;
 		this.isBiDirectional = !IsTransfer() && dest.IsAcceptingAndProducing(cargo) && src.IsAcceptingAndProducing(cargo);
 		this.routePlans = SortedList( function(plan){ return plan.value; } );
+		
 	}
 	
 	function GetOption(name, defaultValue) {
@@ -2924,7 +3018,7 @@ class RouteBuilder {
 		local distance  = AIMap.DistanceManhattan(src.GetLocation(),dest.GetLocation());
 		HgLog.Info("# RouteBuilder Start "+this+" distance:"+distance);
 		local start = AIDate.GetCurrentDate();
-		builtRoute = DoBuild();
+		builtRoute = Construction.Build();
 		local span = AIDate.GetCurrentDate() - start;
 		if(builtRoute == null) {
 			HgLog.Info("# RouteBuilder Failed "+vehicleType+" "+span+" "+distance+" "+this);
@@ -3051,6 +3145,7 @@ class RouteBuilder {
 		return options.rawin("transfer") ? options.transfer : (dest instanceof StationGroup);
 	}
 	
+	
 	function _tostring() {
 		return "Build "+GetLabel()+"Route " + (IsTransfer() ? "T:" : "") +dest+"<-"+(isBiDirectional?">":"")+src+" "+AICargo.GetName(cargo);
 	}
@@ -3064,8 +3159,7 @@ class CommonRouteBuilder extends RouteBuilder {
 	sharableStationOnly = null;
 	retryIfNoPathUsingSharableStation = null;
 	retryUsingSharableStationIfNoPath = null;
-	
-	
+
 	constructor( dest, src, cargo, options = {} ) {
 		RouteBuilder.constructor(dest, src, cargo, options );
 		makeReverseRoute = GetOption("makeReverseRoute",false);
@@ -3075,11 +3169,12 @@ class CommonRouteBuilder extends RouteBuilder {
 		sharableStationOnly = GetOption("sharableStationOnly",false);
 		retryIfNoPathUsingSharableStation = false;
 		retryUsingSharableStationIfNoPath = false;
+		
 	}
-			
+	
+	
+	
 	function DoBuild() {
-
-
 		if(destStationGroup != null && destStationGroup.hgStations.len() == 0) {
 			HgLog.Error("destStationGroup.hgStations.len() == 0 "+this);
 			return null;
@@ -3200,7 +3295,6 @@ class CommonRouteBuilder extends RouteBuilder {
 
 		{
 			local execMode = AIExecMode();
-			local rollbackFacitilies = [];
 			if((destHgStation instanceof WaterStation) && (srcHgStation instanceof WaterStation)) {
 				buildPathBeforeStation = true;
 			}
@@ -3222,7 +3316,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				isShareDestStation = true;
 			}
 			if(!isShareDestStation && !isNotRemoveStation && !buildPathBeforeStation) {
-				rollbackFacitilies.push(destHgStation);
+				AddRollback(destHgStation);
 			}
 			
 			if(isShareSrcStation) {
@@ -3235,20 +3329,20 @@ class CommonRouteBuilder extends RouteBuilder {
 				HgLog.Warning("srcHgStation.BuildExec failed."+HgTile(srcHgStation.platformTile)+" "+this);
 				srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false);
 				if(srcHgStation == null || !srcHgStation.Share()) {
-					Rollback(rollbackFacitilies);
+					Rollback();
 					return null;
 				}
 				HgLog.Info("Share src station:"+srcHgStation.GetName()+" "+this);
 				isShareSrcStation = true;
 			}
 			if(!isShareSrcStation && !isNotRemoveStation && !buildPathBeforeStation) {
-				rollbackFacitilies.push(srcHgStation);
+				AddRollback(srcHgStation);
 			}
 			
 			if(!buildPathBeforeStation && srcHgStation.stationGroup == destHgStation.stationGroup) {
 				Place.AddNgPathFindPair(src, dest, vehicleType);
 				HgLog.Warning("Same stationGroup."+this);
-				Rollback(rollbackFacitilies);
+				Rollback();
 				return null;
 			}
 			if(path == null) {
@@ -3258,7 +3352,7 @@ class CommonRouteBuilder extends RouteBuilder {
 						HgLog.Warning("retryIfSharableStation."+this);
 						retryIfNoPathUsingSharableStation = false;
 						checkSharableStationFirst = false;
-						Rollback(rollbackFacitilies);
+						Rollback();
 						return DoBuild();
 					}
 
@@ -3267,13 +3361,13 @@ class CommonRouteBuilder extends RouteBuilder {
 						HgLog.Warning("BuildPath failed.retryBySharableStationOnlyIfPathNotFound"+this);
 						sharableStationOnly = true;
 						checkSharableStationFirst = true;
-						Rollback(rollbackFacitilies);
+						Rollback();
 						return DoBuild();
 					}
 				
 					HgLog.Warning("BuildPath failed."+this);
 					Place.AddNgPathFindPair(src, dest, vehicleType);
-					Rollback(rollbackFacitilies);
+					Rollback();
 					return null;
 				}
 				path = pathBuilder.path;
@@ -3281,7 +3375,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				if(path != null && distance > 40 && distance * 2 < path.GetTotalDistance(vehicleType)) {
 					Place.AddNgPathFindPair(src, dest, vehicleType);
 					HgLog.Warning("Too long path distance."+this);
-					Rollback(rollbackFacitilies);
+					Rollback();
 					return null;
 				}
 			}
@@ -3289,28 +3383,28 @@ class CommonRouteBuilder extends RouteBuilder {
 				if(!isShareSrcStation) {
 					if(!srcHgStation.BuildExec()) {
 						HgLog.Warning("srcHgStation.BuildExec failed."+HgTile(srcHgStation.platformTile)+" "+this);
-						Rollback(rollbackFacitilies);
+						Rollback();
 						return null;
 					}
 					if(!isNotRemoveStation) {
-						rollbackFacitilies.push(srcHgStation);
+						AddRollback(srcHgStation);
 					}					
 				}
 				if(!isShareDestStation) {
 					if(!destHgStation.BuildExec()) {
 						HgLog.Warning("destHgStation.BuildExec failed."+HgTile(destHgStation.platformTile)+" "+this);
-						Rollback(rollbackFacitilies);
+						Rollback();
 						return null;
 					}
 					if(!isNotRemoveStation) {
-						rollbackFacitilies.push(destHgStation);
+						AddRollback(destHgStation);
 					}					
 				}
 			}
 			
 			if(srcHgStation.stationGroup == null || destHgStation.stationGroup == null) {
 				HgLog.Warning("Station was removed."+this); // 稀にDoInterval中にstationがRemoveされる事がある。
-				Rollback(rollbackFacitilies);
+				Rollback();
 				return null;
 			}
 			local route = routeClass();
@@ -3327,19 +3421,20 @@ class CommonRouteBuilder extends RouteBuilder {
 				if(!route.BuildDepot(path)) {
 					Place.AddNgPathFindPair(src, dest, vehicleType);
 					HgLog.Warning("BuildDepot failed."+this);
-					Rollback(rollbackFacitilies);
+					Rollback();
 					return null;
 				}
 				if(!isNotRemoveDepot) {
-					rollbackFacitilies.push(route.depot);
+					AddRollback(route.depot);
 				}
 				route.BuildDestDepot(path);
 				if(!isNotRemoveDepot && route.destDepot != null) {
-					rollbackFacitilies.push(route.destDepot);
+					AddRollback(route.destDepot);
 				}
 			}
 			PlaceDictionary.Get().AddRoute(route);
 			route.UpdateSavedData();
+			ClearRollback();
 			route.instances.push(route); // ChooseEngine内、インフラコスト計算に必要
 			if(!isWaitingProduction) {
 				local vehicle = route.BuildVehicle();
@@ -3348,7 +3443,7 @@ class CommonRouteBuilder extends RouteBuilder {
 					PlaceDictionary.Get().RemoveRoute(route);
 					Place.AddNgPathFindPair(src, dest, vehicleType, 365*10);
 					HgLog.Warning("BuildVehicle failed."+this);
-					Rollback(rollbackFacitilies);
+					Rollback();
 					route.Demolish();
 					return null;
 				}
@@ -3445,18 +3540,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		
 		return reverseRoute;
 	}
-	
-	function Rollback(facilities) {
-		foreach(f in facilities) {
-			if(f != null) {
-				if(typeof f == "integer") {
-					AITile.DemolishTile(f);
-				} else {
-					f.Remove();
-				}
-			}
-		}
-	}
+
 	
 	function SearchSharableStation(placeOrGroup, stationType, cargo, isAccepting, infrastractureType=null) {
 		foreach(station in HgStation.SearchStation(placeOrGroup, stationType, cargo, isAccepting)) {
