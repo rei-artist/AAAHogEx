@@ -50,6 +50,42 @@ class Path {
 		return parent_;
 	}
 	
+	// distanceに達しないとnull
+	function GetParentByDistance(distance) {
+		local acc = 0.0;
+		local path = this;
+		local pre = null;
+		local pre2 = null;
+		while(path != null && acc < distance) {
+			local cur = path.tile;
+			if(pre != null) {
+				local d = AIMap.DistanceManhattan(cur,pre);
+				if(d >= 2) {
+					acc += d;
+				} else {
+					if(pre2 != null) {
+						local d2 = AIMap.DistanceManhattan(pre,pre2);
+						if(d2 >= 2) {
+							acc += 1.0;
+						} else {
+							if(cur - pre != pre - pre2) {
+								acc += 0.707;
+							} else {
+								acc += 1.0;
+							}
+						}
+					} else {
+						acc += 1.0;
+					}
+				}
+			}
+			pre2 = pre;
+			pre = cur;
+			path = path.parent_;
+		}
+		return path;
+	}
+	
 	function Reverse() {
 		local result = null;
 		local path = this;
@@ -525,13 +561,14 @@ class Path {
 		return null;
 	}
 	
+	// return: [path,depotTiles]
 	function BuildDoubleDepot() {
-		local result = BuildDoubleDepotMinLength(9);
-		if(result.len() == 0) {
+//		local result = BuildDoubleDepotMinLength(9);
+//		if(result[1].len() == 0) {
 			return BuildDoubleDepotMinLength(5);
-		} else {
-			return result;
-		}
+//		} else {
+//			return result;
+//		}
 	}
 	
 	function BuildDoubleDepotMinLength(minLength) {
@@ -560,14 +597,27 @@ class Path {
 						}
 					}
 					if(!ng) {
-						foreach(dir in HgTile.DIR4Index) {
-							local depot = p[middle] + dir;
-							if(AITile.IsBuildable(depot)) {
-								local depots = HgTile(p[middle]).BuildDoubleDepot(depot, p[middle] - dir, p[middle-1], p[middle+1]);
-								if(depots != null) {
-									return depots;
-								}
-								break;
+						local dir = abs(p[0] - p[1]) == 1 ? AIMap.GetMapSizeX() : 1;
+						local depot1 = p[middle] - dir;
+						local depot2 = p[middle] + dir;
+						local depots = HgTile(p[middle]).BuildDoubleDepot(depot1, depot2, p[middle-1], p[middle+1]);
+						if(depots != null) {
+							return [path,depots];
+						}
+						local rl = 0;
+						{
+							local testMode = AITestMode();
+							if(AIRail.BuildRailDepot(depot1, p[middle])) { 
+								rl = 1;
+							} else if(AIRail.BuildRailDepot(depot2, p[middle])) {
+								rl = -1;
+							}
+						}
+						if(rl != 0) {
+							RailBuilder.ChangeTunnel(p[middle]-2+dir*rl,p[middle]+2+dir*rl);
+							local depots = HgTile(p[middle]).BuildDoubleDepot(depot1, depot2, p[middle-1], p[middle+1]);
+							if(depots != null) {
+								return [path,depots];
 							}
 						}
 					}
@@ -575,7 +625,7 @@ class Path {
 			}
 			path = path.GetParent();
 		}
-		return [];
+		return [path,[]];
 	}
 	
 	
@@ -1606,6 +1656,96 @@ class RailBuilder extends Construction {
 		return false;
 	}
 	
+	static function ChangeTunnel(start,end) {
+		HgLog.Info("Start ChangeTunnel "+HgTile(start)+"-"+HgTile(end));
+		if(!AITile.HasTransportType(start, AITile.TRANSPORT_RAIL)) {
+			return false;
+		}
+		local tracks = AIRail.GetRailTracks(start);
+		local tileList = AITileList();
+		tileList.AddRectangle(start,end);
+		tileList.Valuate(AITile.HasTransportType, AITile.TRANSPORT_RAIL);
+		tileList.KeepValue(1);
+		tileList.Valuate(AIRail.GetRailTracks);
+		tileList.KeepValue(tracks);
+		tileList.Valuate(AITile.GetSlope);
+		tileList.KeepValue(AITile.SLOPE_FLAT);
+		tileList.Valuate(AITile.GetOwner);
+		tileList.KeepValue(AICompany.ResolveCompanyID(AICompany.COMPANY_SELF));
+		if(tileList.Count() != 5) {
+			return false;
+		}
+
+		local height = AITile.GetMaxHeight(start);
+		if(height == 0) {
+			return false;
+		}
+
+		local t1 = min(start,end);
+		local t2 = max(start,end);
+		local direction = (t2 - t1) / 4;
+
+
+		HogeAI.WaitForMoney(20000,0,"ChangeTunnel");
+		local currentRailType = AIRail.GetCurrentRailType();
+		AIRail.SetCurrentRailType(AIRail.GetRailType(t1));
+
+		local cur = t1;
+		local removedRails = [];
+		for(local i=0; i<5; i++) {
+			if(!RailBuilder.RemoveRailTrackUntilFree(cur, tracks)) {
+				HgLog.Warning("fail RemoveRailTrack."+HgTile(cur)+" "+AIError.GetLastErrorString());
+				RailBuilder.RollbackRails(removedRails);
+				AIRail.SetCurrentRailType(currentRailType);
+				return false;
+			}
+			removedRails.push([cur,tracks]);
+			cur += direction;
+		}
+		
+		
+		if(!HgTile.LevelBound( t1, t1 + direction, height-1 )) {
+			RailBuilder.RollbackRails(removedRails);
+			AIRail.SetCurrentRailType(currentRailType);
+			return false;
+		}
+		if(!HgTile.LevelBound( t1 + direction * 3, t1 + direction * 4, height-1 )) {
+			RailBuilder.RollbackRails(removedRails);
+			AIRail.SetCurrentRailType(currentRailType);
+			return false;
+		}
+		if(!BuildUtils.BuildTunnelSafe(AIVehicle.VT_RAIL, t1 + direction)) {
+			HgLog.Warning("fail BuildTunnel "+HgTile(startTile)+"-"+HgTile(endTile)+" "+AIError.GetLastErrorString());
+			RailBuilder.RollbackRails(removedRails);
+			AIRail.SetCurrentRailType(currentRailType);
+			return false;
+		}
+		
+		local pathBuildedPath = RailBuilder.SearchPathBuildedPath(t1);
+		if(pathBuildedPath != null) {
+			if(!RailBuilder.ChangeBridgePath(pathBuildedPath[1], t1, t2)) {
+				HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(t1)+" "+HgTile(t2));
+			} else {
+				pathBuildedPath[1].ChangePath();
+			}
+		}
+		foreach(t in [t1,t2]) {
+			if(!BuildUtils.BuildRailTrackSafe(t, tracks)) {
+				HgLog.Warning("fail BuildRailTrackSafe "+HgTile(t)+" "+AIError.GetLastErrorString());
+			}
+		}
+		AIRail.SetCurrentRailType(currentRailType);
+		return true;
+	}
+
+	static function RollbackRails(removedRails) {
+		foreach(mark in removedRails) {
+			if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
+				HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
+			}
+		}
+	}
+		
 	function SearchPathBuildedPath(tile) {
 		foreach(buildedPath,v in BuildedPath.instances) {
 			local path = buildedPath.path;
@@ -2030,7 +2170,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 	}
 	
 	function DoBuild() {
-		
+		// src => dest
 		local b1 = TailedRailBuilder.PathToStation(pathDepatureGetter, destHgStation, limitCount, eventPoller, null, !isReverse );
 		b1.cargo = cargo;
 		b1.engine = engine;
@@ -2045,9 +2185,19 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		buildedPath1 = b1.buildedPath;
 		AddRollback(buildedPath1);
 		if(isBuildDepotsDestToSrc) {
-			depots.extend(buildedPath1.path.Reverse().SubPathIndex(4).BuildDoubleDepot());
+			local cur = buildedPath1.path.SubPathIndex(4);
+			while(cur != null) {
+				local a = cur.BuildDoubleDepot();
+				depots.extend(a[1]);
+				AddRollback(a[1],"tiles");
+				cur = a[0];
+				if(cur != null) {
+					cur = cur.GetParentByDistance(200);
+				}
+			}
 		}
 		
+		// dest => src
 		local b2 = TailedRailBuilder.PathToStation(pathArrivalGetter, destHgStation, limitCount, eventPoller, buildedPath1.path, isReverse );
 		b2.cargo = cargo;
 		b2.engine = engine;
@@ -2060,9 +2210,20 @@ class TwoWayPathToStationRailBuilder extends Construction {
 			return false;
 		}
 		buildedPath2 = b2.buildedPath;
+
 		if(isBuildDepotsDestToSrc) {
-			depots.extend(buildedPath2.path.Reverse().SubPathIndex(4).BuildDoubleDepot());
-		}
+			local cur = buildedPath2.path.Reverse().SubPathIndex(4);
+			while(cur != null) {
+				local a = cur.BuildDoubleDepot();
+				depots.extend(a[1]);
+				AddRollback(a[1],"tiles");
+				cur = a[0];
+				if(cur != null) {
+					cur = cur.GetParentByDistance(200);
+				}
+			}
+		}		
+		
 		if(isBuildSingleDepotDestToSrc) {
 			local depot = buildedPath2.path.Reverse().SubPathIndex(4).BuildDepotForRail();
 			if(depot != null) {
@@ -2108,6 +2269,7 @@ class TwoWayStationRailBuilder extends Construction {
 	}
 	
 	function DoBuild() {
+		// dest => src
 		local b1 = TailedRailBuilder.StationToStation(destHgStation, srcHgStation, limitCount, eventPoller );
 		b1.engine = engine;
 		b1.cargo = cargo;
@@ -2125,10 +2287,20 @@ class TwoWayStationRailBuilder extends Construction {
 		buildedPath2 = b1.buildedPath;
 		AddRollback(buildedPath2);
 		if(isBuildDepotsDestToSrc) {
-			depots.extend(buildedPath2.path.BuildDoubleDepot());
+			local cur = buildedPath2.path.SubPathIndex(4);
+			while(cur != null) {
+				local a = cur.BuildDoubleDepot();
+				depots.extend(a[1]);
+				AddRollback(a[1],"tiles");
+				cur = a[0];
+				if(cur != null) {
+					cur = cur.GetParentByDistance(200);
+				}
+			}
 		}
 
 	
+		// src => dest
 		local b2 = TailedRailBuilder.StationToStationReverse(destHgStation, srcHgStation, limitCount, eventPoller, buildedPath2.path);
 		b2.engine = engine;
 		b2.cargo = cargo;
@@ -2145,14 +2317,26 @@ class TwoWayStationRailBuilder extends Construction {
 				return false;
 			}
 		}
+		buildedPath1 = b2.buildedPath;
+		if(isBuildDepotsDestToSrc) {
+			local cur = buildedPath1.path.Reverse();
+			while(cur != null) {
+				cur = cur.GetParentByDistance(200);
+				if(cur != null) {
+					local a = cur.BuildDoubleDepot();
+					depots.extend(a[1]);
+					AddRollback(a[1],"tiles");
+					cur = a[0];
+				}
+			}
+		}
 		if(isBuildSingleDepotDestToSrc) {
-			local depot = buildedPath2.path.BuildDepotForRail();
+			local depot = buildedPath1.BuildDepotForRail();
 			if(depot != null) {
 				depots.push(depot);
 			}
 		}
 		
-		buildedPath1 = b2.buildedPath;
 		return true;
 	}
 	
@@ -2276,3 +2460,4 @@ class RailToAnyRailBuilder extends RailBuilder {
 		(!isReverse ? path.Reverse() : path).IterateRailroadPoints(func);
 	}
 }
+

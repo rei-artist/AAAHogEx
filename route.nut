@@ -2835,17 +2835,22 @@ class Construction {
 		parent_ = null;
 	}
 	
-	function AddRollback(facility) {
-		if(typeof facility == "array" || typeof facility == "integer") {
-			saveData.rollbackFacilities.push(facility);
-		} else if(facility instanceof HgStation) {
-			saveData.rollbackFacilities.push("station:"+facility.GetId());
-		} else if(facility instanceof BuildedPath) {
-			saveData.rollbackFacilities.push(facility.array_);
+	function AddRollback(facility, typeName=null) {
+		if(typeName == "tiles") {
+			saveData.rollbackFacilities.extend(facility);
+			rollbackFacilities.extend(facility);
 		} else {
-			HgLog.Error("AddRollback error:"+facility);
+			if(typeof facility == "array" || typeof facility == "integer") {
+				saveData.rollbackFacilities.push(facility);
+			} else if(facility instanceof HgStation) {
+				saveData.rollbackFacilities.push("station:"+facility.GetId());
+			} else if(facility instanceof BuildedPath) {
+				saveData.rollbackFacilities.push(facility.array_);
+			} else {
+				HgLog.Error("AddRollback error:"+facility);
+			}
+			rollbackFacilities.push(facility);
 		}
-		rollbackFacilities.push(facility);
 	}
 	
 	function Rollback() {

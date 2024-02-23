@@ -2464,7 +2464,7 @@ class TrainRouteBuilder extends RouteBuilder {
 		railBuilder.cargo = cargo;
 		railBuilder.platformLength = destHgStation.platformLength;
 		railBuilder.distance = distance;
-		if(!useSingle && dest instanceof Place) {
+		if(!useSingle) {
 			if(hogeAI.IsEnableVehicleBreakdowns()) {
 				railBuilder.isBuildDepotsDestToSrc = true;
 			} else {

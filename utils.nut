@@ -959,7 +959,11 @@ class VehicleUtils {
 	}
 	
 	static function GetSpeed(distance, days) {
-		return distance * 664 * HogeAI.Get().GetDayLengthFactor() / days / 24;
+		return distance * 664 / (days * HogeAI.Get().GetDayLengthFactor() * 24);
+	}
+
+	static function GetDistance(speed, days) {
+		return speed * (days * HogeAI.Get().GetDayLengthFactor() * 24) / 664;
 	}
 
 	static function ToString( vehicleType ) {

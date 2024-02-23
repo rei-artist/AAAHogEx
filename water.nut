@@ -1241,7 +1241,7 @@ class WaterPathBuilder {
 					return false;
 				}
 			} else if(path.mode >= 1) {
-				if(prev!=null && AIMarine.AreWaterTilesConnected(cur_tile,prev) || AIMap.DistanceManhattan(cur_tile, prev) == 2) {
+				if(prev!=null && (AIMarine.AreWaterTilesConnected(cur_tile,prev) || AIMap.DistanceManhattan(cur_tile, prev) == 2)) {
 				} else {
 					HogeAI.WaitForMoney(10000);
 					if(!AIMarine.BuildCanal(cur_tile)) {
