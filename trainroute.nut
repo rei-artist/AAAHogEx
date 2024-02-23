@@ -1724,6 +1724,7 @@ class TrainRoute extends Route {
 			local waiting = AIStation.GetCargoWaiting(srcHgStation.GetAIStation(), cargo);
 			local capacity = GetCargoCapacity(cargo);
 			numClone = max(1,min( numClone, waiting / capacity ));
+			numClone = min(numClone, GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_RAIL));
 			for(local i=0; i<numClone; i++) {
 				CloneAndStartTrain();
 			}

@@ -1657,7 +1657,6 @@ class RailBuilder extends Construction {
 	}
 	
 	static function ChangeTunnel(start,end) {
-		HgLog.Info("Start ChangeTunnel "+HgTile(start)+"-"+HgTile(end));
 		if(!AITile.HasTransportType(start, AITile.TRANSPORT_RAIL)) {
 			return false;
 		}
@@ -1681,10 +1680,10 @@ class RailBuilder extends Construction {
 			return false;
 		}
 
+		HgLog.Info("Start ChangeTunnel "+HgTile(start)+"-"+HgTile(end));
 		local t1 = min(start,end);
 		local t2 = max(start,end);
 		local direction = (t2 - t1) / 4;
-
 
 		HogeAI.WaitForMoney(20000,0,"ChangeTunnel");
 		local currentRailType = AIRail.GetCurrentRailType();

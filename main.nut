@@ -3561,6 +3561,7 @@ class HogeAI extends AIController {
 		local self = HogeAI.Get();
 		if(self.waitForPriceStartDate != null) {
 			HgLog.Warning("WaitForPrice called recursively:"+needMoney+" "+reason);
+			AIController.Sleep(10);
 			return false;
 		}
 		local execMode = AIExecMode();

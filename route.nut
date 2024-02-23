@@ -2281,7 +2281,8 @@ class CommonRoute extends Route {
 		local vehicleList = AIList();
 		
 		local totalVehicles = AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, GetVehicleType());
-		local tooMany = GetMaxTotalVehicles() - totalVehicles < 50;
+		local vehiclesSpace = GetMaxTotalVehicles() - totalVehicles;
+		local tooMany = vehiclesSpace < 50;
 
 		local choosenEngineSet = null;
 		local choosenEngine = null;
@@ -2380,6 +2381,9 @@ class CommonRoute extends Route {
 			return;
 		}
 		
+		if(vehiclesSpace <= 0) {
+			return;
+		}
 		
 		if(AIBase.RandRange(100) < (HogeAI.Get().roiBase ? 3 : 15)) {
 			//local c22 = PerformanceCounter.Start("c22");
@@ -2783,7 +2787,10 @@ class Construction {
 				a.push( BuildedPath( Path.Load(f) ) );
 			} else {
 				// station:xxx
-				a.push( HgStation.worldInstances[f.slice(8).tointeger()] );
+				local stationId = f.slice(8).tointeger();
+				if(HgStation.worldInstances.rawin(stationId)) {
+					a.push( HgStation.worldInstances[stationId] );
+				}
 			}
 		}
 		Construction.DoRollback(a);
