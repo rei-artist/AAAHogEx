@@ -710,7 +710,7 @@ class HogeAI extends AIController {
 		// 以下廃止。vehicleProfitBaseだと収益がマイナスの時にヘリばかりつくる羽目になる => 収益がマイナスの時はRouteを廃止すべき
 		
 		foreach(vehicleType in Route.allVehicleTypes) {
-			local routeClass = Route.GetRouteClassFromVehicleType(vehicleType);
+			local routeClass = Route.Class(vehicleType);
 			local max =  routeClass.GetMaxTotalVehicles();
 			local current = AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, vehicleType);
 			local room = max - current;
@@ -733,7 +733,7 @@ class HogeAI extends AIController {
 		local landVehicles = 0;
 		local landMax = 0;
 		foreach(vt in landVts) {
-			local routeClass = Route.GetRouteClassFromVehicleType(vt);
+			local routeClass = Route.Class(vt);
 			landVehicles += routeClass.GetVehicleCount(routeClass);
 			landMax += routeClass.GetMaxTotalVehicles();
 		}
@@ -814,7 +814,7 @@ class HogeAI extends AIController {
 		local minValue = routeCandidates.minValue;
 		
 		foreach(e in routeCandidates.GetAll()) {
-			local routeClass = Route.GetRouteClassFromVehicleType(e.vehicleType);
+			local routeClass = Route.Class(e.vehicleType);
 			local s = "ScanPlaces.score "+e.estimate+" "+routeClass.GetLabel()
 				+" "+e.dest.GetName() + "<-" + e.src.GetName()+" distance:"+e.estimate.distance;
 			// local s = "ScanPlaces.score"+e.score+" production:"+e.production+" value:"+e.estimate.value+" vt:"+e.routeClass.GetLabel()
@@ -834,7 +834,7 @@ class HogeAI extends AIController {
 		local buildingStartDate = AIDate.GetCurrentDate();
 		while(routeCandidates.Count() >= 1){
 			local t = routeCandidates.Pop();
-			local routeClass = Route.GetRouteClassFromVehicleType(t.vehicleType);
+			local routeClass = Route.Class(t.vehicleType);
 			if(t.vehicleType != AIVehicle.VT_AIR) { //airの場合迅速にやらないといけないので
 				DoInterval(); 
 			}
@@ -949,12 +949,12 @@ class HogeAI extends AIController {
 					dirtyPlaces.rawset(t.dest.GetGId()+":"+t.cargo, true);
 				}
 				dirtyPlaces.rawset(t.src.GetGId()+":"+t.cargo, true);
-				if(roiBase && bests.Count() >= 1) {
+				if(roiBase && routeCandidates.Count() >= 1) {
 					if(IsRich() && AIDate.GetCurrentDate() - buildingStartDate > searchDays) { // roiBaseから変わったので再検索
 						HgLog.Warning("IsRich == true");
 						return;
 					}
-					local next = bests.Peek();
+					local next = routeCandidates.Peek();
 					local usable = GetUsableMoney() + GetQuarterlyIncome() * t.estimate.days / 90;
 					totalNeeds += t.estimate.price * (t.estimate.vehiclesPerRoute - 1); // TODO: これまでの建築にかかった時間分減らす
 					local nextNeeds = next.estimate.buildingCost + next.estimate.price;
@@ -1059,7 +1059,7 @@ class HogeAI extends AIController {
 			foreach(dest in CreateRouteCandidates(src.cargo, src.place, cargoPlaceInfo[src.cargo], 0 , 16)) {
 //					Place.GetAcceptingPlaceDistance(src.cargo, src.place.GetLocation()))) {
 				
-				local routeClass = Route.GetRouteClassFromVehicleType(dest.vehicleType);
+				local routeClass = Route.Class(dest.vehicleType);
 				if(routeClass.IsTooManyVehiclesForNewRoute(routeClass)) {
 					continue;
 				}
@@ -1369,13 +1369,14 @@ class HogeAI extends AIController {
 		}
 		foreach( vtDistanceValue in vtSamplesValues ) {
 			local vt = vtDistanceValue[0];
+			local routeClass = Route.Class(vt);
 			local distanceIndex = vtDistanceValue[1];
-			local routeClass = Route.GetRouteClassFromVehicleType(vt);
+			local routeClass = Route.Class(vt);
 			if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, routeClass.GetVehicleType()) >= routeClass.GetMaxTotalVehicles()) {
 				continue;
 			}
 			local places = distancePlaces.GetPlaces(distanceIndex);
-			HgLog.Info("vt:"+vt+" distance:"+distanceEstimateSamples[distanceIndex]+" places:"+places.len() + " cur_candidates:"+candidates.len());
+			HgLog.Info(routeClass.GetLabel()+" distance:"+distanceEstimateSamples[distanceIndex]+" places:"+places.len() + " cur_candidates:"+candidates.len());
 			foreach(place in places) {
 				if(maxCandidates != 0 && candidates.len() >= maxCandidates) {
 					break;
@@ -1798,7 +1799,7 @@ class HogeAI extends AIController {
 	}
 	
 	function CreateTransferPlans(route,isDest,vehicleType,useLastMonthProduction=false,options={}) {
-		local routeClass = Route.GetRouteClassFromVehicleType(vehicleType);
+		local routeClass = Route.Class(vehicleType);
 		if(routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) {
 			return [];
 		}
@@ -2563,7 +2564,7 @@ class HogeAI extends AIController {
 			foreach(destCandidate in CreateRouteCandidates(cargo, cargoPlan.srcPlace, {places=[cargoPlan.destPlace]}, 
 					additionalProduction, maxResult, options)) {
 				local routePlan = {};
-				local routeClass = Route.GetRouteClassFromVehicleType(destCandidate.vehicleType);
+				local routeClass = Route.Class(destCandidate.vehicleType);
 				if(routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) {
 					continue;
 				}
@@ -2591,7 +2592,7 @@ class HogeAI extends AIController {
 					{searchProducing = true, maxDistance = maxDistance}, additionalProduction, maxResult, options)) {
 				local routePlan = {};
 			
-				local routeClass = Route.GetRouteClassFromVehicleType(srcCandidate.vehicleType);
+				local routeClass = Route.Class(srcCandidate.vehicleType);
 				if(!acceptingPlace.IsRaw() && routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) { //raw industryを満たすのは重要なので例外(for FIRS)
 					continue;
 				}
@@ -2614,7 +2615,7 @@ class HogeAI extends AIController {
 			foreach(destCandidate in CreateRouteCandidates(cargo, producingPlace,
 					{searchProducing = false}, additionalProduction, maxResult, options)) {
 				local routePlan = {};
-				local routeClass = Route.GetRouteClassFromVehicleType(destCandidate.vehicleType);
+				local routeClass = Route.Class(destCandidate.vehicleType);
 				if(routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) {
 					continue;
 				}
@@ -3187,7 +3188,7 @@ class HogeAI extends AIController {
 			local found = false;
 			foreach(dest in CreateRouteCandidates(cargo, place, {searchProducing=false})) {
 				found = true;
-				local routeClass = Route.GetRouteClassFromVehicleType(dest.vehicleType);
+				local routeClass = Route.Class(dest.vehicleType);
 				if(routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) {
 					continue;
 				}
@@ -3397,20 +3398,18 @@ class HogeAI extends AIController {
 		local vehicle = event.GetVehicleID();
 		local group = AIVehicle.GetGroupID(vehicle);
 		local vehicleType = AIVehicle.GetVehicleType(vehicle);
-		HgLog.Warning("ET_VEHICLE_LOST:"+vehicle+" "+AIVehicle.GetName(vehicle)+" vt:"+vehicleType+" group:"+AIGroup.GetName(group));
+		HgLog.Warning("ET_VEHICLE_LOST:"+Route.Class(vehicleType).GetLabel()+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" group:"+AIGroup.GetName(group));
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
 			HgLog.Warning("Invalid vehicle");
 			return;
 		}
 		if(vehicleType == AIVehicle.VT_ROAD) {
-			foreach(roadRoute in RoadRoute.instances) {
-				if(roadRoute.vehicleGroup == group) {
-					roadRoute.OnVehicleLost(vehicle);
-				}
+			if(Route.vehicleGroup.rawin(group)) {
+				Route.vehicleGroup.rawget(group).OnVehicleLost(vehicle);
 			}
 		} else if(vehicleType == AIVehicle.VT_WATER ) { //TODO: 全vehicleがロストしている場合、路線廃止
 			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) != 0) {
-				HgLog.Warning("ET_VEHICLE_LOST: SendVehicleToDepot");
+				HgLog.Warning("ET_VEHICLE_LOST: SendVehicleToDepot (retry)");
 				AIVehicle.SendVehicleToDepot (vehicle); // 一旦depot行きを解除
 				if(AIBase.RandRange(2) == 0) {
 					AIVehicle.SendVehicleToDepot (vehicle); // すぐに再開さた方がうまく行くケースもある

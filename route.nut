@@ -3,6 +3,7 @@ class Route {
 	static allVehicleTypes = [AIVehicle.VT_RAIL, AIVehicle.VT_ROAD, AIVehicle.VT_WATER, AIVehicle.VT_AIR];
 
 	static allRoutes = {}
+	static groupRoute = {}
 
 	static checkedNewRoute = ExpirationRawTable(365);
 	static availableVehicleTypesCache = ExpirationTable(30);
@@ -14,7 +15,7 @@ class Route {
 		}
 		local result = [];
 		foreach(vehicleType in Route.allVehicleTypes) {
-			local routeClass = Route.GetRouteClassFromVehicleType(vehicleType);
+			local routeClass = Route.Class(vehicleType);
 			if(!routeClass.IsTooManyVehiclesForNewRoute(routeClass)) {
 				result.push(vehicleType);
 			}
@@ -50,8 +51,8 @@ class Route {
 		}
 		return true;
 	}
-	
-	static function GetRouteClassFromVehicleType(vehicleType) {
+		
+	static function Class(vehicleType) {
 		switch(vehicleType) {
 			case AIVehicle.VT_RAIL:
 				return TrainRoute;
@@ -62,7 +63,7 @@ class Route {
 			case AIVehicle.VT_AIR:
 				return AirRoute;
 		}
-		HgLog.Error("Not supported vehicleType(GetRouteClassFromVehicleType)"+vehicleType);
+		HgLog.Error("Not supported vehicleType(Class)"+vehicleType);
 	}
 	
 	static function AppendNotRemovedRoutes(a, routes) {
@@ -112,7 +113,7 @@ class Route {
 		}
 		local estimate;
 		if(!estimateTable.rawin(key)) {
-			local routeClass = Route.GetRouteClassFromVehicleType(vehicleType);
+			local routeClass = Route.Class(vehicleType);
 			local estimator = routeClass.GetEstimator(routeClass);
 			estimator.cargo = cargo;
 			estimator.distance = HogeAI.distanceEstimateSamples[distanceIndex];
@@ -172,7 +173,7 @@ class Route {
 	}
 
 	function GetRouteClass() {
-		return Route.GetRouteClassFromVehicleType(GetVehicleType());
+		return Route.Class(GetVehicleType());
 	}
 	
 	function IsBuilding() {
@@ -194,7 +195,7 @@ class Route {
 	}
 	
 	function _IsTooManyVehiclesForNewRoute(vt) {
-		local routeClass = Route.GetRouteClassFromVehicleType(vt);
+		local routeClass = Route.Class(vt);
 		local remaining = routeClass.GetVehicleNumRoom(routeClass);
 		if(!Route.ExistsAvailableVehicleTypes(vt) && remaining > 30) {
 			return false;
@@ -203,7 +204,7 @@ class Route {
 	}
 	
 	function IsTooManyVehiclesForNewRouteRaw(vt) {
-		local routeClass = Route.GetRouteClassFromVehicleType(vt);
+		local routeClass = Route.Class(vt);
 		local remaining = routeClass.GetVehicleNumRoom(routeClass);
 		return remaining <= routeClass.GetMaxTotalVehicles() * (1 - routeClass.GetThresholdVehicleNumRateForNewRoute());
 	}
@@ -1565,16 +1566,17 @@ class CommonRoute extends Route {
 	}
 	
 	function Initialize() {
-		if(this.vehicleGroup == null) {
-			this.vehicleGroup = AIGroup.CreateGroup( GetVehicleType() );
+		if(vehicleGroup == null) {
+			vehicleGroup = AIGroup.CreateGroup( GetVehicleType() );
 			local src = srcHgStation.GetName();
 			local dest = destHgStation.GetName();
 			src = src.slice(0,min(11,src.len()));
 			dest = dest.slice(0,min(11,dest.len()));
 			local s = (IsTransfer()?"T:":"")+ dest + "<-"+(IsBiDirectional()?">":"") + src +"[" + AICargo.GetName(cargo) + "]" + GetLabel();
-			AIGroup.SetName(this.vehicleGroup, s.slice(0,min(31,s.len())));
+			AIGroup.SetName(vehicleGroup, s.slice(0,min(31,s.len())));
+			Route.groupRoute.rawset(vehicleGroup,this);
 		}
-		this.maxVehicles = GetMaxVehicles();
+		maxVehicles = GetMaxVehicles();
 		UpdateSavedData();
 	}
 	
@@ -1596,6 +1598,10 @@ class CommonRoute extends Route {
 		isTransfer = saveData.isTransfer;
 		isBiDirectional = saveData.isBiDirectional;
 		vehicleGroup = saveData.vehicleGroup;
+		if(vehicleGroup != null) {
+			Route.groupRoute.rawset(vehicleGroup,this);
+		}
+		
 		depot = saveData.depot;
 		destDepot = saveData.destDepot;
 		useDepotOrder = saveData.useDepotOrder;
@@ -2666,6 +2672,11 @@ class CommonRoute extends Route {
 		}
 		srcHgStation.RemoveIfNotUsed();
 		destHgStation.RemoveIfNotUsed();
+		if(vehicleGroup != null) {
+			Route.groupRoute.rawdelete(vehicleGroup);
+			AIGroup.DeleteGroup(vehicleGroup);
+			vehicleGroup = null;
+		}
 	}
 	
 	function Close() {

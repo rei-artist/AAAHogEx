@@ -865,7 +865,7 @@ class Place {
 			limit = AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES ? AIDate.GetCurrentDate() + 60 : AIDate.GetCurrentDate() + 1000; 
 		}
 		Place.ngPlaces.rawset(facility.GetLocation() + ":" + cargo +":" + vehicleType, limit);
-		HgLog.Info("AddNgPlace:"+facility.GetName()+"["+AICargo.GetName(cargo)+"] vt:"+vehicleType+" limit:"+DateUtils.ToString(limit));
+		HgLog.Info("AddNgPlace:"+facility.GetName()+"["+AICargo.GetName(cargo)+"] "+Route.Class(vehicleType).GetLabel()+" limit:"+DateUtils.ToString(limit));
 	}
 	
 	static function RemoveNgPlace(facility, cargo, vehicleType) {
