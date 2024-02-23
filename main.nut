@@ -3559,14 +3559,16 @@ class HogeAI extends AIController {
 	
 	function WaitForPrice(needMoney, buffer = 1000, maxDays = 0, reason = "") {
 		local self = HogeAI.Get();
-		local oldSupressInterval = self.supressInterval;
-		self.supressInterval = true;
+
 		if(self.waitForPriceStartDate != null) {
-			HgLog.Warning("WaitForPrice called recursively:"+needMoney+" "+reason);
+			HgLog.Error("WaitForPrice called recursively:"+needMoney+" "+reason); // 呼ばれないはず
 			AIController.Sleep(10);
-			supressInterval = oldSupressInterval;
 			return false;
 		}
+
+		local oldSupressInterval = self.supressInterval;
+		self.supressInterval = true;
+
 		local execMode = AIExecMode();
 		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF)-needMoney > AICompany.GetLoanAmount() + buffer) {
 			AICompany.SetMinimumLoanAmount(0);
