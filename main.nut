@@ -847,7 +847,7 @@ class HogeAI extends AIController {
 				DoPostBuildRoute(rootBuilders);
 				return;
 			}*/
-			if(isBiDirectional && dirtyPlaces.rawin(t.dest.GetGId()+":"+t.cargo)) { // 同じplaceで競合するのを防ぐ(特にAIRとRAIL)
+			if((isBiDirectional || ecs) && dirtyPlaces.rawin(t.dest.GetGId()+":"+t.cargo)) { // 同じplaceで競合するのを防ぐ(特にAIRとRAIL)
 				HgLog.Info("dirtyPlaces dest "+explain);
 				continue;
 			}
@@ -945,7 +945,7 @@ class HogeAI extends AIController {
 				if(newRoute.IsTransfer() && t.rawin("route")) {
 					t.route.NotifyAddTransfer();
 				}
-				if(isBiDirectional) {
+				if(isBiDirectional || ecs) {
 					dirtyPlaces.rawset(t.dest.GetGId()+":"+t.cargo, true);
 				}
 				dirtyPlaces.rawset(t.src.GetGId()+":"+t.cargo, true);

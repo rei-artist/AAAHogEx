@@ -1723,7 +1723,7 @@ class RailBuilder extends Construction {
 		
 		local pathBuildedPath = RailBuilder.SearchPathBuildedPath(t1);
 		if(pathBuildedPath != null) {
-			if(!RailBuilder.ChangeBridgePath(pathBuildedPath[1], t1, t2)) {
+			if(!RailBuilder.ChangeBridgePath(pathBuildedPath[1], t1 + direction, t1 + direction * 3)) {
 				HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(t1)+" "+HgTile(t2));
 			} else {
 				pathBuildedPath[1].ChangePath();
