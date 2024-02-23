@@ -3404,8 +3404,8 @@ class HogeAI extends AIController {
 			return;
 		}
 		if(vehicleType == AIVehicle.VT_ROAD) {
-			if(Route.vehicleGroup.rawin(group)) {
-				Route.vehicleGroup.rawget(group).OnVehicleLost(vehicle);
+			if(Route.groupRoute.rawin(group)) {
+				Route.groupRoute.rawget(group).OnVehicleLost(vehicle);
 			}
 		} else if(vehicleType == AIVehicle.VT_WATER ) { //TODO: 全vehicleがロストしている場合、路線廃止
 			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) != 0) {
