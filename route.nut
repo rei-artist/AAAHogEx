@@ -63,7 +63,8 @@ class Route {
 			case AIVehicle.VT_AIR:
 				return AirRoute;
 		}
-		HgLog.Error("Not supported vehicleType(Class)"+vehicleType);
+		HgLog.Warning("Not supported vehicleType(Class)"+vehicleType);
+		return null;
 	}
 	
 	static function AppendNotRemovedRoutes(a, routes) {

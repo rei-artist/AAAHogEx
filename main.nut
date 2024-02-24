@@ -3396,13 +3396,13 @@ class HogeAI extends AIController {
 
 	function OnVehicleLost(event) {
 		local vehicle = event.GetVehicleID();
-		local group = AIVehicle.GetGroupID(vehicle);
-		local vehicleType = AIVehicle.GetVehicleType(vehicle);
-		HgLog.Warning("ET_VEHICLE_LOST:"+Route.Class(vehicleType).GetLabel()+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" group:"+AIGroup.GetName(group));
 		if(!AIVehicle.IsValidVehicle(vehicle)) {
-			HgLog.Warning("Invalid vehicle");
+			HgLog.Warning("ET_VEHICLE_LOST: Invalid vehicle "+vehicle);
 			return;
 		}
+		local group = AIVehicle.GetGroupID(vehicle);
+		local vehicleType = AIVehicle.GetVehicleType(vehicle);
+		HgLog.Warning("ET_VEHICLE_LOST:"+VehicleUtils.GetTypeName(vehicleType)+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" group:"+AIGroup.GetName(group));
 		if(vehicleType == AIVehicle.VT_ROAD) {
 			if(Route.groupRoute.rawin(group)) {
 				Route.groupRoute.rawget(group).OnVehicleLost(vehicle);

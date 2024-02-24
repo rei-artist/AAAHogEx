@@ -865,6 +865,22 @@ class PerformanceCounter {
 
 
 class VehicleUtils {
+	static function GetTypeName(vehicleType) {
+		switch(vehicleType) {
+			case AIVehicle.VT_RAIL:
+				return "Train";
+			case AIVehicle.VT_ROAD:
+				return "Road";
+			case AIVehicle.VT_WATER:
+				return "Water";
+			case AIVehicle.VT_AIR:
+				return "Air";
+			case AIVehicle.VT_INVALID:
+				return "Invalid vehicle type";
+		}
+		HgLog.Error("VehicleUtils.GetTypeName:"+vehicleType);
+	}
+
 	static function GetCargoWeight(cargo, quantity) { // 鉄道用
 		local result = VehicleUtils.GetCommonCargoWeight(cargo, quantity);
 		if (AICargo.IsFreight(cargo)) {

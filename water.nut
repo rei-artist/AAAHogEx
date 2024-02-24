@@ -115,11 +115,11 @@ class WaterRoute extends CommonRoute {
 		while(path != null) {
 			local tile = path.GetTile();
 			WaterRoute.usedTiles.rawset(tile,true);
-			if(count % 32 == 31) {
+			/*if(count % 32 == 31) {
 				if(AIMarine.IsBuoyTile(tile) || AIMarine.BuildBuoy(tile)) {
 					buoys.push(tile);
 				}
-			}
+			}*/
 			count ++;
 
 			path = path.GetParent();
