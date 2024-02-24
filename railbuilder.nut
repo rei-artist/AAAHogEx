@@ -2330,7 +2330,7 @@ class TwoWayStationRailBuilder extends Construction {
 			}
 		}
 		if(isBuildSingleDepotDestToSrc) {
-			local depot = buildedPath1.BuildDepotForRail();
+			local depot = buildedPath1.path.BuildDepotForRail();
 			if(depot != null) {
 				depots.push(depot);
 			}
