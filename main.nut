@@ -1,5 +1,4 @@
-﻿
-require("utils.nut");
+﻿require("utils.nut");
 require("tile.nut");
 require("aystar.nut");
 require("pathfinder.nut");
@@ -15,6 +14,8 @@ require("water.nut");
 require("air.nut");
 
 class HogeAI extends AIController {
+	static version = 70;
+
 	static container = Container();
 	static notBuildableList = AIList();
 	
@@ -257,9 +258,10 @@ class HogeAI extends AIController {
 
 		DelayCommandExecuter();
 	}
-	 
+	
 	function Start() {
-		HgLog.Info("AAAHogEx Started!");
+		SetCompanyName();
+		HgLog.Info("AAAHogEx Started! version:"+HogeAI.version+" name:"+AICompany.GetName(AICompany.COMPANY_SELF));
 		HgLog.Info("openttd version:"+openttdVersion);
 		
 		
@@ -521,6 +523,8 @@ class HogeAI extends AIController {
 		}
 		c2.Stop();
 		PerformanceCounter.Print();*/
+		
+		//HgLog.Info("test:"+AIMarine.IsCanalTile(HgTile.XY(731,449).tile));
 	
 
 		local newGrfList = AINewGRFList();
@@ -649,7 +653,6 @@ class HogeAI extends AIController {
 
 
 		AICompany.SetAutoRenewStatus(false);
-		SetCompanyName();
 
 		distanceEstimateSamples.clear();
 		local maxDistance = max(AIMap.GetMapSizeX(), AIMap.GetMapSizeY());
@@ -3403,19 +3406,10 @@ class HogeAI extends AIController {
 		local group = AIVehicle.GetGroupID(vehicle);
 		local vehicleType = AIVehicle.GetVehicleType(vehicle);
 		HgLog.Warning("ET_VEHICLE_LOST:"+VehicleUtils.GetTypeName(vehicleType)+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" group:"+AIGroup.GetName(group));
-		if(vehicleType == AIVehicle.VT_ROAD) {
+		if(vehicleType == AIVehicle.VT_ROAD || vehicleType == AIVehicle.VT_WATER) {
 			if(Route.groupRoute.rawin(group)) {
 				Route.groupRoute.rawget(group).OnVehicleLost(vehicle);
 			}
-		} else if(vehicleType == AIVehicle.VT_WATER ) { //TODO: 全vehicleがロストしている場合、路線廃止
-			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) != 0) {
-				HgLog.Warning("ET_VEHICLE_LOST: SendVehicleToDepot (retry)");
-				AIVehicle.SendVehicleToDepot (vehicle); // 一旦depot行きを解除
-				if(AIBase.RandRange(2) == 0) {
-					AIVehicle.SendVehicleToDepot (vehicle); // すぐに再開さた方がうまく行くケースもある
-				}
-			}
-		
 		}
 	}
 	
@@ -3461,6 +3455,7 @@ class HogeAI extends AIController {
 		HgLog.Info("TrainRoute.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
 		remainOps = AIController.GetOpsTillSuspend();
 
+		CommonRoute.SaveStatics(table);
 		RoadRoute.SaveStatics(table);		
 
 		HgLog.Info("RoadRoute.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
@@ -3520,6 +3515,7 @@ class HogeAI extends AIController {
 		HgStation.LoadStatics(loadData);
 		TrainInfoDictionary.LoadStatics(loadData);
 		TrainRoute.LoadStatics(loadData);		
+		CommonRoute.LoadStatics(loadData);
 		RoadRoute.LoadStatics(loadData);
 		WaterRoute.LoadStatics(loadData);
 		AirRoute.LoadStatics(loadData);

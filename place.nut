@@ -1036,8 +1036,7 @@ class Place {
 				result.push(TownCargo(town,cargo,true));
 			}
 		}
-		
-		return HgArray(result);
+		return HgArray(result); //.Filter(function(p){ return p.GetName().find("Raston")!=null || p.GetName().find("Trinfingford")!=null; });
 	}
 	
 	
@@ -1056,7 +1055,7 @@ class Place {
 		}).Filter(function(place):(cargo) {
 			return place.IsCargoAccepted(cargo); //CAS_TEMP_REFUSEDを除外する
 		}).array);
-		return result;
+		return result; //.Filter(function(p){ return p.GetName().find("Raston")!=null || p.GetName().find("Trinfingford")!=null; });
 	}
 	
 	static function IsAcceptedByTown(cargo) {
@@ -1885,13 +1884,14 @@ class Place {
 				return GlobalCoasts;
 			}
 		}
-		local coastTile = FindCoastTile(cargo);
-		if(coastTile == null) return null;
-		local result = Coasts.GetCoasts(coastTile);
-		if(result == null || result.coastType == Coasts.CT_POND) {
-			return null;
+		local coastTileList = FindCoastTileList(cargo);
+		foreach(t,_ in coastTileList) {
+			local result = Coasts.GetCoasts(t);
+			if(result != null && result.coastType != Coasts.CT_POND) {
+				return result;
+			}
 		}
-		return result;
+		return null;
 	}
 
 	function IsNearWater(cargo) {		
@@ -2172,30 +2172,27 @@ class HgIndustry extends Place {
 		}
 	}
 	
-	function FindCoastTile(cargo) {
+	function FindCoastTileList(cargo) {
 		local dockRadius = AIStation.GetCoverageRadius(AIStation.STATION_DOCK);
 		local tileList = GetTileList(dockRadius);
 		tileList.Valuate(AITile.IsCoastTile);
 		tileList.KeepValue(1);
 		if(tileList.Count()==0) {
-			return null;
+			return tileList;
 		}
 		AcceptProducingTileList(tileList, dockRadius, cargo);
-		if(tileList.Count()==0) {
-			return null;
-		}
-		return tileList.Begin();
+		return tileList;
 	}
 	
 	function _IsNearWater(cargo) {
 		if(IsBuiltOnWater()) {
 			return true;
 		}
-		local coastTile = FindCoastTile(cargo);
-		if(coastTile==null) {
+		local coastTileList = FindCoastTileList(cargo);
+		if(coastTileList.Count()==0) {
 			return false;
 		}
-		HogeAI.Get().pendingCoastTiles.push(coastTile);
+		HogeAI.Get().pendingCoastTiles.push(coastTileList.Begin());
 		return true;
 	}
 
@@ -2501,19 +2498,16 @@ class TownCargo extends Place {
 		return result;*/
 	}
 	
-	function FindCoastTile(cargo) {
+	function FindCoastTileList(cargo) {
 		local rectangle = Rectangle.Center(HgTile(GetLocation()),GetRadius() - 2); // 船にとって街は遠い
 		local tileList = rectangle.GetEdgeTileList();
 		tileList.Valuate(AITile.IsCoastTile);
 		tileList.KeepValue(1);
-		if(tileList.Count()>=1) {
-			return tileList.Begin();
-		}
-		return null;
+		return tileList;
 	}
 	
 	function _IsNearWater(cargo) {
-		return FindCoastTile(cargo) != null;
+		return FindCoastTileList(cargo).Count() >= 1;
 	}
 	
 	function GetNotUsedProductionMap(exceptPlatformTiles) {

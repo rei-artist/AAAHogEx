@@ -172,7 +172,7 @@ function AyStar::FindPath(iterations)
 			}
 			/* Calculate the new paths and add them to the open list */
 			local mode = node.len() >= 3 ? node[2] : null;
-			local new_path = this.Path(path, node[0],node[1],  mode, this._cost_callback, this._pf_instance);
+			local new_path = this.Path(path, node[0], node[1], mode, this._cost_callback, this._pf_instance);
 			local cost = new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
 			//HgLog.Info("cost:"+cost+" "+HgTile(node[0])+" par:"+HgTile(path.GetTile())+(path.GetParent()!=null ? " parpar:"+HgTile(path.GetParent().GetTile()) : ""));
 			this._open.Insert(new_path, cost);

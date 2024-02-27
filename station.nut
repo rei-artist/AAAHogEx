@@ -1887,7 +1887,6 @@ class HgStation {
 	}
 	
 	function GetName() {
-		local stationId = GetAIStation();
 		if(!AIStation.IsValidStation(stationId)) {
 			return "InvalidStation "+HgTile(platformTile);
 		}
@@ -2077,6 +2076,9 @@ class HgStation {
 	
 	function RemoveIfNotUsed() {
 		if(stationGroup == null) {
+			return;
+		}
+		if(IsTownStop()) {
 			return;
 		}
 		if(stationGroup.GetUsingRoutes().len() == 0) {

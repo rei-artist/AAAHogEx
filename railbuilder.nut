@@ -489,7 +489,7 @@ class Path {
 						path = path.GetParent();
 					} else {
 						local curHgTile = HgTile(prev);
-						if(vehicleType == AIVehicle.VT_WATER && AIMarine.IsCanalTile(prev)) {
+						/*if(vehicleType == AIVehicle.VT_WATER && AIMarine.IsCanalTile(prev)) { LOSTするので
 							local tiles = path.GetTilesLen(3);
 							if(tiles.len() == 3) {
 								local dir = tiles[0] - prev;
@@ -499,7 +499,7 @@ class Path {
 									}
 								}
 							}
-						} else {
+						} else {*/
 							foreach(hgTile in curHgTile.GetDir4()) {
 								if(hgTile.tile == path.GetTile() || hgTile.tile == prev2) {
 									continue;
@@ -508,7 +508,7 @@ class Path {
 									return hgTile.GetTileIndex();
 								}
 							}
-						}
+						//}
 					}
 				}
 				if(path != null) {

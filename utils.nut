@@ -266,7 +266,13 @@ class TableUtils {
 		}
 		return keys;
 	}
+	static function Extend(table1, table2) {
+		foreach(k,v in table2) {
+			table1.rawset(k,v);
+		}
+	}
 }
+
 
 class StringUtils {
 	static function SliceMaxLen(str,length) {
@@ -587,11 +593,24 @@ class BuildUtils {
 		return false;*/
 	}
 	
+	
+	static function LowerTileSafe(a,b) {
+		return BuildUtils.WaitForMoney( function():(a,b) {
+			return AITile.LowerTile(a,b);
+		});
+		
+	}
+	
+	static function RaiseTileSafe(a,b) {
+		return BuildUtils.WaitForMoney( function():(a,b) {
+			return AITile.RaiseTile(a,b);
+		});
+		
+	}
 	static function BuildBridgeSafe(a,b,c,d) {
 		return BuildUtils.WaitForMoney( function():(a,b,c,d) {
 			return AIBridge.BuildBridge(a,b,c,d);
 		});
-		
 	}
 
 	static function BuildTunnelSafe(a,b) {
@@ -707,6 +726,23 @@ class RailUtils {
 }
 
 class HgTable {
+	table = null;
+	
+	constructor(table) {
+		this.table = table;
+	}
+	
+	function _tostring() {
+		local result = "";
+		foreach(k,v in table) {
+			if(result.len() >= 1) {
+				result += ", ";
+			}
+			result += k + "=" + v;
+		}
+		return "{" + result + "}";
+	}
+
 	static function Extend(table1, table2) {
 		foreach(k,v in table2) {
 			table1.rawset(k,v);

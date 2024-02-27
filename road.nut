@@ -153,7 +153,6 @@ class RoadRoute extends CommonRoute {
 	usedTiles = null;
 	myTileNum = null;
 	lastRebuildDate = null;
-	usedTiles = null;
 	
 	constructor() {
 		CommonRoute.constructor();
@@ -489,10 +488,10 @@ class RoadRoute extends CommonRoute {
 			HgLog.Info("SellVehiclesInDepot:"+vehicles.Count()+" "+HgTile(tile));	
 			foreach(v,_ in vehicles) {
 				if(AIVehicle.IsStoppedInDepot(v)) {
-					AIVehicle.SellVehicle(v);
+					CommonRoute.SellVehicle(v);
 				} else if(AIVehicle.IsInDepot(v)) {
 					AIVehicle.StartStopVehicle(v);
-					AIVehicle.SellVehicle(v);
+					CommonRoute.SellVehicle(v);
 				} else {
 					CommonRoute.AppendRemoveOrder(v);
 					retry = true;
