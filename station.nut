@@ -494,23 +494,27 @@ class StationGroup {
 
 	function GetCoverageTileList() {
 		if(coverageTileList == null) {
-			coverageTileList = AITileList();
-			local stationTypes = {};
-			local stationId = hgStations[0].stationId;
-			local airportType = null;
-			foreach(station in hgStations) {
-				if(station instanceof AirStation) {
-					airportType = station.GetAirportType();
+			if(HogeAI.Get().openttdVersion >= 14) {
+				coverageTileList = AITileList_StationCoverage( GetAIStation() );
+			} else {
+				coverageTileList = AITileList();
+				local stationTypes = {};
+				local stationId = hgStations[0].stationId;
+				local airportType = null;
+				foreach(station in hgStations) {
+					if(station instanceof AirStation) {
+						airportType = station.GetAirportType();
+					}
+					if(station.GetStationType() != null) {
+						stationTypes.rawset(station.GetStationType(),0);
+					}
 				}
-				if(station.GetStationType() != null) {
-					stationTypes.rawset(station.GetStationType(),0);
-				}
-			}
-			foreach(stationType,_ in stationTypes) {
-				local radius = stationType == AIStation.STATION_AIRPORT
-						? AIAirport.GetAirportCoverageRadius( airportType) : AIStation.GetCoverageRadius( stationType );
-				foreach(tile,_ in AITileList_StationType(stationId, stationType)) {
-					Rectangle.Center(HgTile(tile), radius).AppendToTileList(coverageTileList);
+				foreach(stationType,_ in stationTypes) {
+					local radius = stationType == AIStation.STATION_AIRPORT
+							? AIAirport.GetAirportCoverageRadius( airportType) : AIStation.GetCoverageRadius( stationType );
+					foreach(tile,_ in AITileList_StationType(stationId, stationType)) {
+						Rectangle.Center(HgTile(tile), radius).AppendToTileList(coverageTileList);
+					}
 				}
 			}
 		}
