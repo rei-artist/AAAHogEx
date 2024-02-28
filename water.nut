@@ -1626,16 +1626,20 @@ class WaterPathFinder {
 					}
 				}
 			} else if(canalBuildMode) {
-				if(AIMarine.BuildCanal(next_tile) && !AIMarine.IsLockTile(cur_tile) /*Lockの横からCanalを作ってでてはいけない(TODO:横かどうかは調べてない)*/
+				if(AIMarine.BuildCanal(next_tile)
+						&& !AIMarine.IsLockTile(cur_tile) /*Lock/Depotの横からCanalを作ってでてはいけない(TODO:横かどうかは調べてない)*/
+						&& !AIMarine.IsWaterDepotTile(cur_tile)
 						&& AITile.GetMaxHeight(next_tile) == curLevel) {
 					tiles.push([next_tile, 0xFF, {mode = mode + 1,level = curLevel}]);
-				} else if(((AITile.IsWaterTile(next_tile) && AITile.GetSlope(next_tile) == AITile.SLOPE_FLAT) || AIMarine.IsBuoyTile(next_tile))
-						&& AITile.GetMaxHeight(next_tile) == curLevel
-						&& !AIMarine.IsLockTile(next_tile) && !AIMarine.IsWaterDepotTile(next_tile)
-						&& !AIMarine.IsLockTile(cur_tile) && !AIMarine.IsWaterDepotTile(cur_tile)) {
-					tiles.push([next_tile, 0xFF, {mode = mode,level = curLevel}]);
+				} else if((AITile.IsWaterTile(next_tile) && AITile.GetSlope(next_tile) == AITile.SLOPE_FLAT) || AIMarine.IsBuoyTile(next_tile)) {
+					if(AITile.GetMaxHeight(next_tile) == curLevel
+							&& !AIMarine.IsLockTile(next_tile) && !AIMarine.IsWaterDepotTile(next_tile)
+							&& !AIMarine.IsLockTile(cur_tile) && !AIMarine.IsWaterDepotTile(cur_tile)) {
+						tiles.push([next_tile, 0xFF, {mode = mode,level = curLevel}]);
+					}
 				} else if(AITile.GetSlope(next_tile) != AITile.SLOPE_FLAT) {
-					if(AITile.IsBuildable(next_tile) && HgTile(next_tile).Level(curLevel)) {
+					if(AITile.IsBuildable(next_tile) && HgTile(next_tile).Level(curLevel)
+							&& !AIMarine.IsWaterDepotTile(cur_tile)) {
 						tiles.push([next_tile, 0xFF, {mode = mode+1,level = curLevel}]);
 					}
 				}
@@ -1646,7 +1650,7 @@ class WaterPathFinder {
 					}
 				}
 			} else {
-				if(HogeAI.Get().IsRich() && AITile.GetMaxHeight(next_tile)==1 && WaterPathFinder.LowerToZero(next_tile)) {
+				if(!HogeAI.Get().roiBase && AITile.GetMaxHeight(next_tile)==1 && WaterPathFinder.LowerToZero(next_tile)) {
 					tiles.push([next_tile,0xFF,{mode = 256,level = curLevel}]);
 				}
 			}

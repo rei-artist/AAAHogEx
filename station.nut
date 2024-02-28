@@ -367,12 +367,14 @@ class StationGroup {
 	}
 	
 	function IsAcceptingCargoHere(cargo) {
-		foreach(station in hgStations) {
-			if(station instanceof PlaceStation && station.IsAcceptingCargo(cargo)) {
-				return true;
+		if(hgStations.len()==1) {
+			local station = hgStations[0];
+			if(station instanceof PlaceStation) {
+				return station.IsAcceptingCargo(cargo);
 			}
+			local rectangle = station.GetPlatformRectangle();
+			return AITile.GetCargoAcceptance(rectangle.lefttop.tile, cargo, rectangle.Width(), rectangle.Height(), station.GetCoverageRadius()) >= 8;
 		}
-	
 		local result = 0;
 		local tileList = AIList();
 		tileList.AddList(GetCoverageTileList());
@@ -415,11 +417,15 @@ class StationGroup {
 	}
 	
 	function IsProducingCargoHere(cargo) {
-		foreach(station in hgStations) {
-			if(station instanceof PlaceStation && station.IsProducingCargo(cargo)) {
-				return true;
+		if(hgStations.len()==1) {
+			local station = hgStations[0];
+			if(station instanceof PlaceStation) {
+				return station.IsProducingCargo(cargo);
 			}
+			local rectangle = station.GetPlatformRectangle();
+			return AITile.GetCargoProduction(rectangle.lefttop.tile, cargo, rectangle.Width(), rectangle.Height(), station.GetCoverageRadius()) >= 1;
 		}
+		
 		local tileList = AIList();
 		tileList.AddList(GetCoverageTileList());
 		tileList.Valuate(AITile.GetCargoProduction, cargo, 1, 1, 0 );
@@ -500,18 +506,13 @@ class StationGroup {
 				coverageTileList = AITileList();
 				local stationTypes = {};
 				local stationId = hgStations[0].stationId;
-				local airportType = null;
 				foreach(station in hgStations) {
-					if(station instanceof AirStation) {
-						airportType = station.GetAirportType();
-					}
 					if(station.GetStationType() != null) {
-						stationTypes.rawset(station.GetStationType(),0);
+						stationTypes.rawset(station.GetStationType(),station);
 					}
-				}
-				foreach(stationType,_ in stationTypes) {
-					local radius = stationType == AIStation.STATION_AIRPORT
-							? AIAirport.GetAirportCoverageRadius( airportType) : AIStation.GetCoverageRadius( stationType );
+				} 
+				foreach(stationType,station in stationTypes) {
+					local radius = station.GetCoverageRadius();
 					foreach(tile,_ in AITileList_StationType(stationId, stationType)) {
 						Rectangle.Center(HgTile(tile), radius).AppendToTileList(coverageTileList);
 					}
@@ -1558,6 +1559,10 @@ class HgStation {
 	
 	function GetStationGroup() {
 		return stationGroup;
+	}
+	
+	function GetCoverageRadius() {
+		return AIStation.GetCoverageRadius(GetStationType());
 	}
 	
 	function BuildStationSafe(joinStation, isTestMode) {
