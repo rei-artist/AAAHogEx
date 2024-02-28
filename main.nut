@@ -3376,8 +3376,13 @@ class HogeAI extends AIController {
 					local routes = [];
 					routes.extend( PlaceDictionary.Get().GetRoutesBySource(place) );
 					routes.extend( PlaceDictionary.Get().GetRoutesByDest(place) );
+					local usedStations = {};
 					foreach(route in routes /*Route.GetAllRoutes()*/) {
-						route.OnIndustoryClose(event.GetIndustryID());
+						route.OnIndustoryClose(event.GetIndustryID(),usedStations);
+					}
+					foreach(station,_ in usedStations) {
+						station.place = null;
+						station.DoSave();
 					}
 					foreach(pathfinding,_ in pathfindings) {
 						pathfinding.OnIndustoryClose(event.GetIndustryID());

@@ -1242,7 +1242,11 @@ class Route {
 		}
 	}
 
-	function OnIndustoryClose(industry) {
+	function OnIndustoryClose(industry,usedStations) {
+		if(srcHgStation.stationGroup == null) {
+			HgLog.Warning("stationGroup == null(OnIndustoryClose) " + this);
+			return;
+		}
 		local srcPlace = srcHgStation.place;
 		if(srcPlace != null && srcPlace instanceof HgIndustry && srcPlace.industry == industry) {
 			if(GetVehicleType() == AIVehicle.VT_RAIL && HogeAI.Get().IsInfrastructureMaintenance() == false) {
@@ -1251,14 +1255,13 @@ class Route {
 			}
 			local saved = false;
 			foreach(route in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
-				if(route.IsTransfer() && route.cargo == cargo) {
+				if(route.IsTransfer()) {
 					HgLog.Warning("Src industry "+AIIndustry.GetName(industry)+" closed. But saved because transfer route found."+this);
 					saved = true;
 				}
 			}
 			if(saved) {
-				srcHgStation.place = null;
-				srcHgStation.DoSave();
+				usedStations.rawset(srcHgStation,true);
 			} else {
 				HgLog.Warning("Remove Route (src industry closed:"+AIIndustry.GetName(industry)+")"+this);
 				Remove();
@@ -1266,6 +1269,7 @@ class Route {
 		}
 		local destPlace = destHgStation.place;
 		if(destPlace != null && destPlace instanceof HgIndustry && destPlace.industry == industry) {
+			usedStations.rawset(destHgStation,true);
 			HgLog.Warning("Remove Route (dest industry closed:"+AIIndustry.GetName(industry)+")"+this);
 			Remove();
 		}
@@ -1280,8 +1284,9 @@ class Route {
 	}
 	
 	function _tostring() {
+		local state = IsClosed() ? (IsRemoved()?" Removed":" Closed"): "";
 		return (IsTransfer() ? "T:" : "") + destHgStation.GetName() + "<-"+(IsBiDirectional()?">":"") + srcHgStation.GetName()
-				+ "[" + AICargo.GetName(cargo) + "]" + GetLabel() + (IsClosed()?" Closed":"");
+				+ "[" + AICargo.GetName(cargo) + "]" + GetLabel() + state;
 	}
 }
 
@@ -3051,11 +3056,13 @@ class RouteBuilder extends Construction {
 			if(src instanceof HgIndustry) {
 				local callers = {};
 				foreach(route in src.GetRoutesUsingDest()) {
+					if(route.IsRemoved()) continue;
 					route.NotifyChangeDestRoute(callers);
 					limit -= route.GetTotalDelivableProduction() / 2;
 					HgLog.Info("remainCapacity:"+limit+" "+builtRoute);
 				}
 				foreach(route,_ in callers) {
+					if(route.IsRemoved()) continue;
 					route.ChooseEngineSet();
 					if(routePlans != null) {
 						routePlans.Extend( ShowPlansLog( HogeAI.Get().GetTransferCandidates( route )));
