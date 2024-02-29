@@ -1621,7 +1621,6 @@ class RailBuilder extends Construction {
 		return true;
 	}
 	
-	
 	function ChangeBridgePath(buildedPath, startTile, endTile) {
 		local path = buildedPath.path;
 		local buildSignal = buildedPath.route != null && !buildedPath.route.IsSingle();
@@ -2341,7 +2340,6 @@ class TwoWayStationRailBuilder extends Construction {
 	
 }
 
-
 class SingleStationRailBuilder extends Construction{
 	srcHgStation = null;
 	destHgStation = null;
@@ -2387,7 +2385,6 @@ class SingleStationRailBuilder extends Construction{
 	}
 	
 }
-
 
 class RailToAnyRailBuilder extends RailBuilder {
 	originalPath = null;

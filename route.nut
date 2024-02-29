@@ -1739,8 +1739,8 @@ class CommonRoute extends Route {
 		}
 		if(depot == null && srcHgStation instanceof RoadStation) {
 			depot = srcHgStation.BuildDepot();
-		}
-		if(depot == null) {
+		}                        
+		if(depot == null && ("GetDepot" in destHgStation)) { // 最悪destで生産
 			depot = destHgStation.GetDepot();
 		}
 		if(depot == null) {

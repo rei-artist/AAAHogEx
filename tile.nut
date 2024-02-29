@@ -768,6 +768,10 @@ class HgTile {
 
 }
 
+
+OneTile <- HgTile.XY(1,1);
+
+
 class Rectangle {
 	lefttop = null;
 	rightbottom = null; // このクラスはこのタイルは含まない長方形を意味する
@@ -782,7 +786,6 @@ class Rectangle {
 		return Rectangle(HgTile.XY(left,top_), HgTile.XY(right,bottom));
 	}
 	
-		
 	static function Corner(p1, p2) {
 		return Rectangle.CornerXY(p1.X(), p1.Y(), p2.X(), p2.Y());
 	}
@@ -791,6 +794,10 @@ class Rectangle {
 		return Rectangle(HgTile.XY(min(x1,x2),min(y1,y2)), HgTile.XY(max(x1,x2),max(y1,y2)));
 	}
 	
+	static function LeftTopWidthHeight(lefttop, width, height) {
+		return Rectangle(lefttop, lefttop + HgTile.XY(width,height));
+	}
+		
 	
 	static function CornerTiles(t1, t2) {
 		local minX = IntegerUtils.IntMax, minY = IntegerUtils.IntMax, maxX=0, maxY=0;
@@ -886,17 +893,16 @@ class Rectangle {
 	
 	function GetTileList() {
 		local result = AITileList();
-		result.AddRectangle(lefttop.tile, (rightbottom-HgTile.XY(1,1)).tile);
+		result.AddRectangle(lefttop.tile, (rightbottom-OneTile).tile);
 		return result;
 	}
 	
 	function GetEdgeTileList() {
 		local result = AITileList();
-		local one = HgTile.XY(1,1);
-		local rb = rightbottom-one;
+		local rb = rightbottom-OneTile;
 		result.AddRectangle(lefttop.tile, rb.tile);
 		if(Width()>=3 && Height()>=3) {
-			result.RemoveRectangle((lefttop+one).tile, (rb-one).tile);
+			result.RemoveRectangle((lefttop+OneTile).tile, (rb-OneTile).tile);
 		}
 		return result;
 	}
@@ -916,9 +922,8 @@ class Rectangle {
 	
 	function GetAroundTileList() {
 		local result = AITileList();
-		local one = HgTile.XY(1,1);
-		result.AddRectangle((lefttop-one).tile, rightbottom.tile);
-		result.RemoveRectangle(lefttop.tile, (rightbottom-one).tile);
+		result.AddRectangle((lefttop-OneTile).tile, rightbottom.tile);
+		result.RemoveRectangle(lefttop.tile, (rightbottom-OneTile).tile);
 		return result;
 	}
 	
@@ -1281,7 +1286,6 @@ class TileListUtils {
 		return 0;
 	}
 	
-	
 	static function RaiseTile(tile, slope, testMode = false) {
 		if(testMode) {
 			return AITile.RaiseTile(tile, slope);
@@ -1325,4 +1329,31 @@ class TileListUtils {
 		return result;
 	}
 	
+	static function GetRectangles(tileList) {
+		local result = [];
+		tileList.Sort(AIList.SORT_BY_ITEM, true);
+		while(tileList.Count() >= 1) {
+			local cur = tileList.Begin();
+			local dv = AIMap.GetMapSizeX();
+			local width = IntegerUtils.IntMax;
+			local height = 0;
+			for(local curV = cur; ; curV += dv) {
+				local w = 0;
+				for(local curH = curV; w < width && tileList.HasItem(curH); curH++) {
+					w ++;
+				}
+				if(width == IntegerUtils.IntMax) {
+					width = w;
+				} else if(w < width) {
+					break;
+				}
+				height ++;
+			}
+			local rectangle = Rectangle.LeftTopWidthHeight(HgTile(cur), width, height);
+			result.push(rectangle);
+			tileList.RemoveRectangle(cur, (rectangle.rightbottom - OneTile).tile)
+		}
+		return result;
+	
+	}
 }

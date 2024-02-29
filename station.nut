@@ -8,6 +8,7 @@ class StationGroup {
 	
 	coasts = null;
 	coverageTileList = null;
+	coverageRectangles = null;
 	cargoProducingPlaces = null;
 	
 	acceptingCargoCache = null;
@@ -36,12 +37,14 @@ class StationGroup {
 	function AddHgStation(hgStation) {
 		hgStations.push(hgStation);
 		coverageTileList = null;
+		coverageRectangles = null;
 		cargoProducingPlaces.clear();
 	}
 	
 	function RemoveHgStation(hgStation) {
 		hgStations = HgArray(hgStations).Remove(hgStation).array;
 		coverageTileList = null;
+		coverageRectangles = null;
 		cargoProducingPlaces.clear();
 		return;
 	}
@@ -367,40 +370,25 @@ class StationGroup {
 	}
 	
 	function IsAcceptingCargoHere(cargo) {
-		if(hgStations.len()==1) {
-			local station = hgStations[0];
-			if(station instanceof PlaceStation) {
-				return station.IsAcceptingCargo(cargo);
-			}
-			local rectangle = station.GetPlatformRectangle();
-			return AITile.GetCargoAcceptance(rectangle.lefttop.tile, cargo, rectangle.Width(), rectangle.Height(), station.GetCoverageRadius()) >= 8;
+		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
+			return station.IsAcceptingCargo(cargo);
 		}
-		local result = 0;
-		local tileList = AIList();
-		tileList.AddList(GetCoverageTileList());
-		tileList.Valuate(AITile.GetCargoAcceptance, cargo, 1, 1, 0 );
-		tileList.RemoveValue(0);
-		foreach(tile,v in tileList) {
-			result += v;
-			if(result >= 8) {
-				//HgLog.Info("IsAcceptingCargo true "+AICargo.GetName(cargo)+" "+AIStation.GetName(GetAIStation()));
+		local value = 0;
+		foreach(r in GetCoverageRectangles()) {
+			value += AITile.GetCargoAcceptance(r.lefttop.tile, cargo, r.Width(), r.Height(), 0);
+			if(value >= 8) {
 				return true;
 			}
 		}
-		//HgLog.Info("IsAcceptingCargo false "+AICargo.GetName(cargo)+" "+AIStation.GetName(GetAIStation()));
 		return false;
 	}
 	
 	function GetAccepters(cargo) {
-		local result = 0;
-		local tileList = AIList();
-		tileList.AddList(GetCoverageTileList());
-		tileList.Valuate(AITile.GetCargoAcceptance, cargo, 1, 1, 0 );
-		tileList.RemoveValue(0);
-		foreach(tile,v in tileList) {
-			result += v;
+		local value = 0;
+		foreach(r in GetCoverageRectangles()) {
+			value += AITile.GetCargoAcceptance(r.lefttop.tile, cargo, r.Width(), r.Height(), 0);
 		}
-		return result;
+		return value;
 	}
 	
 	function IsProducingCargo(cargo) {
@@ -417,20 +405,18 @@ class StationGroup {
 	}
 	
 	function IsProducingCargoHere(cargo) {
-		if(hgStations.len()==1) {
-			local station = hgStations[0];
-			if(station instanceof PlaceStation) {
-				return station.IsProducingCargo(cargo);
-			}
-			local rectangle = station.GetPlatformRectangle();
-			return AITile.GetCargoProduction(rectangle.lefttop.tile, cargo, rectangle.Width(), rectangle.Height(), station.GetCoverageRadius()) >= 1;
+
+		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
+			return station.IsProducingCargo(cargo);
 		}
-		
-		local tileList = AIList();
-		tileList.AddList(GetCoverageTileList());
-		tileList.Valuate(AITile.GetCargoProduction, cargo, 1, 1, 0 );
-		tileList.RemoveValue(0);
-		return tileList.Count() >= 1;
+		local value = 0;
+		foreach(r in GetCoverageRectangles()) {
+			value += AITile.GetCargoProduction(r.lefttop.tile, cargo, r.Width(), r.Height(), 0);
+			if(value >= 1) {
+				return true;
+			}
+		}
+		return false;
 	}
 	
 	function GetProducingCargos() {
@@ -444,15 +430,11 @@ class StationGroup {
 	}
 	
 	function GetProducers(cargo) {
-		local tileList = AIList();
-		tileList.AddList(GetCoverageTileList());
-		tileList.Valuate(AITile.GetCargoProduction, cargo, 1, 1, 0 );
-		tileList.RemoveValue(0);
-		local result;
-		foreach(tile,v in tileList) {
-			result += v;
+		local value = 0;
+		foreach(r in GetCoverageRectangles()) {
+			value += AITile.GetCargoProduction(r.lefttop.tile, cargo, r.Width(), r.Height(), 0);
 		}
-		return result;
+		return value;
 	}
 	
 	function IsAcceptingAndProducing(cargo) {
@@ -496,6 +478,13 @@ class StationGroup {
 			result.push(HgIndustry(industry, isProducing));
 		}
 		return result;
+	}
+
+	function GetCoverageRectangles() {
+		if(coverageRectangles == null) {
+			coverageRectangles = TileListUtils.GetRectangles( GetCoverageTileList() );
+		}
+		return coverageRectangles;
 	}
 
 	function GetCoverageTileList() {
@@ -1675,7 +1664,7 @@ class HgStation {
 		
 	function GetRectangle(x1,y1, x2,y2) {
 		local r1 = Rectangle.Corner(HgTile(At(x1,y1)), HgTile(At(x2-1,y2-1)));
-		return Rectangle(r1.lefttop, r1.rightbottom + HgTile.XY(1,1));
+		return Rectangle(r1.lefttop, r1.rightbottom + OneTile);
 	}
 	
 	function GetPlatformRectangle() {

@@ -263,8 +263,7 @@ class HogeAI extends AIController {
 		SetCompanyName();
 		HgLog.Info("AAAHogEx Started! version:"+HogeAI.version+" name:"+AICompany.GetName(AICompany.COMPANY_SELF));
 		HgLog.Info("openttd version:"+openttdVersion);
-		
-		
+
 		/*
 		foreach(industry,_ in AIIndustryList()) {
 			if(AIIndustry.GetAmountOfStationsAround(industry) >= 1) {
