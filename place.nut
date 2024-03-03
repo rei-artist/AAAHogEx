@@ -1539,48 +1539,6 @@ class Place {
 		Place.supportEstimatesCache.rawset(key,result);
 		return result;
 	}
-/*
-	function _GetSupportEstimate() {
-		local routeIncome = 0;
-		local buildingTime = 0;
-		local production = 0;
-		local connectedPlaces = {};
-		foreach(acceptingCargo in GetAccepting().GetCargos()) {
-			HgLog.Warning("acceptingCargo:"+AICargo.GetName(acceptingCargo)+" "+this);
-			local productionCount = PlaceProduction.Get().GetArroundProductionCount( GetLocation(), acceptingCargo );
-			if(productionCount[1] == 0) {
-				continue;
-			}
-			local estimate = Route.EstimateBestVehicleType(acceptingCargo, PlaceProduction.PIECE_SIZE, 
-				productionCount[0] / productionCount[1], // サポート作らなくなるのでやらない。生産上位半分が使われる想定なので平均より少し増やしておく
-				false);
-			local connected = false;
-			HgLog.Warning("GetVehicleType:"+estimate.GetVehicleType()+" "+this);
-			if(estimate.GetVehicleType() == AIVehicle.VT_RAIL) {
-				foreach(p in productionCount[2]) {
-					if(connectedPlaces.rawin(p)) {
-						connected = true;
-						HgLog.Warning("conncted:"+AICargo.GetName(acceptingCargo)+" "+this);
-					} else {
-						connectedPlaces.rawset(p,0);
-						HgLog.Warning("connct:"+p+" "+AICargo.GetName(acceptingCargo)+" "+this);
-					}
-				}
-			}
-			routeIncome += estimate.routeIncome * productionCount[1];
-			if(!connected) {
-				buildingTime += estimate.buildingTime * productionCount[1];
-			}
-			production += productionCount[0];
-		}
-		return {
-			routeIncome = routeIncome
-			buildingTime = buildingTime
-			production = production
-		}
-		
-		
-	}*/
 	
 	function _GetSupportEstimate() {
 		if(!IsIncreasable()) {
@@ -2601,7 +2559,7 @@ class TownCargo extends Place {
 			if(vehicleType == AIVehicle.VT_ROAD) {
 				minValue /= 2;
 				production /= 2;
-			} else if(vehicleType == AIVehicle.VT_WATER) {
+			} else if(vehicleType == AIVehicle.VT_WATER || vehicleType == AIVehicle.VT_AIR) {
 				minValue = minValue / 1;
 				production = production / 2;
 			}

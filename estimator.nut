@@ -72,6 +72,10 @@ Estimation <- {
 			local w = abs(AIMap.GetTileX(p1) - AIMap.GetTileX(p2));
 			local h = abs(AIMap.GetTileY(p1) - AIMap.GetTileY(p2));
 			local pathDistance = max(1,(min(w,h).tofloat() * 0.414 + max(w,h)).tointeger());
+			if(p1==p2) {
+				HgLog.Warning("EstimateAdditional dest==src");
+				return;
+			}
 			days = days * pathDistance / AIMap.DistanceManhattan(p1,p2);
 			if(vehicleType == AIVehicle.VT_WATER) {
 				local landRate = WaterRoute.CheckLandRate(p1, p2, max(4,pathDistance/16) ) * 0.36;
@@ -101,7 +105,7 @@ Estimation <- {
 			Estimate();
 			//HgLog.Warning("EstimateAdditional Estimate:"+this+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
 			
-		} else {
+		} else if(dest instanceof Place) {
 			local destRouteCargoIncome = dest.GetDestRouteCargoIncome();
 			local additionalRouteIncome = dest.GetAdditionalRouteIncome(cargo);
 			if(destRouteCargoIncome > 0 || additionalRouteIncome >= 1) {

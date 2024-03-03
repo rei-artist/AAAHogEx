@@ -694,7 +694,6 @@ class StationFactory {
 			considerAcceptance = false;
 		}
 
-		// && !(this instanceof RoadStationFactory && CargoUtils.IsPaxOrMail(cargo) /*&& TownBus.CanUseTownBus()*/);
 		local radius = GetCoverageRadius();
 		local startDate = AIDate.GetCurrentDate();
 		local stationScoreList = AIList();
@@ -2079,8 +2078,13 @@ class HgStation {
 		if(IsTownStop()) {
 			return;
 		}
-		if(stationGroup.GetUsingRoutes().len() == 0) {
+		local usingRoutes = stationGroup.GetUsingRoutes();
+		if(usingRoutes.len() == 0) {
 			stationGroup.Remove();
+		} else {
+			foreach(route in usingRoutes) {
+				HgLog.Warning("RemoveIfNotUsed station:"+this+" is used by "+route);
+			}
 		}
 	}
 

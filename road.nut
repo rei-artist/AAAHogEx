@@ -1054,8 +1054,8 @@ class TownBus {
 
 	function IsUsedStationTransfer(stationTile) {
 		local vehicleList = AIVehicleList_Station( AIStation.GetStationID(stationTile) );
-		vehicleList.Valuate( AIVehicle.IsStoppedInDepot );
-		vehicleList.RemoveValue(1);
+/*		vehicleList.Valuate( AIVehicle.IsStoppedInDepot );
+		vehicleList.RemoveValue(1);*/
 		if(townBus != null) {
 			vehicleList.RemoveItem(townBus);
 		}
@@ -1570,42 +1570,6 @@ class TownBus {
 	function CanUseTownBus() {
 		return RoadRoute.EstimateEngineSet(RoadRoute, HogeAI.GetPassengerCargo(), 10,  50, true, null, true ) != null;
 	}
-	
-	/*
-	function FindNewBusStop(acceptanceThreshold = 0) {
-		local testMode = AITestMode();
-		local place = GetPlace();
-		local map = place.GetNotUsedProductionMap(stations);
-		local radius = AIStation.GetCoverageRadius(AIStation.STATION_BUS_STOP);
-		local locationCount = [];
-		foreach(tile in place.GetRectangle().GetTiles()) {
-			if(AIRoad.IsRoadTile(tile)) {
-				local count = 0;
-				foreach(t in Rectangle.Center(HgTile(tile),radius).GetTiles()) {
-					if(map.rawin(t)) {
-						count += map[t]; // acceptanceが入っている
-					}
-				}
-				locationCount.push([tile,count]);
-			}
-		}
-		locationCount.sort(function(a,b) {
-			return b[1] - a[1];
-		});
-		foreach(lc in locationCount) {
-			if(lc[1] < acceptanceThreshold) {
-				break;
-			}
-			local tile = lc[0];
-			local station = PieceStation(lc[0]);
-			station.cargo = cargo;
-			station.place = place;
-			if(station.Build(true,true)) {
-				return station;
-			}
-		}
-		return null;
-	}*/
 	
 	
 	function FindNewBusStop(acceptanceThreshold,placeStation) {

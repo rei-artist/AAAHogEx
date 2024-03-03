@@ -313,8 +313,8 @@ class AirRoute extends CommonRoute {
 class AirRouteBuilder extends CommonRouteBuilder {
 	infrastractureType = null;
 
-	constructor(dest, srcPlace, cargo, options = {}) {
-		CommonRouteBuilder.constructor(dest, srcPlace, cargo, options);
+	constructor(dest, src, cargo, options = {}) {
+		CommonRouteBuilder.constructor(dest, src, cargo, options);
 		makeReverseRoute = false;
 		isNotRemoveStation = HogeAI.Get().IsInfrastructureMaintenance() == false;
 		isNotRemoveDepot = true;
@@ -412,6 +412,49 @@ class AirRouteBuilder extends CommonRouteBuilder {
 	function BuildStart(engineSet) {
 		infrastractureType = engineSet.infrastractureType;
 	}
+}
+
+class ExchangeAirsBuilder {
+	cargo = null;
+	s1 = null;
+	d1 = null;
+	s2 = null;
+	d2 = null;
+	route1 = null;
+	route2 = null;
+
+	constructor(cargo,stations,route1,route2) {
+		this.cargo = cargo;
+		this.s1 = stations[0];
+		this.d1 = stations[1];
+		this.s2 = stations[2];
+		this.d2 = stations[3];
+		this.route1 = route1;
+		this.route2 = route2;
+	}
+
+	function Build() {
+		local options = {
+			pendingToDoPostBuild = false
+			destRoute = null
+			noDoRoutePlans = true
+		};
+		local newRoute1 = AirRouteBuilder(s1,d1,cargo,options).DoBuild();
+		if(newRoute1 == null) {
+			return [];
+		}
+		local newRoute2 = AirRouteBuilder(s2,d2,cargo,options).DoBuild();
+		if(newRoute2 == null) {
+			newRoute1.Remove();
+			return [];
+		}
+		HgLog.Warning("ExchangeAirsBuilder remove route:"+route1);
+		HgLog.Warning("ExchangeAirsBuilder remove route:"+route2);
+		route1.Remove();
+		route2.Remove();
+		return [newRoute1, newRoute2];
+	}
+
 }
 
 class AirportStationFactory extends StationFactory {
@@ -569,8 +612,26 @@ class AirStation extends HgStation {
 	}
 
 	function Demolish() {
-		AIAirport.RemoveAirport(platformTile);
+		if(!AIAirport.RemoveAirport(platformTile)) {
+			HgLog.Warning("AIAirport.RemoveAirport failed "+this+" "+AIError.GetLastErrorString());
+		}
 		return true;
+	}
+	
+	function IsClosed() {
+		return AIStation.IsAirportClosed(GetAIStation());
+	}
+	
+	function Open() {
+		if(IsClosed()) {
+			AIStation.OpenCloseAirport(GetAIStation());
+		}
+	}
+
+	function Close() {
+		if(!IsClosed()) {
+			AIStation.OpenCloseAirport(GetAIStation());
+		}
 	}
 
 	function GetTilesGen() {
