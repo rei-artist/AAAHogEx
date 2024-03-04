@@ -1033,6 +1033,8 @@ class VehicleUtils {
 }
 
 class CargoUtils {
+	static isDelivableCache = ExpirationTable(365);
+
 	/*TODO: rateでの補正は呼び出し元でやる
 	static function GetStationRate(cargo, maxSpeed) { // 255 == 100%
 		local result = 170 + min(43,max(0,(maxSpeed - 85) / 4));
@@ -1168,6 +1170,25 @@ class CargoUtils {
 		foreach(c in HogeAI.Get().GetPaxMailCargos()) {
 			if(c==cargo) return true;
 		}
+		return false;
+	}
+
+	static function IsDelivable(cargo) {
+		if(CargoUtils.isDelivableCache.rawin(cargo)) {
+			return CargoUtils.isDelivableCache.rawget(cargo);
+		}
+		foreach(vt in Route.GetAvailableVehicleTypes()) {
+			local engineList = AIEngineList(vt);
+			engineList.Valuate(AIEngine.CanRefitCargo, cargo);
+			engineList.KeepValue(1);
+			engineList.Valuate(AIEngine.IsBuildable);
+			engineList.KeepValue(1);
+			if(engineList.Count()>=1) {
+				CargoUtils.isDelivableCache.rawset(cargo,true);
+				return true;
+			}
+		}
+		CargoUtils.isDelivableCache.rawset(cargo,false);
 		return false;
 	}
 

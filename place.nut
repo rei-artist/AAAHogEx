@@ -1666,10 +1666,13 @@ class Place {
 				}			
 			}
 		}
-		if(!HogeAI.Get().roiBase && !HogeAI.Get().ecs && !HogeAI.Get().firs && IsProcessing()) {
+		if(HogeAI.Get().buildingTimeBase/*support routeの見積もりはbuildingTimeBaseのみ*/ 
+				&& !HogeAI.Get().ecs && !HogeAI.Get().firs && IsProcessing()) {
 			local inputableProduction = 0;
 			foreach(acceptingCargo in GetAccepting().GetCargos()) {
-				inputableProduction += placeProduction.GetArroundProductionCount(acceptingCargo, GetLocation())[0];
+				if( CargoUtils.IsDelivable(acceptingCargo) ) {
+					inputableProduction += placeProduction.GetArroundProductionCount(acceptingCargo, GetLocation())[0];
+				}
 			}
 			//HgLog.Warning("GetExpectedProductionAll production:"+production+" inputableProduction/4:"+(inputableProduction/4)+" "+GetName()+" cargo:"+AICargo.GetName(cargo)+" "+vehicleType);
 			production += inputableProduction * 2 / 3;// / 2; //max(0,(inputableProduction - production));

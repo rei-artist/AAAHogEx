@@ -371,7 +371,7 @@ class StationGroup {
 	
 	function IsAcceptingCargoHere(cargo) {
 		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
-			return station.IsAcceptingCargo(cargo);
+			return hgStations[0].IsAcceptingCargo(cargo);
 		}
 		local value = 0;
 		foreach(r in GetCoverageRectangles()) {
@@ -407,7 +407,7 @@ class StationGroup {
 	function IsProducingCargoHere(cargo) {
 
 		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
-			return station.IsProducingCargo(cargo);
+			return hgStations[0].IsProducingCargo(cargo);
 		}
 		local value = 0;
 		foreach(r in GetCoverageRectangles()) {
@@ -1500,9 +1500,9 @@ class HgStation {
 		if(stationGroup == null) {
 			stationGroup = StationGroup();
 			HgStation.stationGroups[stationGroup.id] <- stationGroup;
+			InitializeName();
 		}
 		
-		SetName();
 		buildedDate = AIDate.GetCurrentDate();
 		stationGroup.AddHgStation(this);
 		worldInstances[this.id] <- this;
@@ -1850,14 +1850,13 @@ class HgStation {
 		return stationId;
 	}
 	
-	function SetName() {
+	function InitializeName() {
 		if(HogeAI.Get().IsDisabledPrefixedStatoinName()) {
 			if(name != null) {
 				AIStation.SetName(stationId, name); // これだけはbusstopの識別で必要
 			}
 			return;
 		}
-	
 		local s = "";
 		s = id.tostring();
 		s = "0000".slice(0,max(0,4-s.len()))+s;
@@ -2082,9 +2081,10 @@ class HgStation {
 		if(usingRoutes.len() == 0) {
 			stationGroup.Remove();
 		} else {
+		/*
 			foreach(route in usingRoutes) {
 				HgLog.Warning("RemoveIfNotUsed station:"+this+" is used by "+route);
-			}
+			}*/
 		}
 	}
 

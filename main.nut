@@ -14,7 +14,7 @@ require("water.nut");
 require("air.nut");
 
 class HogeAI extends AIController {
-	static version = 70;
+	static version = 75;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -879,7 +879,7 @@ class HogeAI extends AIController {
 						return;
 					}
 					local next = routeCandidates.Peek();
-					if(!("typeName" in t)) {
+					if(!("typeName" in t) && t.vehicleType != AIVehicle.VT_AIR) {
 						local usable = GetUsableMoney() + GetQuarterlyIncome() * t.estimate.days / 90;
 						totalNeeds += t.estimate.price * (t.estimate.vehiclesPerRoute - 1); // TODO: これまでの建築にかかった時間分減らす
 						local nextNeeds = next.estimate.buildingCost + next.estimate.price;
@@ -1197,6 +1197,9 @@ class HogeAI extends AIController {
 			if(IsFreightOnly() && CargoUtils.IsPaxOrMail(cargo)) {
 				continue;
 			}
+			if(!CargoUtils.IsDelivable(cargo)) {
+				continue;
+			}
 			cargoList.AddItem(cargo,0);
 		}
 		local indexes = PlaceProduction.Get().GetIndexesInSegment(hogeIndex,hogeNum);
@@ -1209,7 +1212,7 @@ class HogeAI extends AIController {
 		foreach(cargo ,_ in cargoList) {
 			local vtDistanceValues = [];
 			//HgLog.Info("step0 "+AICargo.GetName(cargo));
-			
+			DoInterval();
 			local places = Place.GetNotUsedProducingPlaces( cargo, 300, indexes );
 			if(places.len() == 0) {
 				continue;
@@ -3989,8 +3992,6 @@ class RouteCandidates {
 		}
 	}
 	
-	
-	
 	function Push(t) {
 		t.id <- idCounter.Get()
 		local s = t;
@@ -4006,12 +4007,14 @@ class RouteCandidates {
 			if("route" in t) {
 				s.route <- t.route.id;
 			}
-			local routeClass = Route.Class(t.vehicleType);
-			t.isBiDirectional <- (t.dest instanceof Place) ? t.dest.IsAcceptingAndProducing(t.cargo) && t.src.IsAcceptingAndProducing(t.cargo) : false;
-			t.explain <- t.estimate.value+" "+routeClass.GetLabel()+" "+t.dest+"<="+(t.isBiDirectional?">":"")+t.src+"["+t.cargo+"] dist:"
-				+AIMap.DistanceManhattan(t.src.GetLocation(),t.dest.GetLocation());
-			if(t.vehicleType == AIVehicle.VT_AIR) {
-				t.explain += " infraType:"+t.estimate.infrastractureType;
+			if(!("explain" in t)) {
+				local routeClass = Route.Class(t.vehicleType);
+				t.isBiDirectional <- (t.dest instanceof Place) ? t.dest.IsAcceptingAndProducing(t.cargo) && t.src.IsAcceptingAndProducing(t.cargo) : false;
+				t.explain <- t.estimate.value+" "+routeClass.GetLabel()+" "+t.dest+"<="+(t.isBiDirectional?">":"")+t.src+"["+AICargo.GetName(t.cargo)+"] dist:"
+					+t.estimate.distance+" prod:"+t.estimate.production;
+				if(t.vehicleType == AIVehicle.VT_AIR) {
+					t.explain += " infraType:"+t.estimate.infrastractureType;
+				}
 			}
 		}
 		saveData.plans.rawset(t.id, s);
