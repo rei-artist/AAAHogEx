@@ -2754,6 +2754,7 @@ class TrainReturnRouteBuilder extends Construction {
 					return pathForReturnDest.SubPathStart(railBuilderReturnDest.buildedPath1.path.GetFirstTile()); // TODO: railBuilderReturnDestDepartureと分岐点がクロスする事がある
 				});
 			railBuilderReturnDest.isReverse = true;
+			railBuilderReturnDest.isRevReverse = false;
 			railBuilderReturnDest.destHgStation = returnDestStation;
 			railBuilderReturnDest.limitCount = 150;
 			railBuilderReturnDest.eventPoller = HogeAI.Get();

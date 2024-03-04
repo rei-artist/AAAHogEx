@@ -741,7 +741,6 @@ class BuildedPath {
 		this.path = path;
 		array_ = path.GetTiles();
 		BuildedPath.AddTiles(array_,this);
-		assert(this instanceof BuildedPath);
 	}
 	
 	function ChangePath() {
@@ -866,6 +865,7 @@ class RailBuilder extends Construction {
 	
 	pathSrcToDest = null;
 	isReverse = false;
+	isRevReverse = false;
 	isRebuildForHomeward = false;
 	isNoSignal = false;
 	ignoreTiles = null;
@@ -1319,7 +1319,7 @@ class RailBuilder extends Construction {
 			}
 			local level = HgTile.GetBoundMaxHeight(prev, path.GetTile());
 			local prevDir = prev - path.GetTile();
-			if(isReverse) {
+			if((isReverse && !isRevReverse) || (!isReverse && isRevReverse)) {
 				prevDir = -prevDir;
 			}
 			local dx = prevDir % AIMap.GetMapSizeX();
@@ -2004,8 +2004,7 @@ class TailedRailBuilder {
 		this.limitCount = limitCount;
 		this.eventPoller = eventPoller;
 		this.reversePath = reversePath;
-		this.isReverse = false;
-		this.isRevReverse = false;
+		this.isReverse = isReverse;
 		this.isSingle = false;
 		this.isTwoway = true;
 		this.isNotCheckRevPath = false;
@@ -2060,7 +2059,7 @@ class TailedRailBuilder {
 		pathFinder1.distance = distance;
 		pathFinder1.isOutward = isOutward;
 		pathFinder1.isSingle = isSingle;
-		pathFinder1.isRevReverse = isRevReverse;
+		if(isRevReverse != null) pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
 		local starts = srcTilesGetter.Get();
 		local goals = destTilesGetter.Get();
@@ -2084,6 +2083,7 @@ class TailedRailBuilder {
 		if(pathFinder1.IsFoundGoal() || foundedRevPath != null) {
 			// src側から建築
 			local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,this);
+			if(isRevReverse != null) railBuilder1.isRevReverse = !isRevReverse;
 			railBuilder1.pathFinder = pathFinder1;
 			railBuilder1.isRebuildForHomeward = isOutward;
 			if(isSingle) {
@@ -2179,6 +2179,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 	pathDepatureGetter = null; // 駅の出発タイルへ向けたパス
 	pathArrivalGetter = null; // 駅の到着タイルへ向けたパス
 	isReverse = null; // 上記を逆にする
+	isRevReverse = null; // 左右通行指定
 	destHgStation = null;
 	limitCount = null;
 	eventPoller = null;
@@ -2215,7 +2216,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		b1.platformLength = platformLength;
 		b1.distance = distance;
 		b1.isReverse = isReverse;
-		b1.isRevReverse = isReverse;
+		b1.isRevReverse = isRevReverse != null ? isRevReverse : isReverse;
 		if(!b1.BuildTails()) {
 			RemoveDepots();
 			return false;
@@ -2242,7 +2243,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		b2.platformLength = platformLength;
 		b2.distance = distance;
 		b2.isReverse = !isReverse;
-		b2.isRevReverse = isReverse;
+		b2.isRevReverse = isRevReverse != null ? isRevReverse : isReverse;
 		if(!b2.BuildTails()) {
 			Rollback();
 			return false;
