@@ -706,21 +706,28 @@ class Path {
 // 破壊してはいけないpath
 class BuildedPath {
 	static instances = {};
-	static tileList = AIList();
+	static tileObj = {};
 
 	static function Contains(tile) {
-		return BuildedPath.tileList.HasItem(tile);
+		return BuildedPath.tileObj.rawin(tile);
+
+	}
+	static function GetByTile(tile) {
+		if(!BuildedPath.tileObj.rawin(tile)) {
+			return null;
+		}
+		return BuildedPath.tileObj.rawget(tile);
 	}
 	
-	static function AddTiles(tiles) { //hgstationからも呼ばれる
+	static function AddTiles(tiles,obj) { //hgstationからも呼ばれる
 		foreach(tile in tiles) {
-			BuildedPath.tileList.AddItem(tile,0);
+			BuildedPath.tileObj.rawset(tile,obj);
 		}
 	}
 	
 	static function RemoveTiles(tiles) {
 		foreach(tile in tiles) {
-			BuildedPath.tileList.RemoveItem(tile);
+			BuildedPath.tileObj.rawdelete(tile);
 		}
 	}
 	
@@ -733,7 +740,8 @@ class BuildedPath {
 		BuildedPath.instances.rawset(this,this);
 		this.path = path;
 		array_ = path.GetTiles();
-		BuildedPath.AddTiles(array_);
+		BuildedPath.AddTiles(array_,this);
+		assert(this instanceof BuildedPath);
 	}
 	
 	function ChangePath() {
@@ -743,7 +751,7 @@ class BuildedPath {
 		} else {
 			HgLog.Info("route == null (BuildedPath.ChangePath)");
 		}
-		BuildedPath.AddTiles(array_);
+		BuildedPath.AddTiles(array_,this);
 	}
 
 	function Remove(removeRails = true, doInterval = false) {
@@ -797,6 +805,10 @@ class BuildedPath {
 		local a = CombineByFork(forkBuildedPath, isFork);
 		a[0].RemoveRails()
 		return a[1];
+	}
+
+	function _tostring() {
+		return "BuildedPath";
 	}
 }
 
@@ -1564,10 +1576,22 @@ class RailBuilder extends Construction {
 			return false;
 		}
 		
+		local diagonal = direction == prev - next || direction == next - prev;
 		local n_node = prev - direction;
-		if(prev + direction == next) {
-		} else if(prev - direction == next) {
-			n_node = n_node - direction;
+		HgLog.Warning("diagonal:"+diagonal+" n_node:"+HgTile(n_node)+" direction:"+direction+" revdir:"+GetRevDir(next,prev,isReverse)
+			+" next:"+HgTile(next)+" prev:"+HgTile(prev)+" isReverse:"+isReverse);
+		if(diagonal) {
+			if(n_node == next) {
+				n_node -= direction;
+			}
+		} else {
+			if(isRebuildForHomeward && n_node == prev+GetRevDir(next,prev,isReverse)) {
+				n_node -= direction;
+			}
+			if(n_node == next) {
+				HgLog.Warning("unexpected direction."+HgTile(prev)+" "+HgTile(next));
+				return false;
+			}
 		}
 		
 		HogeAI.WaitForMoney(20000,0,"ChangeBridge");
@@ -1745,16 +1769,32 @@ class RailBuilder extends Construction {
 	}
 		
 	function SearchPathBuildedPath(tile) {
-		foreach(buildedPath,v in BuildedPath.instances) {
-			local path = buildedPath.path;
-			while(path != null) {
-				if(path.GetTile() == tile) {
-					return [path, buildedPath];
-				}
-				path = path.GetParent();
-			}
+		local buildedPath = BuildedPath.GetByTile(tile);
+		if(buildedPath == null || !(buildedPath instanceof BuildedPath)) {
+			HgLog.Warning("not found tile(SearchPathBuildedPath) "+HgTile(tile)+" buildedPath:"+buildedPath);
+			return null;
 		}
+		local path = buildedPath.path;
+		while(path != null) {
+			if(path.GetTile() == tile) {
+				return [path, buildedPath];
+			}
+			path = path.GetParent();
+		}
+		HgLog.Warning("not found tile(SearchPathBuildedPath) "+HgTile(tile)+" route:"+buildedPath.route);
 		return null;
+	}
+	
+	// prevからnextへ向かう方向の左側方向
+	function GetRevDir(next,prev,isRev=false) {
+		local prevDir = (next-prev) / AIMap.DistanceManhattan(next,prev);
+		if(isRev) {
+			prevDir *= -1;
+		}
+		local mapSizeX = AIMap.GetMapSizeX();
+		local dx = prevDir % mapSizeX;
+		local dy = prevDir / mapSizeX;
+		return dy - dx * mapSizeX;
 	}
 }
 

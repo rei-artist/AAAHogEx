@@ -707,6 +707,15 @@ function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 	return path.GetCost() + cost;
 }
 
+/*以下の方向を返す
+isRevReverse:false
+ cur
+ prev →
+
+isRevReverse:true
+    cur
+ ← prev
+*/
 function RailPathFinder::_GetRevDir(cur,prev) {
 	local prevDir = (prev - cur) / AIMap.DistanceManhattan(cur,prev);
 	if(isRevReverse) {

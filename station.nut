@@ -1363,7 +1363,7 @@ class HgStation {
 			if(station.place != null) {
 				station.place.AddStation(station);
 			}
-			BuildedPath.AddTiles(station.GetTiles());
+			BuildedPath.AddTiles(station.GetTiles(),station);
 		}
 		if(data.rawin("ngStationTiles")) {
 			HgTable.Extend(HgStation.ngStationTiles, data.ngStationTiles);
@@ -1511,7 +1511,7 @@ class HgStation {
 			place.AddStation(this);
 		}
 
-		BuildedPath.AddTiles(GetTiles());
+		BuildedPath.AddTiles(GetTiles(),this);
 		
 		DoSave();
 	}
