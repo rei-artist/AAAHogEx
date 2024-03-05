@@ -1990,6 +1990,7 @@ class TailedRailBuilder {
 	ignoreTiles = null;
 	limitCount = null;
 	eventPoller = null;
+	debug = false;
 	
 	reversePath = null;
 	isReverse = null;
@@ -2043,13 +2044,14 @@ class TailedRailBuilder {
 		local goals = srcTilesGetter.Get();
 		if(goals.len() <= 8) { // ゴールが多いと時間がかかるのでスキップ
 			local pathFinder2 = RailPathFinder();
+			pathFinder2.debug = debug;
 			pathFinder2.engine = engine;
 			pathFinder2.cargo = cargo;
 			pathFinder2.platformLength = platformLength;
 			pathFinder2.distance = distance;
 			pathFinder2.isOutward = reversePath == null && !isSingle && isTwoway;
 			pathFinder2.dangerTiles = dangerTiles;
-			pathFinder2.isRevReverse = !isRevReverse;
+			pathFinder2.isRevReverse = reversePath == null ? !isRevReverse : isRevReverse;
 			pathFinder2.InitializePath(destTilesGetter.Get(), srcTilesGetter.Get(), ignoreTiles, reversePath);
 			local startDate = AIDate.GetCurrentDate();
 			local path2 = pathFinder2.FindPathDay(2, null);
@@ -2079,6 +2081,7 @@ class TailedRailBuilder {
 		pathFinder1.isSingle = isSingle;
 		pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
+		//pathFinder1.debug = debug;
 		local starts = srcTilesGetter.Get();
 		local goals = destTilesGetter.Get();
 		if(starts.len()==0) {
@@ -2358,6 +2361,7 @@ class TwoWayStationRailBuilder extends Construction {
 	
 		// src => dest
 		local b2 = TailedRailBuilder.StationToStationReverse(destHgStation, srcHgStation, limitCount, eventPoller, buildedPath2.path);
+		//b2.debug = srcHgStation.GetName().find("Sontown") != null ? true : false;
 		b2.engine = engine;
 		b2.cargo = cargo;
 		b2.platformLength = platformLength;

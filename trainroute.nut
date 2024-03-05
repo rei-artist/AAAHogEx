@@ -2461,7 +2461,7 @@ class TrainRouteBuilder extends RouteBuilder {
 		if(!useSingle) {
 			if(hogeAI.IsEnableVehicleBreakdowns()) {
 				railBuilder.isBuildDepotsDestToSrc = true;
-			} else {
+			} else if(!isTransfer) {
 				railBuilder.isBuildSingleDepotDestToSrc = true;
 			}
 		}

@@ -8,6 +8,7 @@ class RailPathFinder
 	static idCounter = IdCounter();
 		
 	_aystar_class = AyStar; //import("graph.aystar", "", 6);
+	_Cost = null;
 	_max_cost = null;              ///< The maximum cost for a route.
 	_cost_tile = null;             ///< The cost for a single tile.
 	_cost_guide = null;
@@ -48,6 +49,7 @@ class RailPathFinder
 	_reverseNears = null;
 	_reverseTiles = null;
 	useInitializePath2 = false;
+	debug = false;
 	
 	engine =  null;
 	cargo = null;
@@ -82,7 +84,7 @@ class RailPathFinder
 		this._can_build_water = false;
 		this._cost_water = 20;
 		this._estimate_rate = 2;
-		this._pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
+		this._pathfinder = null;
 
 		this.cost = this.Cost(this);
 		this._running = false;
@@ -99,6 +101,9 @@ class RailPathFinder
 
 		
 	function InitializeParameters() {
+		this._Cost = debug ? this._DebugCost : this._NormalCost;
+		_pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
+	
 		_cost_level_crossing = 900;
 		_cost_crossing_reverse = 300;
 		if(isSingle) {
@@ -188,7 +193,7 @@ class RailPathFinder
 				break;
 			}
 			PerformanceCounter.Clear();
-			path = _FindPath(50);
+			path = _FindPath(debug?1000:50);
 			PerformanceCounter.Print();
 			counter++;
 			HgLog.Info("counter:"+counter);
@@ -336,6 +341,7 @@ class RailPathFinder
 		
 		local path = reversePath;
 		local prev = null;
+		local prevprev = null;
 		while(path != null) {
 			local tile = path.GetTile();
 			_reverseTiles.rawset(tile,0);
@@ -352,14 +358,22 @@ class RailPathFinder
 					for(local i=0; i<d; i++) {
 						nears.rawset(tile + i * offset + revDir,0);
 						_reverseNears.rawset(tile + i * offset + revDir,0)
+						//DebugSign(tile + i * offset + revDir,"0");
 					}
 				} else {
 					nears.rawset(tile + revDir,0);
-					_reverseNears.rawset(tile + revDir,0)
+					_reverseNears.rawset(tile + revDir,0);
+					//DebugSign(tile + revDir,"0");
+					if(prevprev != null && AIMap.DistanceManhattan(prevprev,prev)==1 && prev == prevprev + revDir) {
+						nears.rawset(prev,0);
+						_reverseNears.rawset(prev,0);
+						//DebugSign(prev,"0");
+					}
 				}
 			}
-			path = path.GetParent();
+			prevprev = prev;
 			prev = tile;
+			path = path.GetParent();
 		}
 		for(local i=1; i<20; i++) {
 			local next = {}
@@ -368,12 +382,19 @@ class RailPathFinder
 					if(!_reverseNears.rawin(tile+d)) {
 						next.rawset(tile+d ,i)
 						_reverseNears.rawset(tile+d ,i)
+						//DebugSign(tile+d,i.tostring());
 					}
 				}
 			}
 			nears = next;
 		}
 
+	}
+	function DebugSign(tile,text) {
+		if(debug) {
+			local execMode = AIExecMode();
+			AISign.BuildSign(tile, text)
+		}
 	}
 
 	/**
@@ -494,9 +515,17 @@ function RailPathFinder::_GetDirectionIndex(p1,p2) {
 	return (p2 - p1) / AIMap.DistanceManhattan(p1,p2);
 }
 
-function RailPathFinder::_Cost(self, path, new_tile, new_direction, mode) {
+function RailPathFinder::_NormalCost(self, path, new_tile, new_direction, mode) {
 	//local counter = PerformanceCounter.Start("Cost");
 	local result = RailPathFinder.__Cost(self, path, new_tile, mode, new_direction);
+	//counter.Stop();
+	return result;
+}
+
+function RailPathFinder::_DebugCost(self, path, new_tile, new_direction, mode) {
+	//local counter = PerformanceCounter.Start("Cost");
+	local result = RailPathFinder.__Cost(self, path, new_tile, mode, new_direction);
+	//self.DebugSign(new_tile,result.tostring());
 	//counter.Stop();
 	return result;
 }
@@ -660,7 +689,7 @@ function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 		}
 	} else */
 	
-	if(self.isOutward) {
+	if(self.isOutward) { // 帰路を空ける
 		local revDir = self._GetRevDir(t[0],t[1]);
 		if(distance > 1) {
 			/*if(self._IsBuildableLine(t[0] + revDir, t[1] + revDir)) {
