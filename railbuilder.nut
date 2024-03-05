@@ -811,8 +811,6 @@ class BuildedPath {
 	}
 }
 
-
-
 class RailBuilder extends Construction {
 	static function RemoveSignalUntilFree(p1,p2) {
 		return BuildUtils.RetryUntilFree( function():(p1,p2) {
@@ -983,7 +981,7 @@ class RailBuilder extends Construction {
 						/*|| path.GetParent().GetParent()==null  必要なChangeBridgeがされない事があった。isReverseで判定必要かも？ */;
 					if(!HgTile.IsDiagonalTrack(AIRail.GetRailTracks(prev))) {
 						if(!isGoalOrStart && AITile.HasTransportType(prev, AITile.TRANSPORT_RAIL) && BuildedPath.Contains(prev)) {		
-							if(!ChangeBridge(prev,path.GetTile())) {
+							if(!ChangeBridge(prevprev, prev, path.GetTile())) {
 								return RetryToBuild(path,prev);
 							}
 						}
@@ -1551,7 +1549,7 @@ class RailBuilder extends Construction {
 	}
 	
 
-	function ChangeBridge(prev,next) {
+	function ChangeBridge(prevprev, prev, next) {
 		HgLog.Info("ChangeBridge: "+HgTile(prev)+"-"+HgTile(next));
 		local pathBuildedPath = SearchPathBuildedPath(prev);
 		if(pathBuildedPath == null) {
@@ -1580,13 +1578,24 @@ class RailBuilder extends Construction {
 		local n_node = prev - direction;
 		HgLog.Warning("diagonal:"+diagonal+" n_node:"+HgTile(n_node)+" direction:"+direction+" revdir:"+GetRevDir(next,prev,isReverse)
 			+" next:"+HgTile(next)+" prev:"+HgTile(prev)+" isReverse:"+isReverse);
+		local length = 4;
+		local firstOptional = false;
 		if(diagonal) {
 			if(n_node == next) {
 				n_node -= direction;
 			}
+			if(isRebuildForHomeward) {
+				length = 5;
+				local revDir = GetRevDir(prev,prevprev,isReverse);
+				if(n_node == prev+revDir || n_node == next+revDir) {
+					n_node -= direction;
+					firstOptional = true;
+				}
+			}
 		} else {
 			if(isRebuildForHomeward && n_node == prev+GetRevDir(next,prev,isReverse)) {
 				n_node -= direction;
+				firstOptional = true;
 			}
 			if(n_node == next) {
 				HgLog.Warning("unexpected direction."+HgTile(prev)+" "+HgTile(next));
@@ -1600,23 +1609,31 @@ class RailBuilder extends Construction {
 		local startTile = n_node;
 		local endTile = null;
 
-		for(local i=0; i<4; i++) {
+		for(local i=0; i<length; i++) {
 			//HgLog.Info("_IsUnderBridge:"+RailPathFinder._IsUnderBridge(n_node));
 		
-			if(i==3 && (RailPathFinder._IsSlopedRail(n_node - direction, n_node, n_node + direction) || AIRail.GetRailTracks(n_node) != tracks || RailPathFinder._IsUnderBridge(n_node))) {
+			if(i==length-1 
+					&& ( RailPathFinder._IsSlopedRail(n_node - direction, n_node, n_node + direction) 
+						|| AIRail.GetRailTracks(n_node) != tracks 
+						|| RailPathFinder._IsUnderBridge(n_node))) {
 				break;
 			}
 			if(!RailBuilder.RemoveRailTrackUntilFree(n_node, tracks)) {
-				HgLog.Warning("fail RemoveRailTrack."+HgTile(n_node)+" "+AIError.GetLastErrorString());
-				foreach(mark in removed) {
-					if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
-						HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
+				if(firstOptional && i==0) {
+					startTile += direction;
+				} else {
+					HgLog.Warning("fail RemoveRailTrack."+HgTile(n_node)+" "+AIError.GetLastErrorString());
+					foreach(mark in removed) {
+						if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
+							HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
+						}
 					}
+					AIRail.SetCurrentRailType(currentRailType);
+					return false;
 				}
-				AIRail.SetCurrentRailType(currentRailType);
-				return false;
+			} else {
+				removed.push([n_node,tracks]);
 			}
-			removed.push([n_node,tracks]);
 			endTile = n_node;
 			n_node += direction;
 		}

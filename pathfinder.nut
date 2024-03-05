@@ -128,8 +128,8 @@ class RailPathFinder
 		cost.turn = 300;
 		_cost_tight_turn = 1500; //isReverse ? 300 : 1500;
 		_cost_tight_turn_rev = 3000;
-		cost.bridge_per_tile = 50;//20;
-		cost.tunnel_per_tile = 50;
+		cost.bridge_per_tile = 100;//50
+		cost.tunnel_per_tile = 100;//50
 		cost.coast = 0;
 		cost.max_bridge_length = 30; //platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
 		cost.max_tunnel_length = 11; //platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
