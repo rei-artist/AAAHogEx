@@ -699,9 +699,11 @@ class Route {
 		callers.rawset(this,true);
 	
 		local result = clone srcHgStation.GetProductionInfos(cargo, this, callers);
-		local cruiseDays = GetLatestEngineSet().days / 2;
-		foreach(productionInfo in result) {
-			productionInfo.cruiseDays += cruiseDays;
+		if(latestEngineSet != null) {
+			local cruiseDays = latestEngineSet.days / 2;
+			foreach(productionInfo in result) {
+				productionInfo.cruiseDays += cruiseDays;
+			}
 		}
 		//HgLog.Info("GetProductionCargo:"+result+"("+srcHgStation.GetName() + ")["+AICargo.GetName(cargo)+"] "+this);
 		productionCargoInfosCache.rawset(key, result);
@@ -728,7 +730,7 @@ class Route {
 		}
 		local total = 0;
 		foreach( productionInfo in result ) {
-			total += result.production;
+			total += productionInfo.production;
 		}
 		local rate = total * 100 / currentCapacity;
 		foreach( productionInfo in result ) {
@@ -1977,7 +1979,9 @@ class CommonRoute extends Route {
 	}
 
 	function InvalidateEngineSet() {
-		latestEngineSet.isValid = false;
+		if(latestEngineSet != null) {
+			latestEngineSet.isValid = false;
+		}
 	}
 
 	function ChooseEngineSet() {
@@ -3094,7 +3098,6 @@ class RouteBuilder extends Construction {
 				local callers = {};
 				foreach(route in src.GetRoutesUsingDest()) {
 					if(route.IsRemoved()) continue;
-					route.NotifyChangeDestRoute(callers);
 					limit -= route.GetTotalDelivableProduction() / 2;
 					HgLog.Info("remainCapacity:"+limit+" "+builtRoute);
 				}

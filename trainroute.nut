@@ -88,7 +88,7 @@ class TrainRoute extends Route {
 		foreach(path in t.forkPaths) {
 			trainRoute.forkPaths.push(BuildedPath(Path.Load(path)));
 		}
-		trainRoute.depots = t.depots;
+		trainRoute.depotInfos = t.depotInfos;
 		if(t.returnRoute != null) {
 			trainRoute.returnRoute = TrainReturnRoute.Create(t.returnRoute, trainRoute);
 			trainRoute.returnRoute.saveData = t.returnRoute;
@@ -189,24 +189,6 @@ class TrainRoute extends Route {
 		result.checkRailType = true;
 		return result;
 	}
-	/*
-	function EstimateEngineSet(self, cargo, distance, production, isBidirectional, infrastractureTypes=null) {
-		local trainEstimator = trainEstimator();
-		trainEstimator.cargo = cargo;
-		trainEstimator.productions = [production];
-		trainEstimator.isBidirectional = isBidirectional;
-		trainEstimator.distance = distance;
-		trainEstimator.skipWagonNum = 5;
-		trainEstimator.limitTrainEngines = 1;
-		trainEstimator.limitWagonEngines = 1;
-		trainEstimator.checkRailType = true;
-		local engineSets = trainEstimator.GetEngineSetsOrder();
-		if(engineSets.len() >= 1) {
-			return engineSets[0];
-		}
-		return null;
-	}*/
-	
 	
 	routeType = null;
 	cargo = null;
@@ -222,7 +204,7 @@ class TrainRoute extends Route {
 	forkPaths = null;
 	isTransfer = null;
 	pathDistance = null;
-	depots = null;
+	depotInfos = null;
 	returnRoute = null;
 	latestEngineVehicle = null;
 	engineVehicles = null;
@@ -272,7 +254,7 @@ class TrainRoute extends Route {
 		this.engineVehicles = {};
 		this.isClosed = false;
 		this.isRemoved = false;
-		this.depots = [];
+		this.depotInfos = {};
 		this.failedUpdateRailType = false;
 		this.reduceTrains = false;
 		this.usedRateHistory = [];
@@ -312,7 +294,7 @@ class TrainRoute extends Route {
 		foreach(path in forkPaths) {
 			t.forkPaths.push(path.array_);
 		}
-		t.depots <- depots;
+		t.depotInfos <- depotInfos;
 		t.reduceTrains <- reduceTrains;
 		t.maxTrains <- maxTrains;
 		t.slopesTable <- slopesTable;
@@ -452,19 +434,21 @@ class TrainRoute extends Route {
 //		return distance * 3 / 2 + 2100;
 		return distance + 500;
 	}
-	
-	function AddDepot(depot) {
-		if(depot != null) {
-			depots.push(depot);
+		
+	function AddDepotInfos(depotInfos) {
+		foreach(tile,info in depotInfos) {
+			this.depotInfos.rawset(tile,info);
 		}
 	}
 	
-	function AddDepots(depots) {
-		if(depots != null) {
-			this.depots.extend(depots);
+	function GetDepots() {
+		local result = [];
+		foreach(tile,info in depotInfos) {
+			result.extend(info.depots);
 		}
+		return result;
 	}
-	
+
 	function AddAdditionalTiles(tiles) {
 		additionalTiles.extend(tiles);
 	}
@@ -1308,11 +1292,16 @@ class TrainRoute extends Route {
 			
 			local railType = AIRail.GetCurrentRailType();
 			AIRail.SetCurrentRailType ( GetRailType() );
+			local depotInfo = null;
 			if(IsSingle()) {
-				saveData.updateRailDepot = updateRailDepot = pathSrcToDest.path.BuildDepot();
+				depotInfo = pathSrcToDest.path.BuildDepot();
 			} else {
-				saveData.updateRailDepot = updateRailDepot = pathDestToSrc.path.BuildDepot();
+				depotInfo = pathDestToSrc.path.BuildDepot();
 			}
+			if(depotInfo.depots.len()>=1) {
+				saveData.updateRailDepot = updateRailDepot = depotInfo.depots[0];
+			}
+			
 			AIRail.SetCurrentRailType(railType);
 			if(updateRailDepot == null) {
 				HgLog.Warning("Cannot build depot for railupdate "+this);
@@ -1351,7 +1340,7 @@ class TrainRoute extends Route {
 				}
 			}
 		} 
-		tiles.extend(depots);
+		tiles.extend(GetDepots());
 		tiles.extend(additionalTiles);
 		
 		foreach(t in tiles) {
@@ -1581,6 +1570,12 @@ class TrainRoute extends Route {
 		pathSrcToDest.Remove(true/*physicalRemove*/, false/*DoInterval*/);
 		if(pathDestToSrc != null) {
 			pathDestToSrc.Remove(true/*physicalRemove*/, false/*DoInterval*/);
+		}
+		foreach(tile,depotInfo in depotInfos) {
+			RailBuilder.RemoveRailTracksAll(tile);
+			foreach(depotTile in depotInfo.depots) {
+				AITile.DemolishTile(tile);
+			}
 		}
 		local tiles = [];
 		tiles.extend(depots);
@@ -2114,7 +2109,7 @@ class TrainReturnRoute extends Route {
 	destArrivalPath = null;
 	destDeparturePath = null;
 
-	depots = null;
+	depotInfos = null;
 	subCargos = null;
 	
 	saveData = null;
@@ -2132,7 +2127,7 @@ class TrainReturnRoute extends Route {
 		this.srcDeparturePath.route = this;
 		this.destArrivalPath.route = this;
 		this.destDeparturePath.route = this;
-		this.depots = [];
+		this.depotInfos = {};
 		this.subCargos = [];
 	}
 	
@@ -2147,7 +2142,7 @@ class TrainReturnRoute extends Route {
 		t.srcDeparturePath <- srcDeparturePath.path.Save();
 		t.destArrivalPath <- destArrivalPath.path.Save();
 		t.destDeparturePath <- destDeparturePath.path.Save();
-		t.depots <- depots;
+		t.depotInfos <- depotInfos;
 		t.subCargos <- subCargos;
 		saveData = t;
 	}
@@ -2162,13 +2157,15 @@ class TrainReturnRoute extends Route {
 			BuildedPath(Path.Load(t.destArrivalPath)),
 			BuildedPath(Path.Load(t.destDeparturePath)));
 		result.Load(t);
-		result.depots = t.rawin("depots") ? t.depots : [];
+		result.depotInfos = t.depotInfos;
 		result.subCargos = t.subCargos;
 		return result;
 	}
 
-	function AddDepots(depots) {
-		this.depots.extend(depots);
+	function AddDepotInfos(depotInfos) {
+		foreach(tile,info in depotInfos) {
+			depotInfos.rawset(tile,info);
+		}
 	}
 
 	function Initialize() {
@@ -2186,6 +2183,21 @@ class TrainReturnRoute extends Route {
 		}
 		saveData.subCargos = subCargos;
 	}
+	
+
+	function AddDepotInfos(depotInfos) {
+		foreach(tile,info in depotInfos) {
+			this.depotInfos.rawset(tile,info);
+		}
+	}
+	
+	function GetDepots() {
+		local result = [];
+		foreach(tile,info in depotInfos) {
+			result.extend(info.depots);
+		}
+		return result;
+	}	
 	
 	function GetLatestEngineSet() {
 		return originalRoute.GetLatestEngineSet();
@@ -2282,7 +2294,8 @@ class TrainReturnRoute extends Route {
 
 	
 	function GetFacilities() {
-		return [srcHgStation, destHgStation, srcArrivalPath.path, srcDeparturePath.path, destArrivalPath.path, destDeparturePath.path, depots];
+		local result = [srcHgStation, destHgStation, srcArrivalPath.path, srcDeparturePath.path, destArrivalPath.path, destDeparturePath.path];
+		result.push( GetDepots() );
 	}
 	
 	function Remove(){
@@ -2495,7 +2508,7 @@ class TrainRouteBuilder extends RouteBuilder {
 				railBuilder.buildedPath1, railBuilder.buildedPath2);
 		}
 		route.isTransfer = isTransfer;
-		route.AddDepots(railBuilder.depots);
+		route.AddDepotInfos(railBuilder.depotInfos);
 		route.Initialize();
 		
 		destHgStation.BuildAfter();
@@ -2594,7 +2607,7 @@ class TrainRouteExtendBuilder extends Construction {
 			return 1;
 		}
 		
-		route.AddDepots(railBuilder.depots);
+		route.AddDepotInfos(railBuilder.depotInfos);
 		if(route.GetLastRoute().returnRoute != null) {
 			route.GetLastRoute().RemoveReturnRoute(); // dest追加でreturn routeが成立しなくなる場合があるため。
 		}
@@ -2775,8 +2788,7 @@ class TrainReturnRouteBuilder extends Construction {
 				railBuilderPathToTransfer.buildedPath, railBuilderTransferToPath.buildedPath,
 				railBuilderReturnDest.buildedPath1, railBuilderReturnDest.buildedPath2);
 				
-			returnRoute.AddDepots( railBuilderReturnDest.depots );
-
+			returnRoute.AddDepotInfos( railBuilderReturnDest.depotInfos );
 		
 			route.returnRoute = returnRoute;
 			route.Save();

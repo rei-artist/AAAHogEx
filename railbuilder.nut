@@ -549,7 +549,7 @@ class Path {
 							}
 							if(!ng) {
 								if(HgTile(p[2]).BuildDepot(depot, p[1], p[3])) {
-									return depot;
+									return {path=path,depots=[depot]};
 								}
 							}
 						}
@@ -558,10 +558,9 @@ class Path {
 			}
 			path = path.GetParent();
 		}
-		return null;
+		return {path=path,depots=[]};
 	}
 	
-	// return: [path,depotTiles]
 	function BuildDoubleDepot() {
 //		local result = BuildDoubleDepotMinLength(9);
 //		if(result[1].len() == 0) {
@@ -602,7 +601,7 @@ class Path {
 						local depot2 = p[middle] + dir;
 						local depots = HgTile(p[middle]).BuildDoubleDepot(depot1, depot2, p[middle-1], p[middle+1]);
 						if(depots != null) {
-							return [path,depots];
+							return {path=path,depots=depots};
 						}
 						local rl = 0;
 						{
@@ -617,7 +616,7 @@ class Path {
 							RailBuilder.ChangeTunnel(p[middle]-2+dir*rl,p[middle]+2+dir*rl);
 							local depots = HgTile(p[middle]).BuildDoubleDepot(depot1, depot2, p[middle-1], p[middle+1]);
 							if(depots != null) {
-								return [path,depots];
+								return {path=path,depots=depots};
 							}
 						}
 					}
@@ -625,7 +624,7 @@ class Path {
 			}
 			path = path.GetParent();
 		}
-		return [path,[]];
+		return {path=path,depots=[]};
 	}
 	
 	
@@ -2196,7 +2195,43 @@ class TailedRailBuilder {
 	}
 }
 
-class TwoWayPathToStationRailBuilder extends Construction {
+
+class ConstructionRailBuilder extends Construction {
+	
+	depots = null;
+	depotInfos = null;
+	
+	constructor() {
+		Construction.constructor();
+		this.depots = [];
+		this.depotInfos = {};
+	}
+	
+	function BuildDoubleDepots(path) {
+		while(path != null) {
+			local built = path.BuildDoubleDepot();
+			if(built.path == null) {
+				break;
+			}
+			depots.extend(built.depots);
+			AddRollback(built.depots,"tiles");
+			depotInfos.rawset( built.path.GetTile(), {depots=built.depots} );
+			path = built.path.GetParentByDistance(200);
+		}
+	}
+	
+	
+	function BuildSingleDepot(path) {
+		local built = path.BuildDepotForRail();
+		if(built.path != null) {
+			depots.extend(built.depots);
+			AddRollback(built.depots,"tiles");
+			depotInfos.rawset( built.path.GetTile(), {depots=built.depots} );
+		}
+	}
+}
+
+class TwoWayPathToStationRailBuilder extends ConstructionRailBuilder {
 	pathDepatureGetter = null; // 駅の出発タイルへ向けたパス
 	pathArrivalGetter = null; // 駅の到着タイルへ向けたパス
 	isReverse = null; // 上記を逆にする
@@ -2214,10 +2249,9 @@ class TwoWayPathToStationRailBuilder extends Construction {
 
 	buildedPath1 = null;
 	buildedPath2 = null;
-	depots = null;
 	
 	constructor(pathDepatureGetter=null, pathArrivalGetter=null, destHgStation=null, limitCount=null, eventPoller=null) {
-		Construction.constructor();
+		ConstructionRailBuilder.constructor();
 		this.pathDepatureGetter = pathDepatureGetter; 
 		this.pathArrivalGetter = pathArrivalGetter; 
 		this.isReverse = false;
@@ -2226,7 +2260,6 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		this.eventPoller = eventPoller;
 		this.isBuildDepotsDestToSrc = false;
 		this.isBuildSingleDepotDestToSrc = false;
-		this.depots = [];
 	}
 	
 	function DoBuild() {
@@ -2245,16 +2278,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		buildedPath1 = b1.buildedPath;
 		AddRollback(buildedPath1);
 		if(isBuildDepotsDestToSrc) {
-			local cur = buildedPath1.path.SubPathIndex(4);
-			while(cur != null) {
-				local a = cur.BuildDoubleDepot();
-				depots.extend(a[1]);
-				AddRollback(a[1],"tiles");
-				cur = a[0];
-				if(cur != null) {
-					cur = cur.GetParentByDistance(200);
-				}
-			}
+			BuildDoubleDepots(buildedPath1.path.SubPathIndex(4));
 		}
 		
 		// dest => src
@@ -2272,35 +2296,18 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		buildedPath2 = b2.buildedPath;
 
 		if(isBuildDepotsDestToSrc) {
-			local cur = buildedPath2.path.Reverse().SubPathIndex(4);
-			while(cur != null) {
-				local a = cur.BuildDoubleDepot();
-				depots.extend(a[1]);
-				AddRollback(a[1],"tiles");
-				cur = a[0];
-				if(cur != null) {
-					cur = cur.GetParentByDistance(200);
-				}
-			}
+			BuildDoubleDepots(buildedPath2.path.Reverse().SubPathIndex(4));
 		}		
-		
 		if(isBuildSingleDepotDestToSrc) {
-			local depot = buildedPath2.path.Reverse().SubPathIndex(4).BuildDepotForRail();
-			if(depot != null) {
-				depots.push(depot);
-			}
+			BuildSingleDepot(buildedPath2.path.Reverse().SubPathIndex(4));
 		}
 		return true;
 	}
 	
-	function RemoveDepots() {
-		foreach(depot in depots) {
-			AITile.DemolishTile(depot);
-		}
-	}
+
 }
 
-class TwoWayStationRailBuilder extends Construction {
+class TwoWayStationRailBuilder extends ConstructionRailBuilder {
 	srcHgStation = null;
 	destHgStation = null;
 	limitCount = null;
@@ -2315,7 +2322,6 @@ class TwoWayStationRailBuilder extends Construction {
 	
 	buildedPath1 = null;
 	buildedPath2 = null;
-	depots = null;
 	
 	constructor(srcHgStation, destHgStation, limitCount, eventPoller) {
 		Construction.constructor();
@@ -2326,6 +2332,7 @@ class TwoWayStationRailBuilder extends Construction {
 		this.isBuildDepotsDestToSrc = false;
 		this.isBuildSingleDepotDestToSrc = false;
 		this.depots = [];
+		this.depotInfos = {};
 	}
 	
 	function DoBuild() {
@@ -2347,16 +2354,7 @@ class TwoWayStationRailBuilder extends Construction {
 		buildedPath2 = b1.buildedPath;
 		AddRollback(buildedPath2);
 		if(isBuildDepotsDestToSrc) {
-			local cur = buildedPath2.path.SubPathIndex(4);
-			while(cur != null) {
-				local a = cur.BuildDoubleDepot();
-				depots.extend(a[1]);
-				AddRollback(a[1],"tiles");
-				cur = a[0];
-				if(cur != null) {
-					cur = cur.GetParentByDistance(200);
-				}
-			}
+			BuildDoubleDepots(buildedPath2.path.SubPathIndex(4));
 		}
 
 	
@@ -2380,22 +2378,10 @@ class TwoWayStationRailBuilder extends Construction {
 		}
 		buildedPath1 = b2.buildedPath;
 		if(isBuildDepotsDestToSrc) {
-			local cur = buildedPath1.path.Reverse();
-			while(cur != null) {
-				cur = cur.GetParentByDistance(200);
-				if(cur != null) {
-					local a = cur.BuildDoubleDepot();
-					depots.extend(a[1]);
-					AddRollback(a[1],"tiles");
-					cur = a[0];
-				}
-			}
+			BuildDoubleDepots(buildedPath1.path.Reverse().SubPathIndex(4));
 		}
 		if(isBuildSingleDepotDestToSrc) {
-			local depot = buildedPath2.path.BuildDepotForRail();
-			if(depot != null) {
-				depots.push(depot);
-			}
+			BuildSingleDepot(buildedPath2.path);
 		}
 		
 		return true;
@@ -2403,7 +2389,7 @@ class TwoWayStationRailBuilder extends Construction {
 	
 }
 
-class SingleStationRailBuilder extends Construction{
+class SingleStationRailBuilder extends ConstructionRailBuilder{
 	srcHgStation = null;
 	destHgStation = null;
 	limitCount = null;
@@ -2415,15 +2401,13 @@ class SingleStationRailBuilder extends Construction{
 	distance = null;
 	
 	buildedPath = null;
-	depots = null;
 	
 	constructor(srcHgStation, destHgStation, limitCount, eventPoller) {
-		Construction.constructor();
+		ConstructionRailBuilder.constructor();
 		this.srcHgStation = srcHgStation;
 		this.destHgStation = destHgStation;
 		this.limitCount = limitCount;
 		this.eventPoller = eventPoller;
-		this.depots = [];
 	}
 	
 	function DoBuild() {

@@ -229,6 +229,7 @@ class StationGroup {
 	}
 	
 	function GetExpectedProductionInfos( cargo, vehicleType, isMine = false, callers = null ) {
+		// 使われてない？ n対nの輸送路評価用
 		local result = {}
 		local location = GetLocation();
 		foreach(place in GetProducingHgIndustries(cargo)) {

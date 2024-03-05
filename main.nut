@@ -78,6 +78,7 @@ class HogeAI extends AIController {
 	intervalSpan = null;
 	lastTransferCandidates = null;
 	isRich = null;
+	lastScanRouteDates = null;
 	
 	yeti = null;
 	ecs = null;
@@ -255,6 +256,7 @@ class HogeAI extends AIController {
 		lastTransferCandidates = {};
 		waterRemovable = false;
 		routeCandidates = RouteCandidates();
+		lastScanRouteDates = {};
 
 		DelayCommandExecuter();
 	}
@@ -1062,9 +1064,14 @@ class HogeAI extends AIController {
 			if(route.IsRemoved() || route.IsTransfer() || route.IsUpdatingRail()) {
 				continue;
 			}
+			local lastScanDate = lastScanRouteDates.rawin(route.id) ? lastScanRouteDates.rawget(route.id) : null;
+			if(lastScanDate!=null && lastScanDate + 10 * 365 < AIDate.GetCurrentDate()) {
+				 // やたらとreturn route作成失敗を繰り返すので10年に1度
+				continue;
+			}
+			lastScanRouteDates.rawset(route.id,AIDate.GetCurrentDate());
 			AIRail.SetCurrentRailType(route.GetRailType());
 			route.isBuilding = true;
-			
 			/*TODO
 			local destStation = route.destHgStation.GetAIStation();
 			foreach(cargo in route.GetUsableCargos()) {
@@ -1076,10 +1083,8 @@ class HogeAI extends AIController {
 			
 
 			SearchAndBuildAdditionalSrc(route);
-			if(SearchAndBuildAdditionalDestAsFarAsPossible( route )) {
-				CheckBuildReturnRoute(route); // やたらとreturn route作成失敗を繰り返すので延長できた時のみ
-				// scan placeでやる SearchAndBuildTransferRoute( route, { useLastMonthProduction = true } );
-			}
+			SearchAndBuildAdditionalDestAsFarAsPossible( route );
+			CheckBuildReturnRoute(route);
 			route.isBuilding = false;
 			DoInterval();
 			
@@ -3561,6 +3566,7 @@ class HogeAI extends AIController {
 		table.landConnectedCache <- HgTile.landConnectedCache;
 		table.cargoVtDistanceValues <- cargoVtDistanceValues;
 		table.lastTransferCandidates <- lastTransferCandidates;
+		table.lastScanRouteDates <- lastScanRouteDates;
 		Place.SaveStatics(table);
 
 		HgLog.Info("Place.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
@@ -3636,6 +3642,7 @@ class HogeAI extends AIController {
 		if(loadData.rawin("lastTransferCandidates")) {
 			lastTransferCandidates = loadData.lastTransferCandidates;
 		}
+		lastScanRouteDates = loadData.lastScanRouteDates;
 		
 		Place.LoadStatics(loadData);
 		HgStation.LoadStatics(loadData);
