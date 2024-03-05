@@ -1578,7 +1578,6 @@ class TrainRoute extends Route {
 			}
 		}
 		local tiles = [];
-		tiles.extend(depots);
 		tiles.extend(additionalTiles);
 		foreach(tile in tiles) {
 			if(AIRail.IsRailDepotTile(tile)) {

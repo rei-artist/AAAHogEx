@@ -2272,7 +2272,6 @@ class TwoWayPathToStationRailBuilder extends ConstructionRailBuilder {
 		b1.isReverse = isReverse;
 		b1.isRevReverse = isRevReverse != null ? isRevReverse : isReverse;
 		if(!b1.BuildTails()) {
-			RemoveDepots();
 			return false;
 		}
 		buildedPath1 = b1.buildedPath;
