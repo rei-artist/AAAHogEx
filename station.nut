@@ -203,7 +203,9 @@ class StationGroup {
 	function GetExpectedProduction( cargo, vehicleType, isMine = false, callers = null)  {
 		local result = 0;
 		foreach(place in GetProducingHgIndustries(cargo)) {
-			result += place.GetCurrentExpectedProduction(cargo, vehicleType, isMine);
+			local prod = place.GetCurrentExpectedProduction(cargo, vehicleType, isMine);
+			result += prod;
+			//HgLog.Info("GetExpectedProduction place:"+place+" prod:"+prod);
 		}
 		local townCargo = GetTownCargo(cargo);
 		if(townCargo != null) {
@@ -452,14 +454,13 @@ class StationGroup {
 		local result = [];
 		local industryList = AIList();
 		foreach(tile,_ in GetCoverageTileList()) {
-			local industry = AIIndustry.GetIndustryID(tile);
 			if(isProducing) {
 				if(AITile.GetCargoProduction(tile, cargo, 1, 1, 0 ) >= 1) {
-					industryList.AddItem(industry,0);
+					industryList.AddItem(AIIndustry.GetIndustryID(tile),0);
 				}
 			} else {
 				if(AITile.IsAcceptingCargo(tile, cargo, 1, 1, 0 ) >= 8) { // TODO: isProducing==falseの場合、最も小さいindustryIdのみを返す
-					industryList.AddItem(industry,0);
+					industryList.AddItem(AIIndustry.GetIndustryID(tile),0);
 				}
 			}
 		}
@@ -472,7 +473,7 @@ class StationGroup {
 				industryList.AddItem(station.place.industry,0);
 			}
 		}
-		
+		//HgLog.Info("SearchHgIndustries:"+industryList.Count()+" cargo:"+AICargo.GetName(cargo)+" isProducing:"+isProducing+" "+this);
 		local result = [];
 		foreach(industry,_ in industryList) {
 			result.push(HgIndustry(industry, isProducing));
@@ -491,6 +492,7 @@ class StationGroup {
 		if(coverageTileList == null) {
 			if(HogeAI.Get().openttdVersion >= 14) {
 				coverageTileList = AITileList_StationCoverage( GetAIStation() );
+				HgLog.Info("AITileList_StationCoverage:"+coverageTileList.Count());
 			} else {
 				coverageTileList = AITileList();
 				local stationTypes = {};

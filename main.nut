@@ -2409,7 +2409,7 @@ class HogeAI extends AIController {
 		local dirtyPlaces = {};
 		while(routePlans.Count() >= 1) {
 			local plan = routePlans.Pop();
-			//HgLog.Warning("DoRoutePlans plan:"+plan.estimate.value+"/"+limitValue+" "+plan.dest.GetName()+"<-"+plan.src.GetName()+" "+plan.estimate);
+			HgLog.Info("DoRoutePlans plan:"+plan.estimate.value+"/"+limitValue+" "+plan.dest.GetName()+"<-"+plan.src.GetName()+" "+plan.estimate);
 			if(dirtyPlaces.rawin(plan.src.GetGId()+":"+plan.cargo)) {
 				HgLog.Info("dirtyPlaces src "+plan.src.GetName());
 				continue;
@@ -2429,7 +2429,7 @@ class HogeAI extends AIController {
 				result.push(newRoute);
 				local delivable = newRoute.GetTotalDelivableProduction();
 				sumDelivable += delivable;
-				//HgLog.Warning("DoRoutePlans:"+routePlans.Count()+" delivale:"+delivable+" sumDelivable:"+sumDelivable+" limit:"+limit.capacity+" newRoute:"+newRoute);
+				//HgLog.Info("DoRoutePlans:"+routePlans.Count()+" delivaleProd:"+delivable+" sumDelivable:"+sumDelivable+"/limit:"+limit.capacity+" newRoute:"+newRoute);
 			} else {
 				//HgLog.Warning("DoRoutePlans:"+routePlans.Count()+" failCount:"+failCount);
 				failCount ++;

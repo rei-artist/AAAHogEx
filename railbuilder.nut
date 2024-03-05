@@ -1319,7 +1319,7 @@ class RailBuilder extends Construction {
 			}
 			local level = HgTile.GetBoundMaxHeight(prev, path.GetTile());
 			local prevDir = prev - path.GetTile();
-			if((isReverse && !isRevReverse) || (!isReverse && isRevReverse)) {
+			if(isRevReverse/*(isReverse && !isRevReverse) || (!isReverse && isRevReverse)*/) {
 				prevDir = -prevDir;
 			}
 			local dx = prevDir % AIMap.GetMapSizeX();
@@ -1997,14 +1997,15 @@ class TailedRailBuilder {
 	isNotCheckRevPath = null;
 	
 	
-	constructor(srcTilesGetter, destTilesGetter, ignoreTiles, limitCount, eventPoller, reversePath = null, isReverse = false) {
+	constructor(srcTilesGetter, destTilesGetter, ignoreTiles, limitCount, eventPoller, reversePath = null) {
 		this.srcTilesGetter = srcTilesGetter;
 		this.destTilesGetter = destTilesGetter;
 		this.ignoreTiles = ignoreTiles;
 		this.limitCount = limitCount;
 		this.eventPoller = eventPoller;
 		this.reversePath = reversePath;
-		this.isReverse = isReverse;
+		this.isReverse = false;
+		this.isRevReverse = false;
 		this.isSingle = false;
 		this.isTwoway = true;
 		this.isNotCheckRevPath = false;
@@ -2059,7 +2060,7 @@ class TailedRailBuilder {
 		pathFinder1.distance = distance;
 		pathFinder1.isOutward = isOutward;
 		pathFinder1.isSingle = isSingle;
-		if(isRevReverse != null) pathFinder1.isRevReverse = isRevReverse;
+		pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
 		local starts = srcTilesGetter.Get();
 		local goals = destTilesGetter.Get();
@@ -2083,7 +2084,7 @@ class TailedRailBuilder {
 		if(pathFinder1.IsFoundGoal() || foundedRevPath != null) {
 			// src側から建築
 			local railBuilder1 = RailBuilder(path1.Reverse(),!isReverse,ignoreTiles,this);
-			if(isRevReverse != null) railBuilder1.isRevReverse = !isRevReverse;
+			railBuilder1.isRevReverse = !isRevReverse;
 			railBuilder1.pathFinder = pathFinder1;
 			railBuilder1.isRebuildForHomeward = isOutward;
 			if(isSingle) {
@@ -2243,7 +2244,6 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		b2.platformLength = platformLength;
 		b2.distance = distance;
 		b2.isReverse = !isReverse;
-		b2.isRevReverse = isRevReverse != null ? isRevReverse : isReverse;
 		if(!b2.BuildTails()) {
 			Rollback();
 			return false;

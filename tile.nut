@@ -1329,7 +1329,9 @@ class TileListUtils {
 		return result;
 	}
 	
-	static function GetRectangles(tileList) {
+	static function GetRectangles(tileListIn) {
+		local tileList = AITileList();
+		tileList.AddList(tileListIn);
 		local result = [];
 		tileList.Sort(AIList.SORT_BY_ITEM, true);
 		while(tileList.Count() >= 1) {
