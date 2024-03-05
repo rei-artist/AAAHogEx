@@ -2741,12 +2741,13 @@ class HogeAI extends AIController {
 	}
 	
 
-	function SearchAndBuildAdditionalDestAsFarAsPossible(route) {
+	function SearchAndBuildAdditionalDestAsFarAsPossible(route, continuation = false) {
 		if(roiBase) {
 			return null;
 		}
 		local result = false;
-		while(SearchAndBuildAdditionalDest(route, result) != null) {
+		while(SearchAndBuildAdditionalDest(route, continuation) != null) {
+			continuation = true;
 			result = true;
 		}
 		if(result) {
@@ -2791,39 +2792,39 @@ class HogeAI extends AIController {
 		if(route.GetLastRoute().returnRoute != null) {
 			return null;
 		}
-		local maxDistance = 0;
+		local maxExtDistance = 0;
 		if(route.IsClosed()) {
-			maxDistance = 500;
+			maxExtDistance = 500;
 		} else {
 			local currentValue = 0;//route.latestEngineSet.income;
-			for(local distance = 0; distance <= 500; distance += 100) {
-				local engineSets = route.GetEngineSets(false, distance);
+			for(local extDistance = 0; extDistance <= 500; extDistance += 100) {
+				local engineSets = route.GetEngineSets(false, extDistance);
 				local estimate = engineSets.len() >= 1 ? engineSets[0] : null;
 			
 //				estimate = Route.Estimate(AIVehicle.VT_RAIL, route.cargo, route.GetDistance() + distance, route.GetProduction(), route.IsBiDirectional());
 				if(estimate == null) {
 					break;
 				}
-				HgLog.Info("AdditionalDest distance:"+(distance+route.GetDistance())+" "+estimate);
+				HgLog.Info("AdditionalDest distance:"+(extDistance+route.GetDistance())+" "+estimate);
 				local score = estimate.routeIncome; // 比較元は建築済みなのでbuildingTimeは加味しない
 				if(score < currentValue) {
 					break;
 				}
 				currentValue = score;
-				maxDistance = distance;
+				maxExtDistance = extDistance;
 			}
 			
-			if(!continuation && maxDistance < route.GetDistance() * 5 / 10) {
+			if(!continuation && (maxExtDistance < route.GetDistance() /2 && maxExtDistance < 400)) {
 				HgLog.Warning("No need to extend route "+route);
 				return null;
 			}
 			
-			if(maxDistance <= 0) { // transfer分も加味 TODO: まじめに計算
+			if(maxExtDistance <= 0) { // transfer分も加味 TODO: まじめに計算
 				HgLog.Warning("No need to extend route "+route);
 				return null;
 			}
 //			maxDistance -= 100;
-			HgLog.Info("SearchAndBuildAdditionalDest maxDistance:"+maxDistance+" "+route);
+			HgLog.Info("SearchAndBuildAdditionalDest maxExtDistance:"+maxExtDistance+" "+route);
 		}
 		
 		local lastAcceptingTile = destHgStation.platformTile;
@@ -2839,7 +2840,7 @@ class HogeAI extends AIController {
 		local tryCount = 0;
 		local placeScores = [];
 		foreach(placeScore in Place.SearchAdditionalAcceptingPlaces(
-				route.GetUsableCargos(), route.GetSrcStationTiles(), destHgStation.platformTile, maxDistance)) {
+				route.GetUsableCargos(), route.GetSrcStationTiles(), destHgStation.platformTile, maxExtDistance + 50)) {
 			if(placeScore[0].IsSamePlace(destHgStation.place)) {
 				continue;
 			}

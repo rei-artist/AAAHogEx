@@ -3075,7 +3075,7 @@ class RouteBuilder extends Construction {
 		
 		if(searchTransfer && !GetOption("noExtendRoute",false) && !IsTransfer()) { // 延長チェック
 			if(!builtRoute.cannotChangeDest && vehicleType == AIVehicle.VT_RAIL) {
-				local extendsRoute = HogeAI.Get().SearchAndBuildAdditionalDestAsFarAsPossible(builtRoute);
+				local extendsRoute = HogeAI.Get().SearchAndBuildAdditionalDestAsFarAsPossible(builtRoute, true);
 			}
 		}
 		
@@ -3124,6 +3124,7 @@ class RouteBuilder extends Construction {
 					{ notTreatDest = true, noCheckNeedsAdditionalProducing = true } )));
 			}
 		}
+		/* scanplaceでやる ∵productが少ないと短い距離でreturnを作ってしまう
 		local value = engineSet.value;
 		if(searchTransfer && !builtRoute.cannotChangeDest && vehicleType == AIVehicle.VT_RAIL) {
 			local returnRoute = HogeAI.Get().CheckBuildReturnRoute(builtRoute, value);
@@ -3133,7 +3134,7 @@ class RouteBuilder extends Construction {
 						{ noCheckNeedsAdditionalProducing = true } ) ) );
 				}
 			}
-		}
+		}*/
 		if(isBiDirectional) {
 			local destPlace = builtRoute.destHgStation.place;
 			local limit = builtRoute.GetCurrentRouteCapacity(cargo);
