@@ -103,6 +103,7 @@ class RailPathFinder
 	function InitializeParameters() {
 		this._Cost = debug ? this._DebugCost : this._NormalCost;
 		_pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
+		_pathfinder.debug = debug;
 	
 		_cost_level_crossing = 900;
 		_cost_crossing_reverse = 300;
@@ -326,6 +327,7 @@ class RailPathFinder
 	}
 	
 	function SetReversePath(reversePath) {
+		//HgLog.Info("SetReversePath:"+reversePath+" debug:"+debug);
 		if(reversePath == null) {
 			return;
 		}
@@ -525,7 +527,7 @@ function RailPathFinder::_NormalCost(self, path, new_tile, new_direction, mode) 
 function RailPathFinder::_DebugCost(self, path, new_tile, new_direction, mode) {
 	//local counter = PerformanceCounter.Start("Cost");
 	local result = RailPathFinder.__Cost(self, path, new_tile, mode, new_direction);
-	//self.DebugSign(new_tile,result.tostring());
+	self.DebugSign(new_tile,result.tostring());
 	//counter.Stop();
 	return result;
 }
@@ -580,6 +582,14 @@ function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 		local totalLength = distance + prevLength;
 		if(mode != null && mode instanceof RailPathFinder.Underground) {
 			cost += totalLength * (self._cost_tile + self._cost_tunnel_per_tile);
+			if(totalLength > self._bottom_ex_tunnel_length) {
+				cost += (distance - self._bottom_ex_tunnel_length) * self._cost_tunnel_per_tile_ex;
+			}
+			if(totalLength > self._bottom_ex2_tunnel_length) {
+				cost += (totalLength - (self._bottom_ex2_tunnel_length-1)) * self._cost_tunnel_per_tile_ex2;
+			}
+		} else if(AITunnel.GetOtherTunnelEnd(t[0])==t[1]) {
+			cost += totalLength * self._cost_tile;
 			if(totalLength > self._bottom_ex_tunnel_length) {
 				cost += (distance - self._bottom_ex_tunnel_length) * self._cost_tunnel_per_tile_ex;
 			}
@@ -700,6 +710,13 @@ function RailPathFinder::__Cost(self, path, new_tile, new_direction, mode)
 				local underGround = self._GetUndergroundTunnel(t[3] + revDir, t[2] + revDir, t[1] + revDir, mode.level, t[0] + revDir);
 				if(underGround.len() == 0) {
 					cost += 1500;
+				}
+			} else if(AITunnel.GetOtherTunnelEnd(t[0])==t[1]) {
+				if(AITunnel.GetOtherTunnelEnd(t[0]+revDir)!=t[1]+revDir || !AITunnel.BuildTunnel(AIVehicle.VT_RAIL,t[0]+revDir)) {
+					cost += 1500;
+					//HgLog.Warning("Tunnel NG:"+HgTile(t[0])+"-"+HgTile(t[1])+" "+HgTile(t[1] + revDir));
+				} else {
+					//HgLog.Warning("Tunnel OK:"+HgTile(t[0])+"-"+HgTile(t[1])+" "+HgTile(t[1] + revDir));
 				}
 			} else {
 				local bridge_list = AIBridgeList_Length(distance + 1);
@@ -1300,7 +1317,7 @@ function RailPathFinder::_GetTunnelsBridges(par, last_node, cur_node)
 		for (local i = 2; i < this._max_bridge_length; i++) {
 			local bridge_list = AIBridgeList_Length(i + 1);
 			local checkTile = cur_node + (i-1) * dir;
-			if(!significant && (!AITile.IsBuildable(checkTile) || AITile.GetMaxHeight(checkTile) <= level - 2 || AITile.GetMaxHeight(checkTile) == level)) {
+			if(!significant && (!AITile.IsBuildable(checkTile) || AITile.GetMaxHeight(checkTile) <= level - 2 /*|| AITile.GetMaxHeight(checkTile) == level平地に奇妙な橋が出現する*/)) {
 				significant = true;
 			}
 			local target = cur_node + i * dir;

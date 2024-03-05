@@ -12,6 +12,7 @@ class AyStar
 	_open = null;
 	_closed = null;
 	_goals = null;
+	debug = false;
 
 	/**
 	 * @param pf_instance An instance that'll be used as 'this' for all
@@ -173,9 +174,17 @@ function AyStar::FindPath(iterations)
 			/* Calculate the new paths and add them to the open list */
 			local mode = node.len() >= 3 ? node[2] : null;
 			local new_path = this.Path(path, node[0], node[1], mode, this._cost_callback, this._pf_instance);
+/*			if(debug) {
+				local cost = new_path.GetCost();
+				local estimate = this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
+				HgLog.Info("cost:"+(cost+estimate)+" "+cost+" "+estimate+" "+HgTile(node[0])
+					+" par:"+HgTile(path.GetTile())+(path.GetParent()!=null ? " parpar:"+HgTile(path.GetParent().GetTile()) : ""));
+				this._open.Insert(new_path, cost + estimate);
+			} else {*/
 			local cost = new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
-			//HgLog.Info("cost:"+cost+" "+HgTile(node[0])+" par:"+HgTile(path.GetTile())+(path.GetParent()!=null ? " parpar:"+HgTile(path.GetParent().GetTile()) : ""));
 			this._open.Insert(new_path, cost);
+//			}
+			
 		}
 	}
 

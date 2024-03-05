@@ -736,12 +736,13 @@ class StationFactory {
 				station.score += acceptance;
 			}
 			stationScoreList.AddItem(stationIndex, station.score);
-			if(startDate + 100  < AIDate.GetCurrentDate()) {
+			if(startDate + 60  < AIDate.GetCurrentDate()) {
 				HgLog.Warning("Station GetBestHgStationCosts reached limitDate1. stationPlace:"+label);
 				break;
 			}
 			HogeAI.DoInterval();
 		}
+		startDate = AIDate.GetCurrentDate();
 		HogeAI.DoInterval();
 		HgLog.Info(this+" days:"+(AIDate.GetCurrentDate()-startDate)+" candidates:"+stationScoreList.Count()+"/"+hgStations.len()
 			+" by:"+label+(considerAcceptance?" considerAcceptance":""));
@@ -758,7 +759,7 @@ class StationFactory {
 				station.levelTiles = levelTiles;
 				return [[station,0]]; // この先は重いのでカット
 			}
-			if(startDate + 100 < AIDate.GetCurrentDate()) {
+			if(startDate + 60 < AIDate.GetCurrentDate()) {
 				HgLog.Warning("Station GetBestHgStationCosts reached limitDate2. stationPlace:"+label);
 				break;
 			}

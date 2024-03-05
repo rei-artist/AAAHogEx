@@ -2081,7 +2081,7 @@ class TailedRailBuilder {
 		pathFinder1.isSingle = isSingle;
 		pathFinder1.isRevReverse = isRevReverse;
 		pathFinder1.dangerTiles = dangerTiles;
-		//pathFinder1.debug = debug;
+		pathFinder1.debug = debug;
 		local starts = srcTilesGetter.Get();
 		local goals = destTilesGetter.Get();
 		if(starts.len()==0) {
@@ -2259,6 +2259,7 @@ class TwoWayPathToStationRailBuilder extends Construction {
 		
 		// dest => src
 		local b2 = TailedRailBuilder.PathToStation(pathArrivalGetter, destHgStation, limitCount, eventPoller, buildedPath1.path, isReverse );
+		//if(destHgStation.GetName().find("Flarfingway")!=null) b2.debug = true;
 		b2.cargo = cargo;
 		b2.engine = engine;
 		b2.platformLength = platformLength;
