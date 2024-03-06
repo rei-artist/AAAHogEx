@@ -14,7 +14,7 @@ require("water.nut");
 require("air.nut");
 
 class HogeAI extends AIController {
-	static version = 75;
+	static version = 77;
 
 	static container = Container();
 	static notBuildableList = AIList();

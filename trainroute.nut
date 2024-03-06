@@ -2295,6 +2295,7 @@ class TrainReturnRoute extends Route {
 	function GetFacilities() {
 		local result = [srcHgStation, destHgStation, srcArrivalPath.path, srcDeparturePath.path, destArrivalPath.path, destDeparturePath.path];
 		result.push( GetDepots() );
+		return result;
 	}
 	
 	function Remove(){
