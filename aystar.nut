@@ -79,7 +79,7 @@ function AyStar::InitializePath(sources, goals, ignored_tiles = [])
 	if (typeof(sources) != "array" || sources.len() == 0) throw("sources has be a non-empty array.");
 	if (typeof(goals) != "array" || goals.len() == 0) throw("goals has be a non-empty array.");
 
-	this._open = AyStar.Open();
+	this._open = AIPriorityQueue(); //AyStar.Open();
 	this._closed = AIList();
 
 	foreach (node in sources) {
@@ -145,6 +145,9 @@ function AyStar::FindPath(iterations)
 				if (cur_tile == goal[0]) {
 					local neighbours = this._neighbours_callback(this._pf_instance, path, cur_tile);
 					foreach (node in neighbours) {
+						/*if(debug) {
+							HgLog.Info("goal[0]:"+HgTile(cur_tile)+" "+HgTile(node[0])+" par:"+HgTile(path.GetParent().GetTile())+" cost:"+path.GetCost());
+						}*/
 						if (node[0] == goal[1]) {
 							this._CleanPath();
 							return path;
@@ -174,16 +177,22 @@ function AyStar::FindPath(iterations)
 			/* Calculate the new paths and add them to the open list */
 			local mode = node.len() >= 3 ? node[2] : null;
 			local new_path = this.Path(path, node[0], node[1], mode, this._cost_callback, this._pf_instance);
-/*			if(debug) {
+			
+			/*if(debug) {
 				local cost = new_path.GetCost();
 				local estimate = this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
 				HgLog.Info("cost:"+(cost+estimate)+" "+cost+" "+estimate+" "+HgTile(node[0])
 					+" par:"+HgTile(path.GetTile())+(path.GetParent()!=null ? " parpar:"+HgTile(path.GetParent().GetTile()) : ""));
 				this._open.Insert(new_path, cost + estimate);
 			} else {*/
-			local cost = new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
-			this._open.Insert(new_path, cost);
-//			}
+				local cost = new_path.GetCost() + this._estimate_callback(this._pf_instance, node[0], node[1], this._goals);
+				this._open.Insert(new_path, cost);
+			//}
+
+			/*if(debug) {
+				local execMode = AIExecMode();
+				AISign.BuildSign(node[0], cost.tostring());
+			}*/
 			
 		}
 	}

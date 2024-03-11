@@ -132,7 +132,9 @@ class StationGroup {
 			}
 		}
 	
-		local rectangle = GetBuildablePlatformRectangle(HogeAI.Get().maxStationSpread - stationFactory.GetSpreadMargin());
+		local maxStationSpread = HogeAI.Get().maxStationSpread;
+		local maxRadius = min(maxStationSpread, max(stationFactory.GetPlatformNum(),stationFactory.GetPlatformLength()) + 12);
+		local rectangle = GetBuildablePlatformRectangle(maxStationSpread - stationFactory.GetSpreadMargin(), maxRadius);
 		//HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle);
 		local result = null;
 		if(HogeAI.Get().IsDistantJoinStations() == false) {
@@ -321,7 +323,7 @@ class StationGroup {
 		return coasts;
 	}
 	
-	function GetBuildablePlatformRectangle(stationSpread = null) {
+	function GetBuildablePlatformRectangle(stationSpread = null, maxRadius = null) {
 		if(stationSpread == null) {
 			stationSpread = HogeAI.Get().maxStationSpread;
 		}
@@ -336,6 +338,10 @@ class StationGroup {
 		}			
 		local dx = stationSpread - r1.Width();
 		local dy = stationSpread - r1.Height();
+		if(maxRadius != null) {
+			dx = min(maxRadius, dx);
+			dy = min(maxRadius, dy);
+		}
 		local lefttop = HgTile.InMapXY(r1.lefttop.X()-dx, r1.lefttop.Y()-dy);
 		local rightbottom = HgTile.InMapXY(r1.rightbottom.X()+dx, r1.rightbottom.Y()+dy);
 		if(lefttop.X() > rightbottom.X()) {
@@ -493,7 +499,7 @@ class StationGroup {
 		if(coverageTileList == null) {
 			if(HogeAI.Get().openttdVersion >= 14) {
 				coverageTileList = AITileList_StationCoverage( GetAIStation() );
-				HgLog.Info("AITileList_StationCoverage:"+coverageTileList.Count());
+				//HgLog.Info("AITileList_StationCoverage:"+coverageTileList.Count());
 			} else {
 				coverageTileList = AITileList();
 				local stationTypes = {};
@@ -724,7 +730,7 @@ class StationFactory {
 				local p2 = platformRect.rightbottom.tile;
 				local distance = min(AIMap.DistanceManhattan(p1, nearestFor), AIMap.DistanceManhattan(p2, nearestFor));
 				if(nearestFor2 != null) {
-					distance += min(AIMap.DistanceManhattan(p1, nearestFor2), AIMap.DistanceManhattan(p2, nearestFor2)) / 2;
+					distance += min(4,min(AIMap.DistanceManhattan(p1, nearestFor2), AIMap.DistanceManhattan(p2, nearestFor2)));
 				}
 				station.score -= distance;
 			}
@@ -1023,9 +1029,9 @@ class RailStationFactory extends StationFactory {
 			if(HogeAI.Get().IsInfrastructureMaintenance()) {
 				//result = max(4, min(7, result / 2)); マップが広いとむしろ不利になる
 			}
-			if(CargoUtils.IsPaxOrMail(cargo)) {
+			/*if(CargoUtils.IsPaxOrMail(cargo)) {
 				result = min(10, result);
-			}
+			}*/
 			return result;
 		} else {
 			return 7;
@@ -4029,11 +4035,12 @@ class SrcRailStation extends RailStation {
 			result = false;
 		}
 		foreach(rail in GetRails()) {
-			if(!AIRail.RemoveRail(
-					At(rail[0][0],rail[0][1]),
-					At(rail[1][0],rail[1][1]),
-					At(rail[2][0],rail[2][1]))) {
-				HgLog.Warning("RemoveRail failed. "+At(rail[1][0],rail[1][1])+" "+AIError.GetLastErrorString());
+			local t1 = At(rail[0][0],rail[0][1]);
+			local t2 = At(rail[1][0],rail[1][1]);
+			local t3 = At(rail[2][0],rail[2][1]);
+			if(!AIRail.RemoveRail(t1,t2,t3)) {
+				HgLog.Warning("RemoveRail failed. "+HgTile(t1)+" "HgTile(t2)+" "+HgTile(t3)
+					+" "+AIError.GetLastErrorString());
 				result = false;
 			}
 		}

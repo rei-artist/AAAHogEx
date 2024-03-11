@@ -61,6 +61,8 @@ class HgTile {
 		AITile.CORNER_N
 	];
 	
+	static MapSizeX = AIMap.GetMapSizeX();
+	
 	tile = null;
 	
 	constructor(tile) {
@@ -240,6 +242,18 @@ class HgTile {
 		return HgTile(tile - hgTile.tile);
 //		return HgTile.XY(this.X() - hgTile.X(), this.Y() - hgTile.Y());
 	}
+
+
+	static function GetTilesString(array_) {
+		local result = "";
+		foreach(i,t in array_) {
+			if(i>=1) {
+				result += ",";
+			}
+			result += HgTile(t);
+		}
+		return "["+result+"]";
+	}
 	
 	// CORNER_Nを含むタイルを返す
 	static function GetBoundCornerTiles( t1, t2 ) {
@@ -325,6 +339,45 @@ class HgTile {
 		}
 	}
 
+	static function LevelTileCorners(tile, cornerHeights) {
+		local raise = [0,0,0,0];
+		local lower = [0,0,0,0];
+		foreach(i,corner in [AITile.CORNER_W, AITile.CORNER_S, AITile.CORNER_E, AITile.CORNER_N]) {
+			local h = AITile.GetCornerHeight(tile, corner);
+			if(cornerHeights[i] > h) {
+				raise[i] = cornerHeights[i] - h;
+			} else {
+				lower[i] = h - cornerHeights[i];
+			}
+		}
+		local slopes = [AITile.SLOPE_W, AITile.SLOPE_S, AITile.SLOPE_E, AITile.SLOPE_N];
+		local slope;
+		do {
+			slope = 0;
+			foreach(i,r in raise) {
+				if(r>0) {
+					slope = slope | slopes[i];
+					raise[i]--;
+				}
+			}
+			if(slope != 0) {
+				BuildUtils.RaiseTileSafe(tile,slope);
+			}
+		} while(slope != 0);
+		do {
+			slope = 0;
+			foreach(i,l in lower) {
+				if(l>0) {
+					slope = slope | slopes[i];
+					lower[i]--;
+				}
+			}
+			if(slope != 0) {
+				BuildUtils.LowerTileSafe(tile,slope);
+			}
+		} while(slope != 0);
+	}
+
 	static function GetCenter(hgTiles) {
 		local x=0;
 		local y=0;
@@ -390,18 +443,6 @@ class HgTile {
 			case AITile.CORNER_W:
 				return "W";
 		}
-	}
-
-	
-	static function GetConnectionTiles(tile, tracks) {
-		local list = AIList();
-		foreach(t in HgTile.TrackDirs) {
-			if((t[0] & tracks) != 0) {
-				list.AddItem(tile + HgTile.DIR4Index[t[1][0]],0);
-				list.AddItem(tile + HgTile.DIR4Index[t[1][1]],0);
-			}
-		}
-		return HgArray.AIListKey(list).array;
 	}
 	
 	static function IsDiagonalTrack(tracks) {
@@ -537,7 +578,26 @@ class HgTile {
 		return [true,maxSeaLength];
 	}
 	
+	static function GetRevDir(prev,next,isRev=false) {
+		// prevからnextへ向かう方向の左側方向
+		// (nextからprevへ向かう方向の右側方向)
+		local prevDir = (prev-next) / AIMap.DistanceManhattan(next,prev);
+		if(isRev) {
+			prevDir *= -1;
+		}
+		local dx = prevDir % HgTile.MapSizeX;
+		local dy = prevDir / HgTile.MapSizeX;
+		return dy - dx * HgTile.MapSizeX;
+	}
 
+	static function GetRevDirFromDir(prevDir,isRev=false) {
+		if(isRev) {
+			prevDir *= -1;
+		}
+		local dx = prevDir % HgTile.MapSizeX;
+		local dy = prevDir / HgTile.MapSizeX;
+		return dy - dx * HgTile.MapSizeX;
+	}
 	
 	function CanForkRail(toHgTile) {
 		local maxHeightCount = GetMaxHeightCount();
@@ -639,13 +699,44 @@ class HgTile {
 	function RemoveDepot() {
 		local depotTile = this.tile;
 		local frontTile = AIRail.GetRailDepotFrontTile(depotTile);
+		if(!BuildUtils.DemolishTileUntilFree(depotTile)) {
+			HgLog.Warning("Demolish depot failed:"+this+" "+AIError.GetLastErrorString());
+			return false;
+		}
 		foreach(d in HgTile.DIR4Index) {
 			local from = frontTile + d;
 			if(AIRail.AreTilesConnected(from, frontTile, depotTile)) {
 				RailBuilder.RemoveRailUntilFree(from, frontTile, depotTile);
 			}
 		}
-		AITile.DemolishTile(depotTile);
+		return true;
+	}
+
+	function CloseDoubleDepot(depotInfo) {
+		local p = depotInfo.mainTiles;
+		foreach(d in [1,AIMap.GetMapSizeX()]) {
+			if(!AIRail.AreTilesConnected(p[0],p[1],p[2])) {
+				RailBuilder.BuildRailUntilFree(p[0],p[1],p[2]);
+			}
+		}
+	}
+	
+	function OpenDoubleDepot(depotInfo) {
+		local p = depotInfo.mainTiles;
+		foreach(d in [1,AIMap.GetMapSizeX()]) {
+			if(!AIRail.AreTilesConnected(p[0],p[1],p[2])) {
+				RailBuilder.RemoveRailUntilFree(p[0],p[1],p[2]);
+			}
+		}
+	}
+
+	function IsDoubleDepotTracks(tile) {
+		local tracks = AIRail.GetRailTracks(tile);
+		if(tracks == AIRail.RAILTRACK_INVALID) {
+			return false;
+		}
+		local flags = AIRail.RAILTRACK_NW_NE | AIRail.RAILTRACK_SW_SE | AIRail.RAILTRACK_NW_SW | AIRail.RAILTRACK_NE_SE;
+		return (tracks & flags) == flags;
 	}
 	
 	function BuildCommonDepot(depotTile,front,vehicleType) {

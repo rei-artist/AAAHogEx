@@ -219,6 +219,24 @@ class ArrayUtils {
 		return a1;
 	}
 	
+	function Reverse(a) {
+		local result = [];
+		local size = a.len();
+		for(local i=size-1; i>=0; i--) {
+			result.push(a[i]);
+		}
+		return result;
+	}
+	
+	function SubArray(array_,idx,length) {
+		local result = [];
+		local endIdx = min(array_.len(),idx + length);
+		for(local i=max(0,idx); i<endIdx; i++) {
+			result.push(array_[i]);
+		}
+		return result;
+	}
+	
 	function Shuffle(a) {
 		local list = AIList();
 		foreach(index,_ in a) {
@@ -607,6 +625,7 @@ class BuildUtils {
 		});
 		
 	}
+
 	static function BuildBridgeSafe(a,b,c,d) {
 		return BuildUtils.WaitForMoney( function():(a,b,c,d) {
 			return AIBridge.BuildBridge(a,b,c,d);
@@ -697,6 +716,20 @@ class BuildUtils {
 			return AIMarine.BuildDock(a,b);
 		});
 	}
+
+
+	static function RemoveBridgeUntilFree(p1) {
+		return BuildUtils.RetryUntilFree( function():(p1) {
+			return AIBridge.RemoveBridge(p1);
+		});
+	}
+	static function RemoveTunnelUntilFree(p1) {
+		return BuildUtils.RetryUntilFree( function():(p1) {
+			return AITunnel.RemoveTunnel(p1);
+		});
+	}
+
+
 	
 	static function GetClearWaterCost() {
 		local testMode = AITestMode();

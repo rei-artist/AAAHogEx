@@ -37,7 +37,9 @@ class TrainRoute extends Route {
 		local destHgStations = [];
 		foreach(stationId in t.destHgStations) {
 			if(stationId != null) {
-				destHgStations.push(HgStation.worldInstances[stationId]);
+				if(HgStation.worldInstances.rawin(stationId)) { // station削除 => destHgStationsから削除のパターンがある
+					destHgStations.push(HgStation.worldInstances[stationId]);
+				}
 			}
 		}
 		local stations = HgStation.worldInstances;
@@ -84,9 +86,13 @@ class TrainRoute extends Route {
 		trainRoute.startDate = t.startDate;
 		trainRoute.destHgStations = destHgStations;
 		trainRoute.pathDistance = t.pathDistance;
-		trainRoute.forkPaths = [];
-		foreach(path in t.forkPaths) {
-			trainRoute.forkPaths.push(BuildedPath(Path.Load(path)));
+		trainRoute.branchLines = {};
+		foreach(stationId, tpaths in t.branchLines) {
+			local paths = [];
+			foreach(path in tpaths) {
+				paths.push(BuildedPath(Path.Load(path)));
+			}
+			trainRoute.branchLines.rawset(stationId, paths);
 		}
 		trainRoute.depotInfos = t.depotInfos;
 		if(t.returnRoute != null) {
@@ -201,7 +207,7 @@ class TrainRoute extends Route {
 	startDate = null;
 	subCargos = null;
 	destHgStations = null;
-	forkPaths = null;
+	branchLines = null;
 	isTransfer = null;
 	pathDistance = null;
 	depotInfos = null;
@@ -250,7 +256,7 @@ class TrainRoute extends Route {
 		}
 		this.subCargos = [];
 		this.destHgStations = [destHgStation];
-		this.forkPaths = [];
+		this.branchLines = {};
 		this.engineVehicles = {};
 		this.isClosed = false;
 		this.isRemoved = false;
@@ -290,9 +296,13 @@ class TrainRoute extends Route {
 			t.destHgStations.push(station.id);
 		}
 		t.pathDistance <- pathDistance;
-		t.forkPaths <- [];
-		foreach(path in forkPaths) {
-			t.forkPaths.push(path.array_);
+		t.branchLines <- {};
+		foreach(stationId, paths in branchLines) {
+			local tpaths = [];
+			foreach(path in paths) {
+				tpaths.push(path.array_);
+			}
+			t.branchLines.rawset(stationId,tpaths);
 		}
 		t.depotInfos <- depotInfos;
 		t.reduceTrains <- reduceTrains;
@@ -1177,12 +1187,29 @@ class TrainRoute extends Route {
 		return destHgStation != destHgStations[destHgStations.len()-1];
 	}
 	
-	function AddForkPath(path) {
-		forkPaths.push(path);
-		path.route = this;
+	function AddBranchLine(station, srcToDest, destToSrc) {
+		branchLines.rawset(station.id, [srcToDest,destToSrc]);
 		Save();
 	}
 
+	function RemoveBranchLine(station) {
+		if(!branchLines.rawin(station.id)) {
+			return;
+		}
+		local paths = branchLines.rawget(station.id);
+		branchLines.rawdelete(station.id);
+		Save();
+
+		local points = [ paths[0].array_.top(), paths[1].array_[0] ];
+		foreach(path in paths) {
+			path.Remove();
+		}
+		station.RemoveUsingRoute(this);
+		station.Remove();
+		//station.RemoveOnlyPlatform();
+		MainLineRefactor( this,points[0] ,points[1] ).Build();
+	}
+	
 	function GetLastDestHgStation() {
 		return destHgStations[destHgStations.len()-1];
 	}
@@ -1304,6 +1331,7 @@ class TrainRoute extends Route {
 			
 			AIRail.SetCurrentRailType(railType);
 			if(updateRailDepot == null) {
+				saveData.lastConvertRail = lastConvertRail = AIDate.GetCurrentDate();
 				HgLog.Warning("Cannot build depot for railupdate "+this);
 				return false;
 			}
@@ -1311,7 +1339,7 @@ class TrainRoute extends Route {
 		}
 	}
 	
-	function ConvertRailType(railType) {
+	function ConvertRailType(railType,force=false) {
 		HgLog.Info("ConvertRailType." + AIRail.GetName(railType) + "<=" + AIRail.GetName(GetRailType()) + " " + this);
 		saveData.lastConvertRail = lastConvertRail = AIDate.GetCurrentDate();
 		
@@ -1320,14 +1348,18 @@ class TrainRoute extends Route {
 		local facitilies = [];
 		facitilies.push(srcHgStation);
 		foreach(s in destHgStations) {
+			HgLog.Info("station:"+s.GetName());
 			facitilies.push(s);
 		}
 		facitilies.push(pathSrcToDest.path);
 		if(pathDestToSrc != null) {
 			facitilies.push(pathDestToSrc.path);
 		}
-		foreach(fork in forkPaths) {
-			facitilies.push(fork.path);
+		foreach(stationId, paths in branchLines) {
+			HgLog.Info("branchLines:"+stationId);
+			foreach(path in paths) {
+				facitilies.push(path.path);
+			}
 		}
 		facitilies.extend(returnRoute != null ? returnRoute.GetFacilities():[]);
 		local tiles = [];
@@ -1352,7 +1384,7 @@ class TrainRoute extends Route {
 					return AIRail.ConvertRailType(t,t,railType);
 				}, 500)) {
 					HgLog.Warning("ConvertRailType failed:"+HgTile(t)+" "+AIError.GetLastErrorString()+" "+this);
-					return false;
+					if(!force) return false;
 				}
 			}
 		}
@@ -1405,7 +1437,7 @@ class TrainRoute extends Route {
 					return AIRail.ConvertRailType(tile,end,railType);
 				}, 500)) {
 					HgLog.Warning("ConvertRailType failed:"+HgTile(tile)+"-"+HgTile(end)+" "+AIError.GetLastErrorString()+" "+this);
-					return false;
+					if(!force) return false;
 				}
 				convertedList.AddRectangle(tile, end);
 				break;
@@ -1416,7 +1448,7 @@ class TrainRoute extends Route {
 		if(convertedList.Count() >= 1) {
 			local tile = convertedList.Begin();
 			HgLog.Warning("ConvertRailType failed:"+HgTile(tile)+" "+AIError.GetLastErrorString()+" "+this);
-			return false;
+			if(!force) return false;
 		}
 		
 		if(updateRailDepot != null) {
@@ -1640,7 +1672,7 @@ class TrainRoute extends Route {
 		HgLog.Warning("RollbackUpdateRailType "+this);
 		saveData.failedUpdateRailType = failedUpdateRailType = true;
 		saveData.updateRailDepot = updateRailDepot = null;
-		ConvertRailType(railType);
+		ConvertRailType(railType,true);
 		foreach(engineVehicle,_ in GetVehicleList()) {
 			if(AIVehicle.IsStoppedInDepot(engineVehicle)) {
 				AIVehicle.StartStopVehicle(engineVehicle);
@@ -1806,6 +1838,79 @@ class TrainRoute extends Route {
 		return updateRailDepot != null;
 	}
 
+	function CalculateUseDepots() {
+		if(!HogeAI.Get().IsEnableVehicleBreakdowns()) {
+			return;
+		}
+		local latestEngineSet = GetLatestEngineSet();
+		if(latestEngineSet==null) {
+			return;
+		}
+		local execMode = AIExecMode();
+		local cur = pathDestToSrc.path;
+		local lastDepotPath = null;
+		local depotDistance = 0;
+		local interval = VehicleUtils.GetDistance( latestEngineSet.cruiseSpeed, 100 );
+		local isFirst = true;
+		while(true) {
+			if(cur == null) {
+				if(isFirst) {
+					cur = pathSrcToDest.path;
+					isFirst = false;
+				} else {
+					break;
+				}
+			}
+			local t = cur.GetTile();
+			if(depotInfos.rawin(t)) {
+				local depotInfo = depotInfos.rawget(t);
+				if(depotInfo.depots.len()<2) continue;
+				local d = cur.GetRailDistance(lastDepotPath);
+				depotDistance += d;
+				local isOpen = true;
+				if("isOpen" in depotInfo) {
+					isOpen = depotInfo.isOpen;
+				} else {
+					depotInfo.isOpen <- true;
+				}
+				if(lastDepotPath==null || depotDistance >= interval) {
+					if(!isOpen) HgTile.OpenDoubleDepot(depotInfo);
+					depotInfo.isOpen = true;
+					depotDistance = 0;
+				} else {
+					if(isOpen) HgTile.CloseDoubleDepot(depotInfo);
+					depotInfo.isOpen = false;
+				}
+				lastDepotPath = cur;
+			}
+			cur = cur.GetParent();
+		}
+	}
+
+	function GetRailPoints() {
+		local result = {};
+		foreach(point,paths in branchLines) {
+			local srcToDestPath = paths[0];
+			local destToSrcPath = paths[1];
+			result.rawset(srcToDestPath.array_.top(),true);
+			result.rawset(destToSrcPath.array_[0],true);
+		}
+		if(returnRoute != null) {
+			foreach(point in returnRoute.GetOriginalRailPoints()) {
+				result.rawset(point,true);
+			}
+		}
+		
+		return result;
+	}
+
+	function TreatVehiclesWaitingInDepot() {
+		foreach(engineVehicle, _ in GetVehicleList()) {
+			if(AIVehicle.IsStoppedInDepot(engineVehicle)) {
+				OnVehicleWaitingInDepot(engineVehicle);
+			}
+		}
+	}
 
 	function CheckTrains() {
 		local execMode = AIExecMode();
@@ -1817,11 +1922,7 @@ class TrainRoute extends Route {
 				SendVehicleToDepot(engineVehicle);
 			}
 		}
-		foreach(engineVehicle, _ in GetVehicleList()) {
-			if(AIVehicle.IsStoppedInDepot(engineVehicle)) {
-				OnVehicleWaitingInDepot(engineVehicle);
-			}
-		}
+		TreatVehiclesWaitingInDepot();
 		
 		if(isClosed || updateRailDepot!=null) {
 			return;
@@ -1844,32 +1945,25 @@ class TrainRoute extends Route {
 
 		
 		
-		if(lastChangeDestDate != null && lastChangeDestDate + 120 < AIDate.GetCurrentDate() && !IsChangeDestination()) {
-			local removed = [];
-			foreach(station in destHgStations) {
+		if(!IsBuilding() && lastChangeDestDate != null && lastChangeDestDate + 120 < AIDate.GetCurrentDate() && !IsChangeDestination()) {
+			local removedStations = [];
+			local removeTargets = [];
+			foreach(i,station in destHgStations) {
 				if(station != destHgStation && station != destHgStations[destHgStations.len()-1]) {
 					if(HogeAI.Get().ecs && station.place != null && !(station.place instanceof TownCargo)) {
 						continue;
 					}
-					if(station.place != null && station.place instanceof TownCargo && !CargoUtils.IsPaxOrMail(cargo)) {
+					if(station.place != null && station.place instanceof TownCargo && !CargoUtils.IsPaxOrMail(cargo) && i==destHgStations.len()-2) {
 						continue;
 					}
-					/* SendDepotのタイミングによってはどうしても分岐側へ移動して本線を詰まらせる事があるので削除しない。
-					platformだけの削除もRailUpdateの兼ね合いがあるので難しい*/
 					if(!station.IsRemoved()) {
-						foreach(path in forkPaths) {
-							path.Remove();
-						}
-						forkPaths.clear();
-						station.RemoveUsingRoute(this);
-						station.Remove();
-						//station.RemoveOnlyPlatform();
-						removed.push(station);
+						removeTargets.push(station);
 					}
 				}
 			}
-			foreach(removedStation in removed) {
-				ArrayUtils.Remove(destHgStations, removedStation);
+			foreach(station in removeTargets) {
+				RemoveBranchLine(station);
+				ArrayUtils.Remove(destHgStations, station);
 				Save();
 			}
 			saveData.lastChangeDestDate = lastChangeDestDate = null;
@@ -1948,6 +2042,7 @@ class TrainRoute extends Route {
 					HgLog.Warning("newEngineSet==null (ChooseEngineSetAllRailTypes)");
 					return;
 				}
+				CalculateUseDepots();
 				local newRailType = newEngineSet.railType;
 				if(!DoUpdateRailType(newRailType)) {
 					RollbackUpdateRailType(currentRailType);
@@ -1989,7 +2084,7 @@ class TrainRoute extends Route {
 			HgLog.Info("Engine:"+AIEngine.GetName(newEngine)+" request new railType."+this);
 			if(IsAllVehiclePowerOnRail(newRailType)) {
 				if(!ConvertRailType(newRailType)) {
-					ConvertRailType(currentRailType);
+					ConvertRailType(currentRailType,true);
 					saveData.failedUpdateRailType = failedUpdateRailType = true;
 				}
 				if(!failedUpdateRailType) {
@@ -2129,8 +2224,6 @@ class TrainReturnRoute extends Route {
 		this.depotInfos = {};
 		this.subCargos = [];
 	}
-	
-
 	
 	function Save() {
 		local t = {};
@@ -2317,6 +2410,10 @@ class TrainReturnRoute extends Route {
 		destDeparturePath.Remove();
 	}
 
+	function GetOriginalRailPoints() {
+		return [srcArrivalPath.array_.top(), srcDeparturePath.array_[0], destArrivalPath.array_.top(), destDeparturePath.array_[0]];
+	}
+
 	function _tostring() {
 		return "ReturnRoute:"+destHgStation.GetName() + "<-"+srcHgStation.GetName()+"["+AICargo.GetName(cargo)+"]";
 	}
@@ -2473,7 +2570,7 @@ class TrainRouteBuilder extends RouteBuilder {
 		railBuilder.distance = distance;
 		if(!useSingle) {
 			if(hogeAI.IsEnableVehicleBreakdowns()) {
-				railBuilder.isBuildDepotsDestToSrc = true;
+				railBuilder.isBuildDoubleDepots = true;
 			} else if(!isTransfer) {
 				railBuilder.isBuildSingleDepotDestToSrc = true;
 			}
@@ -2510,6 +2607,7 @@ class TrainRouteBuilder extends RouteBuilder {
 		route.isTransfer = isTransfer;
 		route.AddDepotInfos(railBuilder.depotInfos);
 		route.Initialize();
+		route.CalculateUseDepots();
 		
 		destHgStation.BuildAfter();
 		if(!route.BuildFirstTrain()) {
@@ -2523,7 +2621,6 @@ class TrainRouteBuilder extends RouteBuilder {
 		
 		HgLog.Info("TrainRoute pathDistance:"+route.pathDistance+" distance:"+route.GetDistance()+" "+route);
 
-		ClearRollback();
 		TrainRoute.instances.push(route);
 		PlaceDictionary.Get().AddRoute(route);
 		
@@ -2540,16 +2637,14 @@ class TrainRouteBuilder extends RouteBuilder {
 	
 }
 
-class TrainRouteExtendBuilder extends Construction {
-	route = null;
+class TrainRouteExtendBuilder extends RouteModificatin {
 	additionalPlace = null;
 	
 	constructor(route,additionalPlace) {
-		Construction.constructor();
-		this.route = route;
+		RouteModificatin.constructor(route);
 		this.additionalPlace = additionalPlace;
 	}
-
+	
 	function DoBuild() {
 		HgLog.Info("# TrainRoute: Try Extend:"+additionalPlace.GetName()+" route: "+route);
 		AIRail.SetCurrentRailType(route.GetRailType());
@@ -2591,7 +2686,7 @@ class TrainRouteExtendBuilder extends Construction {
 		railBuilder.platformLength = route.GetPlatformLength();
 		railBuilder.distance = AIMap.DistanceManhattan(additionalPlace.GetLocation(), route.destHgStation.GetLocation());
 		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
-			railBuilder.isBuildDepotsDestToSrc = true;
+			railBuilder.isBuildDoubleDepots = true;
 		} else {
 			railBuilder.isBuildSingleDepotDestToSrc = true;
 		}
@@ -2629,13 +2724,13 @@ class TrainRouteExtendBuilder extends Construction {
 		route.pathSrcToDest.route = route;
 		route.pathDestToSrc.route = route;
 		route.Save();
+		route.CalculateUseDepots();
 
 		oldDestStation.RemoveDepots();
 		
 		
-		route.AddDestination(additionalHgStation);
-		route.AddForkPath(BuildedPath(removePath1)); // ConvertRail用
-		route.AddForkPath(BuildedPath(removePath2)); 
+		route.AddDestination( additionalHgStation );
+		route.AddBranchLine( oldDestStation, BuildedPath(removePath1, route), BuildedPath(removePath2, route ));
 
 		/* destがcloseしたときに再利用されるので削除しない
 		DelayCommandExecuter.Get().Post(300,function():(removePath1,removePath2,oldDestStation) { //TODO: save/loadに非対応
@@ -2656,15 +2751,13 @@ class TrainRouteExtendBuilder extends Construction {
 	
 }
 
-class TrainReturnRouteBuilder extends Construction {
+class TrainReturnRouteBuilder extends RouteModificatin {
 
-	route = null;
 	srcPlace = null;
 	destPlace = null;
 	
 	constructor(route,srcPlace,destPlace) {
-		Construction.constructor();
-		this.route = route;
+		RouteModificatin.constructor(route);
 		this.srcPlace = srcPlace;
 		this.destPlace = destPlace;
 	}
@@ -2771,11 +2864,12 @@ class TrainReturnRouteBuilder extends Construction {
 			railBuilderReturnDest.destHgStation = returnDestStation;
 			railBuilderReturnDest.limitCount = 150;
 			railBuilderReturnDest.eventPoller = HogeAI.Get();
+			railBuilderReturnDest.engine = route.GetLatestEngineSet().engine;
 			railBuilderReturnDest.cargo = route.cargo;
 			railBuilderReturnDest.platformLength = route.GetPlatformLength();
 			railBuilderReturnDest.distance = AIMap.DistanceManhattan(returnDestStation.GetLocation(), route.srcHgStation.GetLocation());
 			if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
-				railBuilderReturnDest.isBuildDepotsDestToSrc = true;
+				railBuilderReturnDest.isBuildDoubleDepots = true;
 			}
 			if(!railBuilderReturnDest.Build()) {
 				HgLog.Warning("TrainRoute: cannot build railBuilderReturnDestDeparture");
@@ -2809,3 +2903,238 @@ class TrainReturnRouteBuilder extends Construction {
 	}
 
 }
+
+class MainLineRefactor extends RouteModificatin {
+	static function CreateByParams(params) {
+		return MainLineRefactor(
+			Route.allRoutes[params.routeId], 
+			params.pointSrcToDest, 
+			params.pointDestToSrc );
+	}
+
+	pointSrcToDest = null;
+	pointDestToSrc = null;
+	
+	constructor(route, pointSrcToDest, pointDestToSrc) {
+		RouteModificatin.constructor(route, {
+			typeName = "MainLineRefactor"
+			routeId = route.id
+			pointSrcToDest = pointSrcToDest
+			pointDestToSrc = pointDestToSrc
+		});
+		this.pointSrcToDest = pointSrcToDest;
+		this.pointDestToSrc = pointDestToSrc;
+	}
+	
+	function Load() {
+		Rollback();
+		Build();
+	}
+
+	function DoBuild() {
+		local execMode = AIExecMode();
+		local oldRailType = AIRail.GetCurrentRailType();
+		AIRail.SetCurrentRailType(route.GetRailType());
+		local result = RefactorMainLine();
+		if(!result) {
+			Rollback();
+		}
+		AIRail.SetCurrentRailType(oldRailType);
+		route.Save();
+		return result;
+	}
+	
+	function GetSegment(mainLine, point, railPoints) {
+		local size = mainLine.len();
+		local include = false;
+		local result = [];
+		local start = 0;
+		for(local i=0; i<size; i++) {
+			if(mainLine[i] == point) {
+				include = true;
+				result.push(mainLine[i]);
+			} else if(railPoints.rawin(mainLine[i])) {
+				if(include) {
+					return [result,start,i];
+				}
+				result.clear();
+				start = i+1;
+			} else {
+				result.push(mainLine[i]);
+			}
+		}
+		if(include) {
+			return [result,start,size];
+		} else {
+			return null;
+		}
+	}
+
+	function RefactorMainLine() {
+		local railPoints = route.GetRailPoints();
+		local allLines = [route.pathSrcToDest.array_, route.pathDestToSrc.array_];
+		local points = [pointSrcToDest, pointDestToSrc];
+		local mainPointIdxs = [null,null];
+		local segments = [null,null]
+		local mainLines = [null,null];
+		for(local i=0; i<2; i++) {
+			segments[i] = GetSegment(allLines[i], points[i], railPoints)
+			if(segments[i]==null) {
+				HgLog.Warning("Not found branch point: "+i+" "+HgTile(points[i])+" (RefactorMainLine)"+route);
+				return false;
+			}
+			mainLines[i] = segments[i][0];
+		}
+		foreach(i, point in points) {
+			HgLog.Info("RefactorMainLine: "+HgTile(point));
+			mainPointIdxs[i] = ArrayUtils.Find(mainLines[i], point);
+		}
+		local departures = [null,null];
+		local arrivals = [null,null];
+		local removeIdxs = [null,null];
+		local removedTilesArray = [];
+		local gapLength = 10;
+		local removeLength = 20;
+		local totalLength = (gapLength+removeLength) * 2;
+		foreach(i,idx in mainPointIdxs) {
+			if(idx == null) {
+				HgLog.Warning("Not found branch point: "+HgTile(points[i])+" (RefactorMainLine)"+route);
+				return false;
+			}
+			if(idx<gapLength+removeLength) {
+				HgLog.Warning("idx is too small:"+idx+" (RefactorMainLine)"+route);
+				return false;
+			}
+			// 進行方向逆方向
+			local removeIdx1 = null;
+			local removeIdx2 = null;
+			if(i==0) {
+				removeIdx1 = idx-removeLength;
+				removeIdx2 = idx+removeLength;
+				local revs = {};
+				foreach(t in mainLines[1]) {
+					revs.rawset(t,t);
+				}
+				for(local idx1 = idx - 10; idx1 > gapLength; idx1-=10) {
+					local t1 = mainLines[0][idx1], t2 = mainLines[0][idx1-1];
+					if(revs.rawin(t1+HgTile.GetRevDir(t1,t2))) {
+						removeIdx1 = idx1;
+						break;
+					}
+				}
+				for(local idx2 = idx + 10; idx2 < mainLines[0].len()-gapLength; idx2+=10) {
+					local t1 = mainLines[0][idx2], t2 = mainLines[0][idx2+1];
+					if(revs.rawin(t1+HgTile.GetRevDir(t2,t1))) {
+						removeIdx2 = idx2;
+						break;
+					}
+				}
+			} else if(i==1) {
+				local t1 = mainLines[0][removeIdxs[0][0]-1];
+				local t2 = mainLines[0][removeIdxs[0][1]-1];
+				local list1 = AIList();
+				local list2 = AIList();
+				foreach(idx,t in mainLines[1]) {
+					list1.AddItem(idx,AIMap.DistanceManhattan(t1,t));
+					list2.AddItem(idx,AIMap.DistanceManhattan(t2,t));
+				}
+				list1.Sort(AIList.SORT_BY_VALUE,true);
+				list2.Sort(AIList.SORT_BY_VALUE,true);
+				removeIdx2 = list1.Begin() + 1;
+				removeIdx1 = list2.Begin() - 1;
+			}
+			//HgLog.Info("removedTiles:"+HgTile.GetTilesString(removedTiles));
+			removeIdx1 = max(gapLength, removeIdx1);
+			removeIdx2 = min(mainLines[i].len() - gapLength, removeIdx2);
+			arrivals[i] = mainLines[i].slice(removeIdx1-gapLength, removeIdx1+2);
+			departures[i] = mainLines[i].slice(removeIdx2-2, removeIdx2+gapLength);
+			while(removeIdx1-gapLength-1 >= max(0,idx-100)) {
+				local a = arrivals[i];
+				local t1 = a[a.len()-1], t2 = a[a.len()-2];
+				if(i==1 && t1 == departures[0][0]) {
+				} else if(AIMap.DistanceManhattan(t1,t2)!=1) {
+				} else if(RailPathFinder._IsSlopedRail(t2,t1,t1+(t1-t2))) {
+				} else {
+					break;
+				}
+				removeIdx1--;
+				arrivals[i] = mainLines[i].slice(removeIdx1-gapLength, removeIdx1+2);
+			}
+			while(removeIdx2+gapLength+1 < min(mainLines[i].len(),idx+100) ) {
+				local t1 = departures[i][0], t2 = departures[i][1];
+				if(i==1 && t1 == arrivals[0].top()) {
+				} else if(AIMap.DistanceManhattan(t1,t2)!=1) {
+				} else if(RailPathFinder._IsSlopedRail(t2,t1,t1+(t1-t2))) {
+				} else {
+					break;
+				}
+				removeIdx2++;
+				departures[i] = mainLines[i].slice(removeIdx2-2, removeIdx2+gapLength);
+			}
+			removeIdxs[i] = [removeIdx1,removeIdx2];
+			HgLog.Info("arrivals:"+HgTile.GetTilesString(arrivals[i]));
+			HgLog.Info("departures:"+HgTile.GetTilesString(departures[i]));
+			local removedTiles = mainLines[i].slice(removeIdx1,removeIdx2);
+			removedTilesArray.push(removedTiles);
+		}
+		foreach(tiles in removedTilesArray) {
+			local railRemover = RailRemover(ArrayUtils.Reverse(tiles),route.id,true,true);
+			route.TreatVehiclesWaitingInDepot();
+			if(!railRemover.Build()) {
+				HgLog.Warning("RailRemover failed.(RefactorMainLine)"+route);
+				return false;
+			}
+			AddRollback(railRemover);
+			//Path.Load(tiles).Reverse().RemoveRails(route);
+		}
+		local railBuilder = TwoWayPtoPRailBuilder(departures[0], arrivals[0], departures[1], arrivals[1], HogeAI.Get().pathFindLimit, HogeAI.Get());
+		railBuilder.engine = route.GetLatestEngineSet().engine;
+		railBuilder.cargo = route.cargo;
+		railBuilder.platformLength = route.GetPlatformLength();
+		railBuilder.distance = abs(removeIdxs[0][0] - removeIdxs[0][1]);
+		//railBuilder.notFlatten = true; // 列車進入中だとflattenは失敗する
+		if(!railBuilder.Build()) {
+			HgLog.Warning("railBuilder.Build failed.(RefactorMainLine)"+route);
+			return false; //TODO:ロールバック失敗でルート削除
+		}
+		local buildedPaths = [railBuilder.buildedPath1, railBuilder.buildedPath2];
+		foreach(i,idx in mainPointIdxs) {
+			local s = mainLines[i].slice(0, removeIdxs[i][0]);
+			local m = buildedPaths[i].path.GetTiles();
+			local e = mainLines[i].slice(removeIdxs[i][1], mainLines[i].len());
+
+/*			HgLog.Warning("s:"+HgTile(s[0])+" "+HgTile(s[s.len()-1]));
+			HgLog.Warning("m:"+HgTile(m[0])+" "+HgTile(m[m.len()-1]));
+			HgLog.Warning("e:"+HgTile(e[0])+" "+HgTile(e[e.len()-1]));*/
+			
+			local newPath = [];
+			newPath.extend(allLines[i].slice(0, segments[i][1]));
+			newPath.extend(s);
+			//if(newPath.top()==m[0]) newPath.pop();
+			newPath.extend(m);
+			//if(newPath.top()==e[0]) newPath.pop();
+			newPath.extend(e);
+			newPath.extend(allLines[i].slice(segments[i][2], allLines[i].len()));
+			
+			local ex = {};
+			foreach(t in newPath) {
+				if(ex.rawin(t)) {
+					HgLog.Warning("double tile:"+HgTile(t)+" "+route);
+					HgLog.Warning("s:"+HgTile(s[0])+" "+HgTile(s[s.len()-1]));
+					HgLog.Warning("m:"+HgTile(m[0])+" "+HgTile(m[m.len()-1]));
+					HgLog.Warning("e:"+HgTile(e[0])+" "+HgTile(e[e.len()-1]));
+				}
+				ex.rawset(t,t);
+			}
+			
+			if(i==0) {
+				route.pathSrcToDest = BuildedPath(Path.Load(newPath));
+			} else {
+				route.pathDestToSrc = BuildedPath(Path.Load(newPath));
+			}
+		}
+		return true;
+	}
+}
+
+Construction.nameClass.MainLineRefactor <- MainLineRefactor;

@@ -180,6 +180,12 @@ class Route {
 		return isBuilding; // ネットワーク作成中なのでCheckClose()はまだしない
 	}
 	
+	function SetBuilding(newBuilding) {
+		local result = isBuilding;
+		isBuilding = newBuilding;
+		return result;
+	}
+	
 	function CanCreateNewRoute() {
 		return true;
 	}
@@ -2784,51 +2790,64 @@ class CommonRoute extends Route {
 
 
 class Construction {
+	static nameClass = {};
+
 	parent_ = null;
-	rollbackFacilities = null;
 	saveData = null;
 
-	static function RollbackFromSaveData(saveData) {
-		local a = [];
-		foreach(f in saveData.rollbackFacilities) {
-			local typeName = typeof f;
-			if(typeName == "integer") {
-				a.push( f );
-			} else if(typeName == "array") {
-				a.push( BuildedPath( Path.Load(f) ) );
-			} else {
-				// station:xxx
-				local stationId = f.slice(8).tointeger();
-				if(HgStation.worldInstances.rawin(stationId)) {
-					a.push( HgStation.worldInstances[stationId] );
-				}
-			}
-		}
-		Construction.DoRollback(a);
-		if(saveData.parent_ != null) {
-			Construction.RollbackFromSaveData(saveData.parent_);
+	static function CreateBySaveData(saveData) {
+		local result = Construction.nameClass[saveData.params.typeName].CreateByParams(saveData.params);
+		result.saveData = saveData;
+		return result;
+	}
+	
+	static function LoadStatics(saveData) {
+		local construction = null;
+		if(saveData.params != null) {
+			HgLog.Info("Construction.LoadStatics:"+saveData.params.typeName);
+			Construction.CreateBySaveData(saveData).Load();
+		} else {
+			HgLog.Info("Construction.LoadStatics rollbackFacilities:"+saveData.rollbackFacilities.len());
+			Construction.DoRollback(saveData.rollbackFacilities);
 		}
 	}
 
 	static function DoRollback(facilities) {
 		local execMode = AIExecMode();
-		foreach(f in facilities) {
-			if(f != null) {
-				local typeName = typeof f;
-				if(typeName == "integer") {
-					AITile.DemolishTile(f);
-				} else {
-					f.Remove();
-				}
+		while(facilities.len() >= 1) {
+			local f = facilities.top();
+			switch(f.name) {
+				case "tiles":
+					foreach(t in f.tiles) {
+						AITile.DemolishTile(t);
+					}
+					break;
+				case "Construction":
+					Construction.CreateBySaveData(f.saveData).Rollback()
+					break;
+				case "HgStation":
+					if(HgStation.worldInstances.rawin(f.stationId)) {
+						HgStation.worldInstances[f.stationId].Remove();
+					}
+					break;
+				case "BuildedPath":
+					BuildedPath( Path.Load(f.array_) ).Remove();
+					break;
 			}
+			facilities.pop();
 		}
 	}
 	
-	constructor() {
-		rollbackFacilities = [];
+
+	constructor(params=null) {
+		if(params != null) { // params!=nullで、load時にLoad()が呼ばれる
+			assert("typeName" in params);
+			assert(params.typeName in Construction.nameClass);
+			assert("Load" in Construction.nameClass[params.typeName]);
+		}
 		saveData = { 
 			rollbackFacilities = []
-			parent_ = null
+			params = params 
 		};
 	}
 	
@@ -2840,47 +2859,94 @@ class Construction {
 	}
 	
 	function StartConstraction() {
-		local current = HogeAI.Get().currentConstraction;
-		if(current != null) {
-			parent_ = current;
-			saveData.parent_ = current.saveData;
+		if(HogeAI.Get().loadData != null) { // ロード中に新しいConstractionが始まったのでloadDataに保存しないといけない
+			HogeAI.Get().loadData.constractions.push(saveData);
+		} else {
+			HogeAI.Get().constractions.push(saveData);
 		}
-		HogeAI.Get().currentConstraction = this;
 	}
 	
 	function EndConstraction() {
-		HogeAI.Get().currentConstraction = parent_;
-		parent_ = null;
+		if(HogeAI.Get().loadData != null) {
+			HogeAI.Get().loadData.constractions.pop();
+		} else {
+			HogeAI.Get().constractions.pop();
+		}
 	}
 	
 	function AddRollback(facility, typeName=null) {
 		if(typeName == "tiles") {
-			saveData.rollbackFacilities.extend(facility);
-			rollbackFacilities.extend(facility);
+			saveData.rollbackFacilities.push({name="tiles",tiles=facility});
 		} else {
-			if(typeof facility == "array" || typeof facility == "integer") {
-				saveData.rollbackFacilities.push(facility);
+			if(typeof facility == "integer") {
+				saveData.rollbackFacilities.push({name="tiles",tiles=[facility]});
+			} else if(facility instanceof Construction) {
+				saveData.rollbackFacilities.push({name="Construction",saveData=facility.saveData});
 			} else if(facility instanceof HgStation) {
-				saveData.rollbackFacilities.push("station:"+facility.GetId());
+				saveData.rollbackFacilities.push({name="HgStation",stationId=facility.GetId()});
 			} else if(facility instanceof BuildedPath) {
-				saveData.rollbackFacilities.push(facility.array_);
+				saveData.rollbackFacilities.push({name="BuildedPath",array_=facility.array_});
 			} else {
-				HgLog.Error("AddRollback error:"+facility);
+				HgLog.Error("AddRollback failed."+facility);
 			}
-			rollbackFacilities.push(facility);
 		}
 	}
 	
 	function Rollback() {
-		Construction.DoRollback(rollbackFacilities);
-		ClearRollback();
+		Construction.DoRollback(saveData.rollbackFacilities);
 	}
 	
 	function ClearRollback() {
 		saveData.rollbackFacilities.clear();
-		rollbackFacilities.clear();
 	}
 }
+
+class RouteModificatin extends Construction {
+
+	static function CreateByParams(params) {
+		return RouteModificatin(Route.allRoutes[params.routeId], params);
+	}
+	
+	route = null;
+
+	constructor(route, params=null) {
+		if(params == null) {
+			Construction.constructor({
+				typeName = "RouteModificatin"
+				routeId = route.id
+			});
+		} else {
+			Construction.constructor(params);
+		}
+		this.route = route;
+		
+		saveData.oldBuilding <- null;
+	}
+	
+	function Load() {
+		Rollback();
+	}
+	
+	function StartConstraction() {
+		saveData.oldBuilding = route.SetBuilding(true);
+		Construction.StartConstraction();
+	}
+	
+	function EndConstraction() {
+		Construction.EndConstraction();
+		route.SetBuilding(saveData.oldBuilding);
+		saveData.oldBuilding = null;
+	}
+
+	function Rollback() {
+		Construction.Rollback();
+		if(saveData.oldBuilding != null) {
+			// route.SetBuilding(saveData.oldBuilding); route.isBuildingはloadでfalseに戻されるので実は不要
+		}
+	}
+}
+
+Construction.nameClass.RouteModificatin <- RouteModificatin;
 
 class RouteBuilder extends Construction {
 	dest = null;
@@ -3074,7 +3140,7 @@ class RouteBuilder extends Construction {
 		local routePlans = GetOption("routePlans", null);
 		
 		local vehicleType = GetVehicleType();
-		builtRoute.isBuilding = true;// resultのrouteはまだ不完全な場合がある。(WaterRouteBuilder.BuildCompoundRoute)
+		builtRoute.isBuilding = true;// resultのrouteはまだ不完全な場合がある。(WaterRouteBuilder.BuildCompoundRoute) TODO: save/loadでisBuildingが戻らない
 		local limit = builtRoute.GetMaxRouteCapacity( cargo );
 		
 		if(searchTransfer && !GetOption("noExtendRoute",false) && !IsTransfer()) { // 延長チェック

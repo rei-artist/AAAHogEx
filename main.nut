@@ -13,6 +13,7 @@ require("road.nut");
 require("water.nut");
 require("air.nut");
 
+
 class HogeAI extends AIController {
 	static version = 77;
 
@@ -53,7 +54,7 @@ class HogeAI extends AIController {
 	
 	estimateTable = null;
 	routeCandidates = null;
-	currentConstraction = null;
+	constractions = null;
 	maybePurchasedLand = null;
 	pathFindLimit = null;
 	loadData = null;
@@ -256,6 +257,7 @@ class HogeAI extends AIController {
 		lastTransferCandidates = {};
 		waterRemovable = false;
 		routeCandidates = RouteCandidates();
+		constractions = [];
 		lastScanRouteDates = {};
 
 		DelayCommandExecuter();
@@ -265,7 +267,6 @@ class HogeAI extends AIController {
 		SetCompanyName();
 		HgLog.Info("AAAHogEx Started! version:"+HogeAI.version+" name:"+AICompany.GetName(AICompany.COMPANY_SELF));
 		HgLog.Info("openttd version:"+openttdVersion);
-
 		/*
 		foreach(industry,_ in AIIndustryList()) {
 			if(AIIndustry.GetAmountOfStationsAround(industry) >= 1) {
@@ -1071,7 +1072,6 @@ class HogeAI extends AIController {
 			}
 			lastScanRouteDates.rawset(route.id,AIDate.GetCurrentDate());
 			AIRail.SetCurrentRailType(route.GetRailType());
-			route.isBuilding = true;
 			/*TODO
 			local destStation = route.destHgStation.GetAIStation();
 			foreach(cargo in route.GetUsableCargos()) {
@@ -1085,7 +1085,6 @@ class HogeAI extends AIController {
 			SearchAndBuildAdditionalSrc(route);
 			SearchAndBuildAdditionalDestAsFarAsPossible( route );
 			CheckBuildReturnRoute(route);
-			route.isBuilding = false;
 			DoInterval();
 			
 			if(limitDate < AIDate.GetCurrentDate()) {
@@ -1207,7 +1206,14 @@ class HogeAI extends AIController {
 			}
 			cargoList.AddItem(cargo,0);
 		}
-		local indexes = PlaceProduction.Get().GetIndexesInSegment(hogeIndex,hogeNum);
+		local indexes;
+		local mapSize = AIMap.GetMapSizeX() * AIMap.GetMapSizeY();
+		if(mapSize > 2048*2048 && hogeNum==1) {
+			local segment = mapSize/(2048*2048);
+			indexes = PlaceProduction.Get().GetIndexesInSegment(AIBase.RandRange(segment),segment);
+		} else {
+			indexes = PlaceProduction.Get().GetIndexesInSegment(hogeIndex,hogeNum);
+		}
 		if(indexes != null) {
 			HgLog.Info("indexes:"+HgArray(indexes));
 		}
@@ -2812,11 +2818,10 @@ class HogeAI extends AIController {
 				}
 				HgLog.Info("AdditionalDest distance:"+(extDistance+route.GetDistance())+" "+estimate);
 				local score = estimate.routeIncome; // 比較元は建築済みなのでbuildingTimeは加味しない
-				if(score < currentValue) {
-					break;
+				if(score > currentValue) {
+					currentValue = score;
+					maxExtDistance = extDistance;
 				}
-				currentValue = score;
-				maxExtDistance = extDistance;
 			}
 			
 			if(!continuation && (maxExtDistance < route.GetDistance() /2 && maxExtDistance < 400)) {
@@ -2867,7 +2872,8 @@ class HogeAI extends AIController {
 			}
 			local cargoDistance = AIMap.DistanceManhattan(placeLocation, route.srcHgStation.GetLocation());
 			placeScore[1] = VehicleUtils.AdjustTrainScoreBySlope( 
-				cargoDistance * 100 / (buildingDistance + 250), route.GetLatestEngineSet().engine, forkPoint, placeLocation );
+				100000 / max(1,abs((cargoDistance - route.GetDistance()) - maxExtDistance))
+				, route.GetLatestEngineSet().engine, forkPoint, placeLocation ) * 100 / (buildingDistance + 250);
 			placeScores.push(placeScore);
 			DoInterval();
 		}
@@ -3555,6 +3561,10 @@ class HogeAI extends AIController {
 	}
 	 
 	function Save() {
+		if(loadData != null) {
+			return loadData;
+		}
+	
 		local remainOps = AIController.GetOpsTillSuspend();
 	
 		local table = {};	
@@ -3608,16 +3618,34 @@ class HogeAI extends AIController {
 		HgLog.Info("TownBus.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
 
 		table.routeCandidates <- routeCandidates.Save();
-		if(currentConstraction != null) {
-			table.currentConstraction <- currentConstraction.saveData;
-		}
+		table.constractions <- constractions;
 
 /*		remainOps = AIController.GetOpsTillSuspend();
 
 		Airport.SaveStatics(table);
 
 		HgLog.Info("Airport.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));*/
+		
+		
+		//HgLog.Info("nestlevel:"+CheckNest(table));
+		
 		return table;
+	}
+	
+	function CheckNest(data,level=0) {
+		local result = level;
+		local typeName = typeof data;
+		if(typeName == "table") {
+			foreach(k,v in data) {
+				result = max(result,CheckNest(k,level+1));
+				result = max(result,CheckNest(v,level+1));
+			}
+		} else if(typeName == "array") {
+			foreach(v in data) {
+				result = max(result,CheckNest(v,level+1));
+			}
+		}
+		return result;
 	}
 
 	function Load(version, data) {
@@ -3628,6 +3656,9 @@ class HogeAI extends AIController {
 		if(loadData == null) {
 			return;
 		}
+		//HgLog.Info("nestlevel:"+CheckNest(loadData));
+		supressInterval = true;
+		UpdateSettings();
 		turn = loadData.turn;
 		indexPointer = loadData.indexPointer;
 		stockpiled = loadData.stockpiled;
@@ -3655,9 +3686,14 @@ class HogeAI extends AIController {
 		TownBus.LoadStatics(loadData);
 		
 		routeCandidates.Load(loadData.routeCandidates);
-		if(loadData.rawin("currentConstraction")) {
-			Construction.RollbackFromSaveData(loadData.currentConstraction);
+		
+		HgLog.Info("constractions load size:"+loadData.constractions.len());
+		while(loadData.constractions.len() >= 1) {
+			Construction.LoadStatics(loadData.constractions.pop());
 		}
+		loadData = null;
+		
+		supressInterval = false;
 		HgLog.Info(" Loaded");
 	}
 
@@ -3724,7 +3760,7 @@ class HogeAI extends AIController {
 				}
 				CommonRoute.CheckReduce(RoadRoute,emergency);
 				CommonRoute.CheckReduce(AirRoute,emergency);
-				self.DoPendings(10);
+				self.DoPendings(20);
 			}
 			local minimamLoan = min(AICompany.GetMaxLoanAmount(), 
 					AICompany.GetLoanAmount() + needMoney - AICompany.GetBankBalance(AICompany.COMPANY_SELF) + buffer * 2);
@@ -3752,6 +3788,10 @@ class HogeAI extends AIController {
 	}
 	
 	function DoPendings(sleepTime = 1) {
+		if(Coasts.params.alotofcoast) {
+			AIController.Sleep(sleepTime);
+			return;
+		}
 		while(pendingCoastTiles.len() >= 1) {
 			local coastTile = pendingCoastTiles.pop();
 			if(!Coasts.tileCoastId.rawin(coastTile)) {
@@ -3763,7 +3803,7 @@ class HogeAI extends AIController {
 		local w = AIMap.GetMapSize();
 		for(local i=0; i<100000; i++) {
 			local tile = AIBase.RandRange(w);
-			if(AITile.IsCoastTile(tile) && !Coasts.tileCoastId.rawin(tile)) {
+			if(AITile.IsCoastTile(tile) && Coasts.IsNeedSearch(tile)) {
 				Coasts.GetCoasts(tile);
 				AIController.Sleep(1);
 				return;
@@ -3981,8 +4021,9 @@ class RouteCandidates {
 	function Load(data) {
 		saveData = data;
 		minValue = data.minValue;
+		HgLog.Info("RouteCandates load size:"+data.plans.len());
 		foreach(id,t in data.plans) {
-			HgLog.Info("RouteCandates.Load "+id);
+			//HgLog.Info("RouteCandates.Load "+id);
 			local plan = {
 				id = id
 				src = Place.Load(t.src)

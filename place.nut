@@ -20,6 +20,7 @@ class PlaceProduction {
 	currentProduction = null;
 	cargoProductionInfos = {};
 	cargoAcceptInfos = {};
+	tooManyProducingIndustries = {};
 	
 	constructor() {
 		history = {};
@@ -35,6 +36,7 @@ class PlaceProduction {
 			lastCheckMonth = lastCheckMonth
 			history = history
 			currentProduction = currentProduction
+			tooManyProducingIndustries = tooManyProducingIndustries
 		};
 	}
 
@@ -43,6 +45,7 @@ class PlaceProduction {
 		lastCheckMonth = t.lastCheckMonth;
 		history = t.history;
 		currentProduction = t.currentProduction;
+		tooManyProducingIndustries = t.tooManyProducingIndustries;
 	}
 	
 	function GetCurrentMonth () {
@@ -54,7 +57,15 @@ class PlaceProduction {
 		local currentMonth = GetCurrentMonth();
 		if(lastCheckMonth == null || lastCheckMonth < currentMonth) {
 			foreach(cargo,v in AICargoList()) {
+				if(tooManyProducingIndustries.rawin(cargo)) {
+					continue;
+				}
 				local list = AIIndustryList_CargoProducing(cargo);
+				if(list.Count() >= 500) {
+					HgLog.Warning("industries of producing["+AICargo.GetName(cargo)+"] are too many ("+list.Count()+")");
+					tooManyProducingIndustries.rawset(cargo,true);
+					continue;
+				}
 				list.Valuate(function(industry):(history,currentProduction,cargo) {
 					local production = AIIndustry.GetLastMonthProduction(industry,cargo);
 					local key = industry+"-"+cargo;
@@ -93,6 +104,9 @@ class PlaceProduction {
 	}
 
 	function GetLastMonthProduction(industry,cargo) {
+		if(tooManyProducingIndustries.rawin(cargo)) {
+			return AIIndustry.GetLastMonthProduction(industry,cargo);
+		}
 		Check();
 		local key = industry+"-"+cargo;
 		if(!history.rawin(key)) {

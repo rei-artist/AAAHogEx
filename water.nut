@@ -1677,6 +1677,11 @@ class Coasts {
 	static CT_ISLAND = 1;
 	static CT_SEA = 2;
 	static CT_POND = 3;
+	
+	static LIMIT_SEARCHCOAST = 5000;
+	static params = {
+		alotofcoast = false
+	};
 
 	static function SaveStatics(data) {
 		data.tileCoastId <- Coasts.tileCoastId;
@@ -1685,6 +1690,7 @@ class Coasts {
 			coastsArray.push(coasts.saveData);
 		}
 		data.coastsArray <- coastsArray;
+		data.coasts <- Coasts.params;
 	}
 
 	static function LoadStatics(data) {
@@ -1695,6 +1701,7 @@ class Coasts {
 		foreach(coastsData in data.coastsArray) {
 			Coasts.idCoasts[coastsData.id].Load(coastsData);
 		}
+		Coasts.params.alotofcoast = data.coasts.alotofcoast;
 	}
 
 	static function IsConnectedOnSea( coastTileA, coastTileB) {
@@ -1703,12 +1710,31 @@ class Coasts {
 		return coastsA.IsConnectedOnSea( coastsB );
 	}
 
+	static function IsNeedSearch(coastTile) {
+		if(Coasts.params.alotofcoast) {
+			return false;
+		}
+		if(Coasts.tileCoastId.rawin(coastTile)) {
+			return false;
+		}
+		return true;
+	}
+
 	static function GetCoasts(coastTile) {
+		if(Coasts.params.alotofcoast) {
+			return GlobalCoasts;
+		}
 		if(Coasts.tileCoastId.rawin(coastTile)) {
 			return Coasts.idCoasts[ Coasts.tileCoastId[ coastTile ] ];
 		}
 		local coast = Coasts();
-		local small = coast.SearchCoastTiles(coastTile) < 80;
+		local coastNum = coast.SearchCoastTiles(coastTile);
+		if(coastNum == Coasts.LIMIT_SEARCHCOAST) {
+			HgLog.Warning("alotofcoast");
+			Coasts.params.alotofcoast = true;
+			return GlobalCoasts;
+		}
+		local small = coastNum < 80;
 		if(coast.nearLand == null) { // 陸地が無い
 			coast.coastType = Coasts.CT_ISLAND;
 			coast.Save();
@@ -1802,10 +1828,13 @@ class Coasts {
 		local tiles = [coastTile];
 		local count = 0;
 		local tileIdMap = Coasts.tileCoastId;
+		tileIdMap.rawset(coastTile,id);
 		while(tiles.len() >= 1) {
 			local tile = tiles.pop();
-			tileIdMap.rawset(tile,id);
 			count ++;
+			if(count == Coasts.LIMIT_SEARCHCOAST) {
+				return count;
+			}
 /*			{
 				local execMode = AIExecMode();
 				AISign.BuildSign (tile, id.tostring());
@@ -1813,6 +1842,7 @@ class Coasts {
 			foreach(d in HgTile.DIR4Index) {
 				local check = tile + d;
 				if( !tileIdMap.rawin(check) && IsCoastTile(check) ) {
+					tileIdMap.rawset(tile,id);
 					tiles.push(check);
 				}
 			}
