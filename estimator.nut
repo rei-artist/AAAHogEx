@@ -681,6 +681,9 @@ class CommonEstimator extends Estimator {
 					loadingTime = min(10, capacity / 10);
 				}*/
 				
+				if(vehicleType == AIVehicle.VT_AIR) {
+					pathDistance += 60; // 着陸に必要な追加航路
+				}
 
 				local days;
 				if(vehicleType == AIVehicle.VT_AIR && cruiseSpeed > 80 && useReliability) {
