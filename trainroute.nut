@@ -1842,6 +1842,9 @@ class TrainRoute extends Route {
 		if(!HogeAI.Get().IsEnableVehicleBreakdowns()) {
 			return;
 		}
+		if(pathDestToSrc==null) {
+			return;
+		}
 		local latestEngineSet = GetLatestEngineSet();
 		if(latestEngineSet==null) {
 			return;
