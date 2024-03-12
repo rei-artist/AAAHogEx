@@ -2735,18 +2735,6 @@ class TrainRouteExtendBuilder extends RouteModificatin {
 		route.AddDestination( additionalHgStation );
 		route.AddBranchLine( oldDestStation, BuildedPath(removePath1, route), BuildedPath(removePath2, route ));
 
-		/* destがcloseしたときに再利用されるので削除しない
-		DelayCommandExecuter.Get().Post(300,function():(removePath1,removePath2,oldDestStation) { //TODO: save/loadに非対応
-			removePath1.RemoveRails();
-			removePath2.RemoveRails();
-			oldDestStation.Remove();
-		});
-		*/
-		
-		/*
-		route.AddAdditionalTiles(removePath1.GetTiles());
-		route.AddAdditionalTiles(removePath2.GetTiles());*/
-		
 		
 		HgLog.Info("# TrainRoute: Extend succeeded: "+route);
 		return 0;

@@ -288,72 +288,6 @@ class Path {
 		return result / 10;
 	}
 
-	
-	function RemoveRails(route=null,isTest=false, doInterval=false) {
-		local path = this;
-		local prev = null;
-		local prevprev = null;
-		local result = true;
-		local depotInfos = route != null ? route.depotInfos : null;
-		while (path != null) {
-			if (prevprev != null) {
-				if (AIMap.DistanceManhattan(prev, path.GetTile()) > 1 || AIMap.DistanceManhattan(prev, prevprev) > 1) {
-					if(AIBridge.IsBridgeTile(prev)) {
-						if(!BuildUtils.RemoveBridgeUntilFree(prev)) {
-							if(isTest) return false;
-							HgLog.Warning("RemoveBridgeUntilFree failed."+HgTile(prev)+" "+AIError.GetLastErrorString());
-							result = false;
-						}
-					} else if(AITunnel.IsTunnelTile(prev)){
-						if(!BuildUtils.RemoveTunnelUntilFree(prev)) {
-							if(isTest) return false;
-							HgLog.Warning("RemoveTunnelUntilFree failed."+HgTile(prev)+" "+AIError.GetLastErrorString());
-							result = false;
-						}
-					};
-				} else {
-					if(depotInfos != null) {
-						if(depotInfos.rawin(prev)) {
-							local info = depotInfos.rawget(prev);
-							if(info.depots.len()>=2) {
-								HgTile(prev).CloseDoubleDepot(info);
-							}
-							foreach(depot in info.depots) {
-								if(!HgTile(depot).RemoveDepot()) {
-									if(isTest) return false;
-									HgLog.Warning("RemoveDepot failed: "+HgTile(depot));
-									result = false;
-								}
-							}
-							if(!isTest) {
-								depotInfos.rawdelete(info);
-							}
-						}
-					}
-					if(!RailBuilder.RemoveRailUntilFree(prevprev, prev, path.GetTile())) { // ポイント用にリトライ
-						if(isTest) {
-							return false;
-						} else {
-							HgLog.Warning("RemoveRail failed." 
-								+ HgTile.GetTilesString([prevprev,prev,path.GetTile()])
-								+" "+AIError.GetLastErrorString());
-							result = false;
-						}
-					}
-				}
-				if(doInterval) {
-					HogeAI.DoInterval();
-				}
-			}
-			if (path != null) {
-				prevprev = prev;
-				prev = path.GetTile();
-				path = path.GetParent();
-			}
-		}
-		return result;
-	}
-	
 	function GetMeetsTiles() {
 		local prevPath = GetParent();
 		if(prevPath==null) {
@@ -789,7 +723,8 @@ class BuildedPath {
 
 	function Remove(removeRails = true, doInterval = false) {
 		if(removeRails) {
-			path.Reverse().RemoveRails(route, false/*isTest*/, doInterval); //Reverse()は列車進行方向に削除する為
+			RailRemover( ArrayUtils.Reverse(array_), route!=null?route.id:null, false, false ).Build();
+			//path.Reverse().RemoveRails(route, false/*isTest*/, doInterval); //Reverse()は列車進行方向に削除する為
 		}
 		BuildedPath.instances.rawdelete(this);
 		//BuildedPath.RemoveTiles(path.GetTiles()); 連結部分など他と重複している箇所があるので残す。残っていても実害はほとんど無い
@@ -835,11 +770,6 @@ class BuildedPath {
 		return [removePath, result];
 	}
 	
-	function CombineAndRemoveByFork(forkBuildedPath, isFork=true) {
-		local a = CombineByFork(forkBuildedPath, isFork);
-		a[0].RemoveRails(route)
-		return a[1];
-	}
 
 	function _tostring() {
 		return "BuildedPath";
@@ -1134,38 +1064,6 @@ class RailBuilder extends Construction {
 	
 	function RetryToBuild(path,prev) {
 		HgLog.Info("RetryToBuild start prev:"+HgTile(prev)+" next:"+HgTile(path.GetTile()));
-/*		
-		local endAndPrev = path.GetEndTileAndPrev();
-		local goalPath = Path(endAndPrev[1],Path(endAndPrev[0]],null));
-		local startPath = pathSrcToDest.SubPathEnd(tile);
-		local builder = TailedRailBuilder.PathToPath(Container(isReverse?goalPath:startPath), Container(isReverse?startPath:goalPath), ignoreTiles, 150, eventPoller);
-		builder.isSingle = isNoSignal;
-		if(!builder.BuildTails()) {
-			HgLog.Warning("RetryToBuild failed");
-			return false;
-		}
-		if(!builder.IsFoundGoal()) {
-			if(!builder.Build()) {
-				builder.Remove();
-				HgLog.Warning("RetryToBuild failed");
-				return false;
-			}
-		}
-		local newPath = builder.buildedPath.path.Reverse();
-		local origPath = startPath.SubPathEnd(newPath.GetFirstTile());
-		startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-1).RemoveRails();
-		pathSrcToDest = origPath.Combine(newPath);
-		builder.buildedPath.Remove(false);
-		BuildDone();
-		HgLog.Warning("RetryToBuild succeeded");
-		return true;*/
-
-		
-		/*
-		if(endAndPrev[1]==null || !HogeAI.IsBuildable(endAndPrev[1])) {
-			HgLog.Warning("goal is not buildable");
-			return false;
-		}*/
 		local endAndPrev = path.GetEndTileAndPrev();
 		if(endAndPrev[0]==null || endAndPrev[1]==null) {
 			HgLog.Warning("retry to build failed(endAndPrev[0]==null || endAndPrev[1]==null)");
@@ -1185,7 +1083,7 @@ class RailBuilder extends Construction {
 			local newPath = railBuilder.pathSrcToDest.Reverse();
 			local origPath = startPath.SubPathEnd(newPath.GetFirstTile());
 			
-			startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-1).RemoveRails();
+			BuildedPath( startPath.SubPathIndex(startPath.GetIndexOf(newPath.GetFirstTile())-1) ).Remove(true);
 			pathSrcToDest = origPath.Combine(newPath);
 			if(!BuildDone()) {
 				HgLog.Warning("retry to build failed");
@@ -2271,7 +2169,7 @@ class TailedRailBuilder {
 		buildedPath2 = railBuilder2.buildedPath;
 		
 		isFoundGoal = true;
-		buildedPath = buildedPath2; //buildedPath1.CombineAndRemoveByFork(buildedPath2,isReverse);
+		buildedPath = buildedPath2;
 		return true;
 	}
 	
@@ -2765,7 +2663,7 @@ class RailRemover extends Construction {
 							}
 						}
 					}
-					depotInfos.rawdelete(info);
+					depotInfos.rawdelete(cur);
 				}
 			}			
 			
