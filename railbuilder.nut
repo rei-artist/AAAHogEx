@@ -2089,7 +2089,7 @@ class TailedRailBuilder {
 			local railBuilder1;
 			if(foundedRevPath != null) {
 				railBuilder1 = RailBuilder(foundedRevPath.Reverse(),isReverse,ignoreTiles,this); // dest->srcの順に構築する。ロールバックの都合完成するまで列車が入ってこないようにする為。
-				railBuilder1.isRevReverse = isRevReverse;
+				railBuilder1.isRevReverse = !isRevReverse;
 				railBuilder1.pathFinder = pathFinder2;
 			} else {
 				railBuilder1 = RailBuilder(path1,isReverse,ignoreTiles,this);
@@ -2269,7 +2269,7 @@ class TwoWayPathToStationRailBuilder extends ConstructionRailBuilder {
 		buildedPath1 = b1.buildedPath;
 		AddRollback(buildedPath1);
 		if(isBuildDoubleDepots) {
-			BuildDoubleDepots(buildedPath1.path.SubPathIndex(4),depotInterval);
+			BuildDoubleDepots(buildedPath1.path.SubPathIndex(16),depotInterval);
 		}
 		
 		// dest => src
@@ -2287,10 +2287,10 @@ class TwoWayPathToStationRailBuilder extends ConstructionRailBuilder {
 		buildedPath2 = b2.buildedPath;
 
 		if(isBuildDoubleDepots) {
-			BuildDoubleDepots(buildedPath2.path.Reverse().SubPathIndex(4),depotInterval);
+			BuildDoubleDepots(buildedPath2.path.Reverse().SubPathIndex(16),depotInterval);
 		}		
 		if(isBuildSingleDepotDestToSrc) {
-			BuildSingleDepot(buildedPath2.path.Reverse().SubPathIndex(4));
+			BuildSingleDepot(buildedPath2.path.Reverse().SubPathIndex(16));
 		}
 		return true;
 	}
