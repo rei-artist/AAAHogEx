@@ -1613,6 +1613,7 @@ class RailBuilder extends Construction {
 			return false;
 		}
 		local direction = orgPath.GetTile() - orgPath.GetParent().GetTile();
+		if(direction < 0) direction *= -1;
 		
 		local tracks = AIRail.GetRailTracks(prev);
 		local removed = [];
@@ -1625,68 +1626,71 @@ class RailBuilder extends Construction {
 		
 		local diagonal = direction == prev - next || direction == next - prev;
 		local n_node = prev - direction;
-		HgLog.Warning("diagonal:"+diagonal+" n_node:"+HgTile(n_node)+" direction:"+direction+" revdir:"+HgTile.GetRevDir(next,prev,isReverse)
+		HgLog.Info("diagonal:"+diagonal+" n_node:"+HgTile(n_node)+" direction:"+direction+" revdir:"+HgTile.GetRevDir(next,prev,isReverse)
 			+" next:"+HgTile(next)+" prev:"+HgTile(prev)+" isReverse:"+isReverse);
 		local length = 4;
 		local firstOptional = false;
+		
+		local must = {};
+		local optional = {};
 		if(diagonal) {
-			if(n_node == next) {
-				n_node -= direction;
-			}
-			if(isRebuildForHomeward) {
-				length = 5;
-				local revDir = HgTile.GetRevDir(prev,prevprev,isReverse);
-				if(n_node == prev+revDir || n_node == next+revDir) {
-					n_node -= direction;
-					firstOptional = true;
+			must.rawset(next,true);
+			must.rawset(prev,true);
+		} else {
+			must.rawset(prev,true);
+		}
+		if(isRebuildForHomeward) {
+			local revDir = HgTile.GetRevDir(prev,prevprev,isReverse);
+			foreach(t,_ in must) {
+				if(!must.rawin(t+revDir)) {
+					optional.rawset(t+revDir,true);
 				}
 			}
-		} else {
-			if(isRebuildForHomeward && n_node == prev+HgTile.GetRevDir(next,prev,isReverse)) {
-				n_node -= direction;
-				firstOptional = true;
-			}
-			if(n_node == next) {
-				HgLog.Warning("unexpected direction."+HgTile(prev)+" "+HgTile(next));
-				return false;
-			}
+		}
+		local minTile = IntegerUtils.IntMax;
+		local maxTile = 0;
+		foreach(t,_ in must) {
+			minTile = min(minTile,t);
+			maxTile = max(maxTile,t);
+		}
+		local mustStart = minTile - direction;
+		local mustEnd = maxTile + direction;
+		foreach(t,_ in optional) {
+			minTile = min(minTile,t);
+			maxTile = max(maxTile,t);
+		}
+		local startTile = minTile - direction;
+		local endTile = maxTile + direction;
+		local isNg = function(cur):(direction,tracks){
+			return RailPathFinder._IsSlopedRail(cur - direction, cur, cur + direction) 
+						|| AIRail.GetRailTracks(cur) != tracks 
+						|| RailPathFinder._IsUnderBridge(cur);
+		};
+		while(startTile<mustStart && isNg(startTile)) {
+			startTile += direction;
+		}
+		while(endTile>mustEnd && isNg(endTile)) {
+			endTile -= direction;
 		}
 		
 		HogeAI.WaitForMoney(20000,0,"ChangeBridge");
 		local currentRailType = AIRail.GetCurrentRailType();
 		AIRail.SetCurrentRailType(AIRail.GetRailType(n_node));
-		local startTile = n_node;
-		local endTile = null;
-
-		for(local i=0; i<length; i++) {
-			//HgLog.Info("_IsUnderBridge:"+RailPathFinder._IsUnderBridge(n_node));
 		
-			if(i==length-1 
-					&& ( RailPathFinder._IsSlopedRail(n_node - direction, n_node, n_node + direction) 
-						|| AIRail.GetRailTracks(n_node) != tracks 
-						|| RailPathFinder._IsUnderBridge(n_node))) {
-				break;
-			}
-			if(!RailBuilder.RemoveRailTrackUntilFree(n_node, tracks)) {
-				if(firstOptional && i==0) {
-					startTile += direction;
-				} else {
-					HgLog.Warning("fail RemoveRailTrack."+HgTile(n_node)+" "+AIError.GetLastErrorString());
-					foreach(mark in removed) {
-						if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
-							HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
-						}
+		for(local cur=startTile; cur<=endTile; cur+=direction) {
+			if(!RailBuilder.RemoveRailTrackUntilFree(cur, tracks)) {
+				HgLog.Warning("fail RemoveRailTrack."+HgTile(cur)+" "+AIError.GetLastErrorString());
+				foreach(mark in removed) {
+					if(!BuildUtils.BuildRailTrackSafe(mark[0], mark[1])) {
+						HgLog.Warning("fail BuildRailTrackSafe "+HgTile(mark[0])+" "+AIError.GetLastErrorString());
 					}
-					AIRail.SetCurrentRailType(currentRailType);
-					return false;
 				}
+				AIRail.SetCurrentRailType(currentRailType);
+				return false;
 			} else {
-				removed.push([n_node,tracks]);
+				removed.push([cur,tracks]);
 			}
-			endTile = n_node;
-			n_node += direction;
 		}
-		
 		local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(startTile, endTile) + 1);
 		bridge_list.Valuate(AIBridge.GetMaxSpeed);
 		bridge_list.Sort(AIList.SORT_BY_VALUE, false);
