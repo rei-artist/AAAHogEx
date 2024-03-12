@@ -2796,11 +2796,18 @@ class Construction {
 	saveData = null;
 
 	static function CreateBySaveData(saveData) {
-		local result = Construction.nameClass[saveData.params.typeName].CreateByParams(saveData.params);
+		local result;
+		if(saveData.params!=null) {
+			HgLog.Info("CreateBySaveData typeName:"+saveData.params.typeName);
+			result = Construction.nameClass[saveData.params.typeName].CreateByParams(saveData.params);
+		} else {
+			HgLog.Info("CreateBySaveData saveData.params==null size:"+saveData.rollbackFacilities.len());
+			result = Construction();
+		}
 		result.saveData = saveData;
 		return result;
 	}
-	
+
 	static function LoadStatics(saveData) {
 		local construction = null;
 		if(saveData.params != null) {
@@ -2833,6 +2840,23 @@ class Construction {
 				case "BuildedPath":
 					BuildedPath( Path.Load(f.array_) ).Remove();
 					break;
+				case "rail":
+					if(!RailBuilder.RemoveRailUntilFree(f.tiles[0],f.tiles[1],f.tiles[2])) {
+						HgLog.Warning("RemoveRail failed(DoRollback):"+HgTile.GetTilesString(f.tiles)+" "+AIError.GetLastErrorString());
+					}
+					break;
+				case "bridge":
+					if(!BuildUtils.RemoveBridgeUntilFree(f.tiles[0])) {
+						HgLog.Warning("RemoveBrid failed(DoRollback):"+HgTile(f.tiles[0])+" "+AIError.GetLastErrorString());
+					}
+					break;
+				case "tunnel":
+					if(!BuildUtils.RemoveTunnelUntilFree(f.tiles[0])) {
+						HgLog.Warning("RemoveTunnel failed(DoRollback):"+HgTile(f.tiles[0])+" "+AIError.GetLastErrorString());
+					}
+					break;
+				default:
+					HgLog.Warning("unsupported facility(DoRollback):"+f.name);
 			}
 			facilities.pop();
 		}
@@ -2877,18 +2901,18 @@ class Construction {
 	function AddRollback(facility, typeName=null) {
 		if(typeName == "tiles") {
 			saveData.rollbackFacilities.push({name="tiles",tiles=facility});
+		} else if(typeof facility == "integer") {
+			saveData.rollbackFacilities.push({name="tiles",tiles=[facility]});
+		} else if(typeof facility == "table") {
+			saveData.rollbackFacilities.push(facility);
+		} else if(facility instanceof Construction) {
+			saveData.rollbackFacilities.push({name="Construction",saveData=facility.saveData});
+		} else if(facility instanceof HgStation) {
+			saveData.rollbackFacilities.push({name="HgStation",stationId=facility.GetId()});
+		} else if(facility instanceof BuildedPath) {
+			saveData.rollbackFacilities.push({name="BuildedPath",array_=facility.array_});
 		} else {
-			if(typeof facility == "integer") {
-				saveData.rollbackFacilities.push({name="tiles",tiles=[facility]});
-			} else if(facility instanceof Construction) {
-				saveData.rollbackFacilities.push({name="Construction",saveData=facility.saveData});
-			} else if(facility instanceof HgStation) {
-				saveData.rollbackFacilities.push({name="HgStation",stationId=facility.GetId()});
-			} else if(facility instanceof BuildedPath) {
-				saveData.rollbackFacilities.push({name="BuildedPath",array_=facility.array_});
-			} else {
-				HgLog.Error("AddRollback failed."+facility);
-			}
+			HgLog.Warning("unsupported facility(AddRollback):"+facility);
 		}
 	}
 	

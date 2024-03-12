@@ -922,6 +922,7 @@ class RailBuilder extends Construction {
 						}
 						return RetryToBuild(path,prev);
 					}
+					AddRollback({name="tunnel",tiles=[prev]});
 				} else {
 					local bridge_list = AIBridgeList_Length(AIMap.DistanceManhattan(path.GetTile(), prev) + 1);
 					bridge_list.Valuate(AIBridge.GetMaxSpeed);
@@ -930,6 +931,7 @@ class RailBuilder extends Construction {
 						HgLog.Warning("BuildBridge failed("+HgTile(prev)+"-"+HgTile(path.GetTile())+":"+AIError.GetLastErrorString()+").");
 						return RetryToBuild(path,prev);
 					}
+					AddRollback({name="bridge",tiles=[prev]});
 				}
 				signalCount = 7;
 				prevprevprev = prevprev;
@@ -985,6 +987,7 @@ class RailBuilder extends Construction {
 						return RetryToBuild(path,prev);
 					}
 				}
+				AddRollback({name="rail",tiles=[prevprev,prev,path.GetTile()]});
 				if(signalCount >= 7 && BuildSignal( prevprev, prev, path.GetTile() ) ) {
 					signalCount = 0;
 				} else if( RailPathFinder._IsSlopedRail( prevprev, prev, path.GetTile() ) ) {
@@ -1330,8 +1333,10 @@ class RailBuilder extends Construction {
 			HogeAI.WaitForMoney(50000,0,"BuildTunnel(BuildUnderground)");
 			if ((A0==null || AIRail.BuildRail(A0, A1, A2)) && AITunnel.BuildTunnel(AIVehicle.VT_RAIL, A2)) {
 				if(A0 != null) {
+					AddRollback({name="rail",tiles=[A0,A1,A2]});
 					BuildSignal(A0,A1,A2);
 				}
+				AddRollback({name="tunnel",tiles=[A2]});
 				return true;
 			}
 		}
@@ -2285,6 +2290,7 @@ class TwoWayPathToStationRailBuilder extends ConstructionRailBuilder {
 			return false;
 		}
 		buildedPath2 = b2.buildedPath;
+		AddRollback(buildedPath2);
 
 		if(isBuildDoubleDepots) {
 			BuildDoubleDepots(buildedPath2.path.Reverse().SubPathIndex(16),depotInterval);
@@ -2420,6 +2426,7 @@ class SingleStationRailBuilder extends ConstructionRailBuilder{
 			}
 		}
 		buildedPath = b1.buildedPath;
+		AddRollback(buildedPath);
 
 	
 		return true;
@@ -2512,6 +2519,7 @@ class TwoWayPtoPRailBuilder extends ConstructionRailBuilder {
 			return false;
 		}
 		buildedPath2 = b2.buildedPath;
+		AddRollback(buildedPath2);
 		return true;
 	}
 	

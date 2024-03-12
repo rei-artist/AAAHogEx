@@ -3689,7 +3689,8 @@ class HogeAI extends AIController {
 		
 		HgLog.Info("constractions load size:"+loadData.constractions.len());
 		while(loadData.constractions.len() >= 1) {
-			Construction.LoadStatics(loadData.constractions.pop());
+			Construction.LoadStatics(loadData.constractions.top());
+			loadData.constractions.pop();
 		}
 		loadData = null;
 		

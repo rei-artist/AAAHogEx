@@ -2579,6 +2579,7 @@ class TrainRouteBuilder extends RouteBuilder {
 			}
 		}
 		local isSuccess = railBuilder.Build();
+		AddRollback(railBuilder);
 		hogeAI.pathfindings.rawdelete(pathfinding);
 		if(!isSuccess) {
 			HgLog.Warning("TrainRoute: railBuilder.Build failed."+explain);
@@ -2593,7 +2594,6 @@ class TrainRouteBuilder extends RouteBuilder {
 			Rollback();
 			return null;
 		}
-		
 		
 		local route
 		if(useSingle) {
