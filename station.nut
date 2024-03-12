@@ -4343,6 +4343,7 @@ class RealSrcRailStation extends RailStation {
 		foreach(depot in GetDepots()) {
 			result.push(At(depot[0][0],depot[0][1]));
 		}
+		result.push(At(1,platformLength+3));
 		return result;
 	}
 	
