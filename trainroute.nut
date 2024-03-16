@@ -1053,6 +1053,27 @@ class TrainRoute extends Route {
 		return null;
 	}
 	
+	function BuildOrder(engineVehicle) {
+		local execMode = AIExecMode();
+		AIOrder.AppendOrder(engineVehicle, srcHgStation.platformTile, AIOrder.OF_FULL_LOAD_ANY + AIOrder.OF_NON_STOP_INTERMEDIATE);
+		AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
+		AIOrder.AppendOrder(engineVehicle, srcHgStation.GetServiceDepotTile(), AIOrder.OF_SERVICE_IF_NEEDED);
+		if(IsTransfer()) {
+			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_TRANSFER + AIOrder.OF_NO_LOAD );
+		} else if(IsBiDirectional()) {
+			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE);
+		} else {
+			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD);
+		}
+		AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
+		//AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_NEAR);
+		
+		if(returnRoute != null) {
+			AddReturnTransferOrder(engineVehicle, returnRoute.srcHgStation, returnRoute.destHgStation);
+		}
+		
+		return true;
+	}
 
 	function GetTotalWeight(trainEngine, wagonEngine, trainNum, wagonNum, cargo) {
 		return AIEngine.GetWeight(trainEngine) * trainNum + (AIEngine.GetWeight(wagonEngine) + TrainRoute.GetCargoWeight(cargo,AIEngine.GetCapacity(wagonEngine))) * wagonNum;
@@ -1100,24 +1121,6 @@ class TrainRoute extends Route {
 	function IsRoot() {
 		return !IsTransfer(); // 今のところ呼ばれる事は無い。
 	}
-		
-	function BuildOrder(engineVehicle) {
-		local execMode = AIExecMode();
-		AIOrder.AppendOrder(engineVehicle, srcHgStation.platformTile, AIOrder.OF_FULL_LOAD_ANY + AIOrder.OF_NON_STOP_INTERMEDIATE);
-		AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
-		AIOrder.AppendOrder(engineVehicle, srcHgStation.GetServiceDepotTile(), AIOrder.OF_SERVICE_IF_NEEDED);
-		if(IsTransfer()) {
-			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_TRANSFER + AIOrder.OF_NO_LOAD );
-		} else if(IsBiDirectional()) {
-			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE);
-		} else {
-			AIOrder.AppendOrder(engineVehicle, destHgStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD);
-		}
-		AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
-		//AIOrder.SetStopLocation	(engineVehicle, AIOrder.GetOrderCount(engineVehicle)-1, AIOrder.STOPLOCATION_NEAR);
-		return true;
-	}
-	
 
 	function AddDestination(destHgStation) {
 		foreach(s in destHgStations) {
@@ -1265,24 +1268,22 @@ class TrainRoute extends Route {
 	}
 
 	
-	function AddReturnTransferOrder(transferSrcStation, destStation) {
+	function AddReturnTransferOrder(vehicle, transferSrcStation, destStation) {
 		local execMode = AIExecMode();
-		if(latestEngineVehicle != null) {
-			// destStationでLOAD
-			// PAXがいると詰まる AIOrder.SetOrderFlags( latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD);
-			// YARD
-			AIOrder.AppendOrder( latestEngineVehicle, transferSrcStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE);
-			AIOrder.SetStopLocation( latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
-			// 積載率0の時、return dest stationをスキップ
-			local conditionOrderPosition = AIOrder.GetOrderCount(latestEngineVehicle);
-			AIOrder.AppendConditionalOrder( latestEngineVehicle, 0);
-			AIOrder.SetOrderCompareValue( latestEngineVehicle, conditionOrderPosition, 0);
-			AIOrder.SetOrderCompareFunction( latestEngineVehicle, conditionOrderPosition, AIOrder.CF_EQUALS );
-			AIOrder.SetOrderCondition( latestEngineVehicle, conditionOrderPosition, AIOrder.OC_LOAD_PERCENTAGE );
-			// return dest station
-			AIOrder.AppendOrder( latestEngineVehicle, destStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD );
-			AIOrder.SetStopLocation( latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
-		}
+		// destStationでLOAD
+		// PAXがいると詰まる AIOrder.SetOrderFlags( latestEngineVehicle, AIOrder.GetOrderCount(latestEngineVehicle)-1, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD);
+		// YARD
+		AIOrder.AppendOrder( vehicle, transferSrcStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE);
+		AIOrder.SetStopLocation( vehicle, AIOrder.GetOrderCount(vehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
+		// 積載率0の時、return dest stationをスキップ
+		local conditionOrderPosition = AIOrder.GetOrderCount(vehicle);
+		AIOrder.AppendConditionalOrder( vehicle, 0);
+		AIOrder.SetOrderCompareValue( vehicle, conditionOrderPosition, 0);
+		AIOrder.SetOrderCompareFunction( vehicle, conditionOrderPosition, AIOrder.CF_EQUALS );
+		AIOrder.SetOrderCondition( vehicle, conditionOrderPosition, AIOrder.OC_LOAD_PERCENTAGE );
+		// return dest station
+		AIOrder.AppendOrder( vehicle, destStation.platformTile, AIOrder.OF_NON_STOP_INTERMEDIATE + AIOrder.OF_UNLOAD + AIOrder.OF_NO_LOAD );
+		AIOrder.SetStopLocation( vehicle, AIOrder.GetOrderCount(vehicle)-1, AIOrder.STOPLOCATION_MIDDLE);
 	}
 	
 	function RemoveReturnTransferOder() {
@@ -1294,22 +1295,6 @@ class TrainRoute extends Route {
 		}
 	}
 	
-	function AddSendUpdateDepotOrder() {
-		local execMode = AIExecMode();
-		AIOrder.InsertOrder(latestEngineVehicle, 0, updateRailDepot, AIOrder.OF_NON_STOP_INTERMEDIATE | AIOrder.OF_STOP_IN_DEPOT );
-		if(returnRoute != null) {
-			AIOrder.SetOrderJumpTo(latestEngineVehicle, 5, 0); // return時に積載していないときにupdate depotへ飛ぶようにする
-		}
-	}
-	
-	function RemoveSendUpdateDepotOrder() {
-		local execMode = AIExecMode();
-		if(returnRoute != null) {
-			AIOrder.SetOrderJumpTo(latestEngineVehicle, 5, 1);
-		}
-		AIOrder.RemoveOrder(latestEngineVehicle,0);
-	}
-		
 	
 	function GetLastRoute() {
 		return this;
@@ -1347,12 +1332,9 @@ class TrainRoute extends Route {
 	}
 	
 	function StartUpdateRail(railType) {
-		if(AICompany.GetBankBalance(AICompany.COMPANY_SELF) < 1000000) {
-			return false;
+		if(!HogeAI.Get().IsRich()) {
+			return;
 		}
-		/*if(IsSingle()) {
-			return false;
-		}*/
 		local exec = AIExecMode();
 		
 		if(latestEngineVehicle != null) {
@@ -1360,23 +1342,18 @@ class TrainRoute extends Route {
 			
 			local railType = AIRail.GetCurrentRailType();
 			AIRail.SetCurrentRailType ( GetRailType() );
+			/*
 			local depotInfo = null;
 			if(IsSingle()) {
 				depotInfo = pathSrcToDest.path.BuildDepot();
 			} else {
 				depotInfo = pathDestToSrc.path.BuildDepot();
-			}
+			}*/
 			if(depotInfo.depots.len()>=1) {
-				saveData.updateRailDepot = updateRailDepot = depotInfo.depots[0];
+				saveData.updateRailDepot = updateRailDepot = true; //depotInfo.depots[0];
 			}
-			
 			AIRail.SetCurrentRailType(railType);
-			if(updateRailDepot == null) {
-				saveData.lastConvertRail = lastConvertRail = AIDate.GetCurrentDate();
-				HgLog.Warning("Cannot build depot for railupdate "+this);
-				return false;
-			}
-			AddSendUpdateDepotOrder();
+			//AddSendUpdateDepotOrder();
 		}
 	}
 	
@@ -1523,14 +1500,14 @@ class TrainRoute extends Route {
 	function DoUpdateRailType(newRailType) {
 		local execMode = AIExecMode();
 		HgLog.Info("DoUpdateRailType: "+AIRail.GetName(newRailType)+" "+this);
-		RemoveSendUpdateDepotOrder();
+		//RemoveSendUpdateDepotOrder();
 		if(!ConvertRailType(newRailType)) {
 			saveData.updateRailDepot = updateRailDepot = null;
 			return false;
 		}
 		engineSetsCache = null;
 		local oldVehicles = GetVehicleList();
-		if(!BuildNewTrain()) {
+		if(!BuildFirstTrain()) {
 			HgLog.Warning("newTrain == null "+this);
 			saveData.updateRailDepot = updateRailDepot = null;
 			return false;
@@ -1538,7 +1515,7 @@ class TrainRoute extends Route {
 		foreach(engineVehicle,_ in oldVehicles) {
 			SellVehicle(engineVehicle);
 		}
-		HgTile(updateRailDepot).RemoveDepot();
+		//HgTile(updateRailDepot).RemoveDepot();
 		saveData.updateRailDepot = updateRailDepot = null;
 		
 
@@ -1546,10 +1523,6 @@ class TrainRoute extends Route {
 	}
 	
 	function SellVehicle(vehicle) {
-		if(vehicle == latestEngineVehicle && !isRemoved) {
-			HgLog.Warning("SellVehicle failed (vehicle == latestEngineVehicle) "+this);
-			return;
-		}
 		if(!AIVehicle.SellWagonChain(vehicle, 0)) {
 			HgLog.Warning("SellWagonChain failed "+AIError.GetLastErrorString()+" "+this);
 			return;
@@ -1684,11 +1657,7 @@ class TrainRoute extends Route {
 		saveData.failedUpdateRailType = failedUpdateRailType = true;
 		saveData.updateRailDepot = updateRailDepot = null;
 		ConvertRailType(railType,true);
-		foreach(engineVehicle,_ in GetVehicleList()) {
-			if(AIVehicle.IsStoppedInDepot(engineVehicle)) {
-				AIVehicle.StartStopVehicle(engineVehicle);
-			}
-		}
+		BuildFirstTrain();
 	}
 	
 	function IsCloneTrain() {
@@ -1928,7 +1897,9 @@ class TrainRoute extends Route {
 	
 	function OnVehicleWaitingInDepot(engineVehicle) {
 		local execMode = AIExecMode();
-		if(isClosed || reduceTrains) {
+		if(updateRailDepot != null) {
+			SellVehicle(engineVehicle);
+		} else if(isClosed || reduceTrains) {
 			if(isRemoved || latestEngineVehicle != engineVehicle) { //reopenに備えてlatestEngineVehicleだけ残す
 				SellVehicle(engineVehicle);
 				if(GetNumVehicles()==0) {
@@ -1936,20 +1907,9 @@ class TrainRoute extends Route {
 					if(isRemoved) {
 						RemoveFinished();
 					}
-					
 				}
 			}
-		} else if(updateRailDepot != null) {
-			local execMode = AIExecMode();
-			local latestVehicle = GetLatestVehicle();
-			if(latestVehicle != engineVehicle) {
-				SellVehicle(engineVehicle);
-			}
-//			if(AIVehicle.GetLocation(engineVehicle) != updateRailDepot) {
-//				AIVehicle.StartStopVehicle(engineVehicle);
-//			}
 		} else {
-			local execMode = AIExecMode();
 			local latestVehicle = GetLatestVehicle();
 			if(latestVehicle == engineVehicle) {
 				if(BuildNewTrain()) {
@@ -2072,46 +2032,40 @@ class TrainRoute extends Route {
 	}
 
 	function CheckRailUpdate() {
-		if(latestEngineVehicle == null || isBuilding || isClosed || failedUpdateRailType || IsChangeDestination()) {
-			return;
-		}
-		if(AIDate.GetCurrentDate() < startDate + 5 * 365) {
-			return;
-		}
-		if(lastConvertRail != null && AIDate.GetCurrentDate() < lastConvertRail + 15 * 365) {
-			//HgLog.Info("lastConvertRail:"+DateUtils.ToString(lastConvertRail)+" "+this);
-			// 一度コンバートしてから15年間はkeep
-			return;
-		}
-		
-		local currentRailType = GetRailType();
-
-		if(updateRailDepot != null) {
-			local list1 = GetVehicleList();
-			list1.Valuate(AIVehicle.IsStoppedInDepot);
-			local list2 = AIList();
-			list2.AddList(list1);
-			list1.KeepValue(1);
-			list2.KeepValue(0);
-			list1.Valuate(AIVehicle.GetLocation);
-			list1.KeepValue(updateRailDepot);
-			if(list1.Count()>=1) {
-				list2.Valuate(AIOrder.IsGotoDepotOrder,AIOrder.ORDER_CURRENT);
-				list2.KeepValue(0);
-				foreach(v,_ in list2) {
+		if(updateRailDepot == null) {
+			if(latestEngineVehicle == null || isBuilding || isClosed || failedUpdateRailType || IsChangeDestination()) {
+				return;
+			}
+			if(AIDate.GetCurrentDate() < startDate + 5 * 365) {
+				return;
+			}
+			if(lastConvertRail != null && AIDate.GetCurrentDate() < lastConvertRail + 15 * 365) {
+				//HgLog.Info("lastConvertRail:"+DateUtils.ToString(lastConvertRail)+" "+this);
+				// 一度コンバートしてから15年間はkeep
+				return;
+			}
+			
+		} else {
+			local list = GetVehicleList();
+			if(list.Count() >= 1) {
+				list.Valuate(AIVehicle.IsStoppedInDepot);
+				list.KeepValue(0);
+				list.Valuate(AIOrder.IsGotoDepotOrder,AIOrder.ORDER_CURRENT);
+				list.KeepValue(0);
+				foreach(v,_ in list) {
 					AIVehicle.SendVehicleToDepot(v);
 				}
-			}
-			if(IsAllVehicleInUpdateRailDepot()) {
+			} else {
 				local newEngineSet = ChooseEngineSetAllRailTypes();
 				if(newEngineSet==null) {
 					HgLog.Warning("newEngineSet==null (ChooseEngineSetAllRailTypes)");
 					return;
 				}
 				CalculateUseDepots();
+				local oldRailType = GetRailType();
 				local newRailType = newEngineSet.railType;
 				if(!DoUpdateRailType(newRailType)) {
-					RollbackUpdateRailType(currentRailType);
+					RollbackUpdateRailType(oldRailType);
 				}
 			}
 			return;
@@ -2121,6 +2075,7 @@ class TrainRoute extends Route {
 			return;
 		}*/
 
+		local currentRailType = GetRailType();
 		local newEngineSet = ChooseEngineSetAllRailTypes();
 		if(newEngineSet==null) {
 			if(HogeAI.Get().IsInfrastructureMaintenance()) {
@@ -3000,7 +2955,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 			
 
 			route.slopesTable.clear(); // TODO: ChangeDestinationと同様、登れるのかの再確認が必要
-			route.AddReturnTransferOrder(transferStation, returnDestStation);
+			route.AddReturnTransferOrder(route.GetLatestVehicle(), transferStation, returnDestStation);
 			
 
 			HgLog.Info("# TrainRoute: build return route succeeded:"+returnRoute);
