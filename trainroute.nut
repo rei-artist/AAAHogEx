@@ -1335,25 +1335,9 @@ class TrainRoute extends Route {
 		if(!HogeAI.Get().IsRich()) {
 			return;
 		}
-		local exec = AIExecMode();
-		
 		if(latestEngineVehicle != null) {
 			HgLog.Info("StartUpdateRail "+AIRail.GetName(railType)+" "+this);
-			
-			local railType = AIRail.GetCurrentRailType();
-			AIRail.SetCurrentRailType ( GetRailType() );
-			/*
-			local depotInfo = null;
-			if(IsSingle()) {
-				depotInfo = pathSrcToDest.path.BuildDepot();
-			} else {
-				depotInfo = pathDestToSrc.path.BuildDepot();
-			}*/
-			if(depotInfo.depots.len()>=1) {
-				saveData.updateRailDepot = updateRailDepot = true; //depotInfo.depots[0];
-			}
-			AIRail.SetCurrentRailType(railType);
-			//AddSendUpdateDepotOrder();
+			saveData.updateRailDepot = updateRailDepot = true; //depotInfo.depots[0];
 		}
 	}
 	
