@@ -716,6 +716,11 @@ class BuildUtils {
 			return AIMarine.BuildDock(a,b);
 		});
 	}
+	static function BuildCanalSafe(a) {
+		return BuildUtils.BuildSafe( function():(a) {
+			return AIMarine.BuildCanal(a);
+		});
+	}
 
 
 	static function RemoveBridgeUntilFree(p1) {
@@ -1226,3 +1231,24 @@ class CargoUtils {
 	}
 
 }
+
+class Serializer {
+	static nameClass = {};
+
+	static function Save(instance_) {
+		if(instance_ == null) {
+			return null;
+		}
+		return instance_.Save();
+	}
+
+	static function Load(data) {
+		if(data == null) {
+			return data;
+		}
+		return Serializer.nameClass[data.name].Load(data);
+	}
+}
+
+
+

@@ -447,7 +447,7 @@ class PlaceProduction {
 		local best = null;
 		local maxMinPiece = -1;
 		foreach(s,a in samples) {
-			//HgLog.Info("s:"+s+" pieceNumMin"+pieceNumMin+" a[0]"+a[0]);
+			HgLog.Info("s:"+s+" pieceNumMin"+pieceNumMin+" a[0]"+a[0]);
 			if(pieceNumMin % a[0] != 0) {
 				continue;
 			}
@@ -463,7 +463,7 @@ class PlaceProduction {
 		local pieceNum = pieceNumX * pieceNumY;
 		local minSeg = best[0];
 		local maxSeg = best[1];
-		//HgLog.Info("minSeg:"+minSeg+" maxSeg:"+maxSeg);
+		HgLog.Info("minSeg:"+minSeg+" maxSeg:"+maxSeg);
 		local result = [];
 		if(pieceNumY < pieceNumX) {
 			local segNumX = maxSeg;
@@ -472,9 +472,9 @@ class PlaceProduction {
 			local segY = segmentIndex / segNumX;
 			local segPieceNum = segH * pieceNumX / segNumX;
 			local segPieceNumM = segH * pieceNumX % segNumX;
-			local currentSegIndex = segY * segNumX;
 			local countPiece = 0;
 			local countSeg = 0;
+			local currentSegIndex = segY * segNumX;
 			for(local x=0; x<pieceNumX; x++) {
 				for(local y=0; y<segH; y++) {
 					if(currentSegIndex == segmentIndex) {
@@ -486,7 +486,7 @@ class PlaceProduction {
 							return result;
 						}
 						countSeg ++;
-						currentSegIndex+=segNumY;
+						currentSegIndex ++;
 						countPiece = 0;
 					}
 				}
@@ -518,7 +518,7 @@ class PlaceProduction {
 				}
 			}
 		}
-		return null;
+		return result;
 	}
 }
 

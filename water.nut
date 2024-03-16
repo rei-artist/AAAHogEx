@@ -44,7 +44,8 @@ class WaterRoute extends CommonRoute {
 	constructor() {
 		CommonRoute.constructor();
 		buoys = [];
-		useDepotOrder = true; //false;
+		useDepotOrder = false;
+		useServiceOrder = true;
 	}
 	
 	function Load(t) {
@@ -566,8 +567,8 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 			local destRoute = TrainRouteBuilder( dest, srcRoute.destHgStation.stationGroup, cargo, {
 				searchTransfer = true
 				noDoRoutePlans = true
-				noExtendRoute = true
-				routePlans = GetOption("routePlans",null)
+				canChangeDest = false
+				setRouteCandidates = GetOption("setRouteCandidates",null)
 				notUseSingle = true
 				notUseCompoundRoute = true } ).Build();
 			srcRoute.isBuilding = false;
@@ -584,7 +585,7 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 				isWaitingProduction = true
 				production = 100
 				noDoRoutePlans = true
-				routePlans = GetOption("routePlans",null)
+				setRouteCandidates = GetOption("setRouteCandidates",null)
 				notUseCompoundRoute = true } ).Build();
 			if(destRoute == null) {
 				return null;
@@ -1077,10 +1078,8 @@ class CanalStation extends HgStation {
 			return true;
 		}
 		foreach(t in canals) {
-			if(!BuildUtils.BuildSafe(function():(t) {
-				return AIMarine.IsCanalTile(t) || AIMarine.BuildCanal(t);
-			})) {
-				HgLog.Warning("BuildCanal failed:"+HgTile(t)+" "+AIError.GetLastErrorString());
+			if(!AIMarine.IsCanalTile(t) && !BuildUtils.BuildCanalSafe(t)) {
+				HgLog.Warning("BuildCanal1 failed:"+HgTile(t)+" "+AIError.GetLastErrorString());
 				return false;
 			}
 		}
@@ -1126,10 +1125,8 @@ class CanalStation extends HgStation {
 			}
 		}
 		foreach(t in canals) {
-			if(!BuildUtils.BuildSafe(function():(t) {
-				return AIMarine.IsCanalTile(t) || AIMarine.BuildCanal(t);
-			})) {
-				HgLog.Warning("BuildCanal failed:"+HgTile(t)+" "+AIError.GetLastErrorString());
+			if(!AIMarine.IsCanalTile(t) && !BuildUtils.BuildCanalSafe(t)) {
+				HgLog.Warning("BuildCanal2 failed:"+HgTile(t)+" "+AIError.GetLastErrorString());
 				return false;
 			}
 		}

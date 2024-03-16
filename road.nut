@@ -1015,9 +1015,7 @@ class TownBus {
 		} else {
 			AIVehicle.SetName(bus, "TownBus#"+AIVehicle.GetUnitNumber(bus));
 		}
-		foreach(station in notUsedStations) {
-			AIOrder.AppendOrder(bus, station, AIOrder.OF_NON_STOP_INTERMEDIATE);
-		}
+		RebuildOrder(bus, notUsedStations);
 		AIVehicle.StartStopVehicle(bus);
 		townBus = bus;
 		Save();
@@ -1026,7 +1024,10 @@ class TownBus {
 	
 	function RebuildOrder(bus,notUsedStations) {
 		while(AIOrder.GetOrderCount(bus) >= 1) {
-			AIOrder.RemoveOrder (bus, 0);
+			AIOrder.RemoveOrder(bus, 0);
+		}
+		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
+			AIOrder.AppendOrder(bus, depot, AIOrder.OF_SERVICE_IF_NEEDED | AIOrder.OF_NON_STOP_INTERMEDIATE );
 		}
 		foreach(station in notUsedStations) {
 			AIOrder.AppendOrder(bus, station, AIOrder.OF_NON_STOP_INTERMEDIATE);
@@ -1246,21 +1247,6 @@ class TownBus {
 			HgLog.Warning("No depot(TownBus.CreateTransferRoadRoute)"+this);
 			return false;
 		}
-		/*
-		foreach(route in RoadRoute.instances) {
-			if(route.srcHgStation.platformTile == srcStationTile) { //ルートの再利用
-				if(!route.IsClosed()) {
-					HgLog.Warning("TownBus.CreateTransferRoadRoute failed. Found Not closed route."+route+" "+this);
-					return false;
-				}
-			
-				route.destHgStation = toHgStation;
-				route.destRoute = destRoute;
-				route.ReOpen();
-				HgLog.Info("Reuse route(TownBus.CreateTransferRoadRoute)"+route+" "+this);
-				return true;
-			}
-		}*/
 		local srcHgStation = GetHgStation(srcStationTile);
 		if(srcHgStation == null) {
 			srcHgStation = PieceStation(srcStationTile);
@@ -1279,6 +1265,7 @@ class TownBus {
 		roadRoute.destRoute = destRoute;
 		roadRoute.depot = depot;
 		roadRoute.useDepotOrder = false;
+		roadRoute.useServiceOrder = true;
 		roadRoute.Initialize();
 		roadRoute.SetPath(path);
 		local vehicle = roadRoute.BuildVehicle();

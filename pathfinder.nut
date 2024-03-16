@@ -188,7 +188,7 @@ class RailPathFinder
 				break;
 			}
 			PerformanceCounter.Clear();
-			path = _FindPath(debug?1000:50);
+			path = _FindPath(50);
 			PerformanceCounter.Print();
 			counter++;
 			HgLog.Info("counter:"+counter);
@@ -545,6 +545,7 @@ class RailPathFinder
 
 		local diagonal = false;
 		local distance = distances[0];
+		local turn = false;
 		if (distance > 1) {
 			/* Check if we should build a bridge or a tunnel. */
 
@@ -636,6 +637,7 @@ class RailPathFinder
 			}
 			
 			if (t.len() >= 4 &&	AIMap.DistanceManhattan(t[0], t[3]) == 3 &&	dirs[2] != dirs[0]) {
+				turn = true;
 				if(dirs[1] != dirs[2]) { // 直線から斜めはゼロコスト
 					cost += self._cost_turn;
 				}
@@ -713,7 +715,10 @@ class RailPathFinder
 				}
 			} else {
 				if(!HogeAI.IsBuildable(t[1] + revDir) || !HogeAI.IsBuildable(t[0] + revDir) 
-						|| (AITile.IsCoastTile(t[0] + revDir) && HgTile.GetBoundMaxHeight(t[0] + revDir, t[1] + revDir) == 0)) {
+						|| (AITile.IsCoastTile(t[0] + revDir) && HgTile.GetBoundMaxHeight(t[0] + revDir, t[1] + revDir) == 0)
+						|| (turn && ( 
+							(dirs[1]==revDir && AITile.IsCoastTile(t[1]) && HgTile(t[1]).GetMaxHeightCount()<3) // 右ターンの場合
+							 || (dirs[2]==revDir && AITile.IsCoastTile(t[2]) && HgTile(t[2]).GetMaxHeightCount()<3) )) ) {
 					if(!self.revOkTiles.rawin(t[0]+revDir)) {
 						cost += 500;
 					}
@@ -901,6 +906,7 @@ class RailPathFinder
 		foreach(d in HgTile.DIR4Index) {
 			local neighbor = parTile + d;
 			if(AIRail.AreTilesConnected(curTile,target,neighbor)) {
+				//HgLog.Info("_IsInclude90DegreeTrack"+HgTile(curTile)+" "+HgTile(target)+" "+HgTile(neighbor)+" false");
 				return true;
 			}
 		}
@@ -1033,18 +1039,31 @@ class RailPathFinder
 				 *  them and no rail exists there. */
 				if (par == null 
 						|| (goal2 == null && self._BuildRail(par_tile, cur_node, next_tile))
-						|| (goal2 == null && fork && !RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile)
-							&& (!self._IsSlopedRail(next_tile, cur_node, cur_node + (cur_node-next_tile)) || AITile.IsSeaTile(next_tile))) //分岐の場合。信号、或いは通行中の列車のせいでBuildRailが失敗する事があるが成功
+						//分岐の場合。信号、或いは通行中の列車のせいでBuildRailが失敗するがスロープじゃなければ成功
+						|| (fork && goal2==null && !RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile)
+							&& (!self._IsSlopedRail(next_tile, cur_node, cur_node + (cur_node-next_tile)) || AITile.IsSeaTile(next_tile)))
 						|| (underBridge && self._IsSlopedRail(par_tile, cur_node, next_tile)) // 橋の下の垂直方向スロープは成功
 						|| (goal2 == next_tile 
-							&& (RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile) || self._BuildRail(par_tile, cur_node, next_tile)
-							&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node)))) {
+							&& (RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile) 
+								|| self._BuildRail(par_tile, cur_node, next_tile)
+								//ゴールが分岐の場合も信号、或いは通行中の列車のせいでBuildRailが失敗するがスロープじゃなければ成功
+								|| (fork && !self._IsSlopedRail(next_tile, cur_node, cur_node + (cur_node-next_tile))))
+							&& !self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node))) {
 					if (par != null) {
 						tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
 					} else {
 						tiles.push([next_tile, self._GetDirection(null, cur_node, next_tile, false)]);
 					}
 				}
+				/*
+				if(debug) {
+					if(goal2 == next_tile) {
+						HgLog.Warning("goal2 == next_tile:"+HgTile.GetTilesString([par_tile, cur_node, next_tile])
+							+" "+RailPathFinder.AreTilesConnectedAndMine(par_tile, cur_node, next_tile)
+							+" "+self._BuildRail(par_tile, cur_node, next_tile)
+							+" "+self._IsInclude90DegreeTrack(next_tile, par_tile, cur_node));
+					}
+				}*/
 			}
 			if (par != null /*&& par.GetParent() != null*/ && !underBridge) {
 				local bridges = self._GetTunnelsBridges(par, par_tile, cur_node/*, self._GetDirection(par.GetParent().GetTile(), par_tile, cur_node, true)*/);
@@ -1414,21 +1433,33 @@ class RailPathFinder
 	}
 }
 
-
-
-
-
-
 class RailPathFinder.Underground {
 	level = null;
 
 	constructor(level) {
 		this.level = level;
 	}
+	
+	function Load(data) {
+		return RailPathFinder.Underground(data.level);
+	}
+	
+	function Save() {
+		return {name="Underground",level=level};
+	}
 }
+Serializer.nameClass.Underground <- RailPathFinder.Underground;
 
 class RailPathFinder.BridgeOnWater {
+	function Load(data) {
+		return RailPathFinder.BridgeOnWater();
+	}
+	
+	function Save() {
+		return {name="BridgeOnWater"};
+	}
 }
+Serializer.nameClass.BridgeOnWater <- RailPathFinder.BridgeOnWater;
 
 class Pathfinding {
 	
@@ -1455,5 +1486,4 @@ class Pathfinding {
 			}
 		}
 	}
-
 }

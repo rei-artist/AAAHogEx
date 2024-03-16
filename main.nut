@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 80;
+	static version = 81;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -267,6 +267,8 @@ class HogeAI extends AIController {
 		SetCompanyName();
 		HgLog.Info("AAAHogEx Started! version:"+HogeAI.version+" name:"+AICompany.GetName(AICompany.COMPANY_SELF));
 		HgLog.Info("openttd version:"+openttdVersion);
+		HgLog.Warning(AIMarine.IsCanalTile(HgTile.XY(27,30).tile));
+		
 		/*
 		foreach(industry,_ in AIIndustryList()) {
 			if(AIIndustry.GetAmountOfStationsAround(industry) >= 1) {
@@ -558,7 +560,6 @@ class HogeAI extends AIController {
 		dayLengthFactor = "GetDayLengthFactor" in AIDate ? AIDate.GetDayLengthFactor() : 1;
 		HgLog.Info("dayLengthFactor:"+dayLengthFactor);
 
-		DoLoad();
 		
 		clearWaterCost = BuildUtils.GetClearWaterCost();
 		/*
@@ -675,11 +676,12 @@ class HogeAI extends AIController {
 			WaitDays(365); // 新しいindustryが建設されるのを待ってみる
 		}*/
 		
-		local currentLoanAmount = AICompany.GetLoanAmount();
 
 		AIRoad.SetCurrentRoadType(AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD).Begin());
 		
+		DoLoad();
 
+		local currentLoanAmount = AICompany.GetLoanAmount();
 		indexPointer = 3; // ++
 		while (true) {
 			HgLog.Info("######## turn "+turn+" ########");
@@ -1008,9 +1010,10 @@ class HogeAI extends AIController {
 		
 		local routeBuilder = routeClass.GetBuilderClass()(t.dest, t.src, t.cargo, { 
 			pendingToDoPostBuild = false //roiBase ? true : false
-			destRoute = t.rawin("route") ? t.route : null
+			destRoute = t.rawin("route") ? t.route.id : null
 			noDoRoutePlans = true
-			routePlans = routeCandidates
+			setRouteCandidates = true
+			canChangeDest = t.rawin("canChangeDest") ? t.canChangeDest : true
 		});
 		if(routeBuilder.ExistsSameRoute()) {
 			HgLog.Info("ExistsSameRoute "+explain);
@@ -1817,13 +1820,6 @@ class HogeAI extends AIController {
 			HgLog.Info("TryBuild Transfer v:"+latestEngineSet.GetValue()+" distance:"+ originalRoute.GetDistance()
 				+" "+latestEngineSet+" build("+latestEngineSet.buildingTime+"d,$"+latestEngineSet.buildingCost+") "+originalRoute);
 		}
-		/*
-		local routePlans = HogeAI.Get().GetSortedRoutePlans(additionalPlaces);
-		DoRoutePlans( routePlans ,null ,{ 
-			routePlans = routePlans
-			noDoRoutePlans = true
-			limitDate = limitDate 
-		} );*/
 		
 		foreach(t in additionalPlaces) {
 			if(limitDate < AIDate.GetCurrentDate()) {
@@ -1842,7 +1838,7 @@ class HogeAI extends AIController {
 				continue;
 			}
 			// TODO 容量オーバーのチェック
-			local routeBuilder = t.routeClass.GetBuilderClass()( t.dest, t.srcPlace, t.cargo, { destRoute = t.route });
+			local routeBuilder = t.routeClass.GetBuilderClass()( t.dest, t.srcPlace, t.cargo, { destRoute = t.route.id });
 			if(!routeBuilder.ExistsSameRoute()) {
 				HgLog.Info(routeBuilder+" for:"+t.route);
 				local newRoute = routeBuilder.Build();
@@ -2459,7 +2455,11 @@ class HogeAI extends AIController {
 	}
 	
 	function DoRoutePlan(routePlan, explain = "", options = {}) {
-		local routeBuilder = routePlan.routeClass.GetBuilderClass()(routePlan.dest, routePlan.src, routePlan.cargo, options);
+		local newOptions = clone options;
+		if("canChangeDest" in routePlan) {
+			newOptions.rawset("canChangeDest", routePlan.canChangeDest);
+		}
+		local routeBuilder = routePlan.routeClass.GetBuilderClass()(routePlan.dest, routePlan.src, routePlan.cargo, newOptions);
 		if(routeBuilder.ExistsSameRoute()) {
 			return false;
 		}
@@ -2620,7 +2620,7 @@ class HogeAI extends AIController {
 		local cargo = cargoPlan.cargo;
 		local noShowResult = options.rawin("noShowResult") ? options.noShowResult : false;
 		local noSortResult = options.rawin("noSortResult") ? options.noSortResult : false;
-		if(cargoPlan.rawin("srcPlace")) {
+		if(cargoPlan.rawin("srcPlace")) { // destPlace <- srcPlace 固定
 			foreach(destCandidate in CreateRouteCandidates(cargo, cargoPlan.srcPlace, {places=[cargoPlan.destPlace]}, 
 					additionalProduction, maxResult, options)) {
 				local routePlan = {};
@@ -2628,6 +2628,7 @@ class HogeAI extends AIController {
 				if(routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) {
 					continue;
 				}
+				routePlan.canChangeDest <- false;
 				routePlan.cargo <- cargo;
 				routePlan.src <- cargoPlan.srcPlace;
 				routePlan.dest <- destCandidate.place;
@@ -2639,7 +2640,7 @@ class HogeAI extends AIController {
 				routePlan.score <- destCandidate.score;
 				routePlans.push(routePlan);
 			}
-		} else if(cargoPlan.place.IsAccepting()) {
+		} else if(cargoPlan.place.IsAccepting()) { // destPlace固定
 			local acceptingPlace = cargoPlan.place;
 			local maxDistance = 0;
 			if(cargoPlan.rawin("maxDistance")) {
@@ -2656,6 +2657,7 @@ class HogeAI extends AIController {
 				if(!acceptingPlace.IsRaw() && routeClass.IsTooManyVehiclesForSupportRoute(routeClass)) { //raw industryを満たすのは重要なので例外(for FIRS)
 					continue;
 				}
+				routePlan.canChangeDest <- false;
 				routePlan.cargo <- cargo;
 				routePlan.src <- srcCandidate.place;
 				routePlan.dest <- acceptingPlace;
@@ -2671,7 +2673,7 @@ class HogeAI extends AIController {
 				routePlans.push(routePlan);
 			}
 		} else {
-			local producingPlace = cargoPlan.place;
+			local producingPlace = cargoPlan.place;// srcPlace固定
 			foreach(destCandidate in CreateRouteCandidates(cargo, producingPlace,
 					{searchProducing = false}, additionalProduction, maxResult, options)) {
 				local routePlan = {};
@@ -2803,7 +2805,16 @@ class HogeAI extends AIController {
 		if(route.GetLastRoute().returnRoute != null) {
 			return null;
 		}
-		local maxExtDistance = 0;
+		if(route.GetDistance() > TrainRoute.GetIdealDistance(route.cargo)) {
+			return null;
+		}
+		
+		local maxExtDistance = min(500, TrainRoute.GetIdealDistance(route.cargo) - route.pathDistance);
+		if(maxExtDistance < 100) {
+			return null;
+		}
+		/*
+		
 		if(route.IsClosed()) {
 			maxExtDistance = 500;
 		} else {
@@ -2835,7 +2846,7 @@ class HogeAI extends AIController {
 			}
 //			maxDistance -= 100;
 			HgLog.Info("SearchAndBuildAdditionalDest maxExtDistance:"+maxExtDistance+" "+route);
-		}
+		}*/
 		
 		local lastAcceptingTile = destHgStation.platformTile;
 		local ecsHardDest = ecs && destHgStation.place.IsEcsHardNewRouteDest(route.cargo);

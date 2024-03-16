@@ -1457,12 +1457,17 @@ class TrainEstimator extends Estimator{
 					if(useReliability) {
 						cruiseSpeed = (60 + cruiseSpeed * 3) / 4;
 					}
-					
-					local cruiseDays = VehicleUtils.GetDays( pathDistance,cruiseSpeed ) * 150 / (trainReiliability+50);
-					local days = (cruiseDays + loadingTime) * 2;
+					local startDays = 8.0 / (trainPlan.GetPower().tofloat() / trainPlan.GetWeight().tofloat()) * cruiseSpeed / 100;
+					local startDistance = VehicleUtils.GetDistance(cruiseSpeed/2, startDays).tointeger();
 					
 					local stationLimitTime = isRoRo ? 10 : 20;
-					local stationInOutTime = VehicleUtils.GetDays( max(platformLength,7), cruiseSpeed );
+					local stationInOutTime = VehicleUtils.GetDays( max(platformLength,7), cruiseSpeed ) * (isRoRo ? 1 : 2) / 2;
+					
+					local cruiseDays = 
+						(VehicleUtils.GetDays( max(0,pathDistance-startDistance),cruiseSpeed ) 
+						+ VehicleUtils.GetDays( max(startDistance-pathDistance,startDistance),cruiseSpeed/2 )) * 150 / (trainReiliability+50);
+					local days = (cruiseDays + loadingTime) * 2;
+					
 					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime));
 					maxVehicles = min( maxVehicles, vehiclesRoom );
 
@@ -1589,9 +1594,6 @@ class TrainEstimator extends Estimator{
 	function GetCargoWeight(cargo, quantity) {
 		return VehicleUtils.GetCargoWeight(cargo, quantity);
 	}
-
-
-
 }
 
 class TrainPlan {

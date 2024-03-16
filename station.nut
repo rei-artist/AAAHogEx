@@ -699,6 +699,7 @@ class StationFactory {
 		local stations2 = [];
 		
 		local considerAcceptance = place != null && place instanceof TownCargo;
+		local considerProduction = place != null && !considerAcceptance && place.IsProducing();
 		if(this instanceof RoadStationFactory && HogeAI.Get().IsDistantJoinStations()) {
 			considerAcceptance = false;
 		}
@@ -741,14 +742,17 @@ class StationFactory {
 					continue;
 				}
 				station.score += acceptance;
+			} else if(considerProduction) {
+				local production = AITile.GetCargoProduction(station.platformTile, cargo, platformRect.Width(), platformRect.Height(), radius);
+				station.score += production;
 			}
 			stationScoreList.AddItem(stationIndex, station.score);
-			if(startDate + 60  < AIDate.GetCurrentDate()) {
+			if(startDate + 15  < AIDate.GetCurrentDate()) {
 				HgLog.Warning("Station GetBestHgStationCosts reached limitDate1. stationPlace:"+label);
 				break;
 			}
-			HogeAI.DoInterval();
 		}
+		HogeAI.DoInterval();
 		startDate = AIDate.GetCurrentDate();
 		HogeAI.DoInterval();
 		HgLog.Info(this+" days:"+(AIDate.GetCurrentDate()-startDate)+" candidates:"+stationScoreList.Count()+"/"+hgStations.len()
@@ -766,11 +770,10 @@ class StationFactory {
 				station.levelTiles = levelTiles;
 				return [[station,0]]; // この先は重いのでカット
 			}
-			if(startDate + 60 < AIDate.GetCurrentDate()) {
+			if(startDate + 7 < AIDate.GetCurrentDate()) {
 				HgLog.Warning("Station GetBestHgStationCosts reached limitDate2. stationPlace:"+label);
 				break;
 			}
-			HogeAI.DoInterval();
 		}
 		return [];
 	}
@@ -1025,14 +1028,19 @@ class RailStationFactory extends StationFactory {
 	function GetMaxStatoinLength(cargo) {
 		if(distance != null) {
 			local settingMax = min(HogeAI.Get().maxStationSpread , AIGameSettings.GetValue("vehicle.max_train_length"));
-			local result =  min( 4 + distance / 25, settingMax );
-			if(HogeAI.Get().IsInfrastructureMaintenance()) {
-				//result = max(4, min(7, result / 2)); マップが広いとむしろ不利になる
+			return min( 4 + distance / 68, settingMax );
+/*			if(HogeAI.Get().IsDebug()) {
+				return min( 4 + distance / 100, settingMax );
+			} else {
+				return min( 4 + distance / 50, settingMax );
 			}
-			/*if(CargoUtils.IsPaxOrMail(cargo)) {
-				result = min(10, result);
-			}*/
-			return result;
+*/			
+			
+			if(AIMap.GetMapSizeX()*AIMap.GetMapSizeY()>=4096*2048) {
+				return min( 4 + distance / 8, settingMax );
+			} else {
+				return min( 4 + distance / 25, settingMax );
+			}
 		} else {
 			return 7;
 		}

@@ -182,6 +182,23 @@ class TrainRoute extends Route {
 		return result;
 	}
 	
+	static function GetIdealDistance(cargo) {
+		local result = 0;
+		local maxValue = 0;
+		local infrastractureTypes = TrainRoute.GetDefaultInfrastractureTypes();
+		foreach(distanceIndex, distance in HogeAI.distanceEstimateSamples) {
+			local estimate = Route.Estimate(AIVehicle.VT_RAIL, cargo, distance, 890, CargoUtils.IsPaxOrMail(cargo) ? true: false, infrastractureTypes);
+			if(estimate == null) continue;
+			local value = HogeAI.Get().buildingTimeBase ? estimate.routeIncome : estimate.value; // 理想距離なのでbuildingTimeの場合、建築時間を含めない
+			HgLog.Info("distance:"+distance+" estimate:"+value);
+			if(maxValue < value) {
+				result = distance;
+				maxValue = value;
+			}
+		}
+		HgLog.Info("IdealDistance:"+result);
+		return result;
+	}
 	
 	function AddUnsuitableEngineWagon(trainEngine, wagonEngine) {
 		TrainRoute.unsuitableEngineWagons.rawset(trainEngine+"-"+wagonEngine,0);
@@ -568,7 +585,7 @@ class TrainRoute extends Route {
 				result[cargo] <- production;
 			}
 		}
-		saveData.oldCargoProduction = oldCargoProduction = result;
+		saveData.oldCargoProduction = oldCargoProduction = cargoProduction;
 		return result;
 	
 /*
@@ -671,7 +688,8 @@ class TrainRoute extends Route {
 		trainEstimator.route = this;
 		trainEstimator.cargo = cargo;
 		trainEstimator.distance = GetDistance() + (additionalDistance != null ? additionalDistance : 0);
-		trainEstimator.pathDistance = pathDistance + (additionalDistance != null ? additionalDistance : 0);
+		trainEstimator.pathDistance = pathDistance + (additionalDistance != null ? additionalDistance : 0)
+			+ srcHgStation.platformLength + destHgStation.platformLength;
 		trainEstimator.cargoProduction = EstimateCargoProductions();
 		trainEstimator.isBidirectional = IsBiDirectional();
 		trainEstimator.isTransfer = isTransfer;
@@ -696,7 +714,9 @@ class TrainRoute extends Route {
 		if(additionalDistance != null) {
 			return trainEstimator.GetEngineSetsOrder();
 		}
-		
+	
+		// TODO: ほとんど変わらないのにコストをかけて車両交換する事が多い。あまり変わらない場合は更新しない
+		// productionが在庫で変動するので、頻繁に変更もかかる。長距離路線だと一往復もしないうちの事が多い
 		saveData.engineSetsCache = engineSetsCache = trainEstimator.GetEngineSetsOrder();
 		saveData.engineSetsDate = engineSetsDate = AIDate.GetCurrentDate() + (IsSingle() ? 3000 : 1000) + AIBase.RandRange(500);
 
@@ -716,7 +736,7 @@ class TrainRoute extends Route {
 		trainEstimator.route = this;
 		trainEstimator.cargo = cargo;
 		trainEstimator.distance = GetDistance();
-		trainEstimator.pathDistance = pathDistance;
+		trainEstimator.pathDistance = pathDistance + srcHgStation.platformLength + destHgStation.platformLength;
 		trainEstimator.cargoProduction = EstimateCargoProductions();
 		//trainEstimator.subProductions = GetRoundedSubProductions();
 		trainEstimator.isBidirectional = IsBiDirectional();
@@ -1038,21 +1058,31 @@ class TrainRoute extends Route {
 		return AIEngine.GetWeight(trainEngine) * trainNum + (AIEngine.GetWeight(wagonEngine) + TrainRoute.GetCargoWeight(cargo,AIEngine.GetCapacity(wagonEngine))) * wagonNum;
 	}
 	
-	function GetMaxSlopes(length, pathIn=null) {
-		local path = pathIn == null ? pathSrcToDest.path : pathIn;
+	function GetMaxSlopes(length) {
+		local path = pathSrcToDest.path;
 		local tileLength = ceil(length.tofloat() / 16).tointeger();
+		local table;
 		if(slopesTable.rawin(tileLength)) {
-			return slopesTable[tileLength];
+			table = slopesTable[tileLength];
+			if(table.lastPoint==null) {
+				return table.maxSlopes;
+			}
+		} else {
+			table = {lastPoint=null,maxSlopes=0};
+			slopesTable.rawset(tileLength, table);
 		}
-		local result = 0;
-		result = max(result, path.GetSlopes(tileLength));
+		local maxSlopes = path.GetSlopes(tileLength, table.lastPoint);
+		table.maxSlopes = max(maxSlopes[0],table.maxSlopes);
+		if(returnRoute != null || IsBiDirectional()) {
+			table.maxSlopes = max(maxSlopes[1],table.maxSlopes);
+		}
+		table.lastPoint = null;
 		//result = max(result, pathDestToSrc.path.GetSlopes(length));
-		if(pathDestToSrc != null && pathIn == null && (returnRoute != null || IsBiDirectional())) {
-			result = max(result, GetMaxSlopes(length, pathDestToSrc.path));
-		}
-		HgLog.Info("GetMaxSlopes("+length+","+tileLength+")="+result+" "+this);
-		slopesTable[tileLength] <- result;
-		return result;
+		//if(pathDestToSrc != null && pathIn == null && (returnRoute != null || IsBiDirectional())) {
+		//	result = max(result, GetMaxSlopes(length, pathDestToSrc.path));
+		//}
+		HgLog.Info("GetMaxSlopes("+length+","+tileLength+")="+table.maxSlopes+" "+this);
+		return table.maxSlopes
 	}
 		
 	function IsBiDirectional() {
@@ -1090,8 +1120,13 @@ class TrainRoute extends Route {
 	
 
 	function AddDestination(destHgStation) {
+		foreach(s in destHgStations) {
+			if(s == destHgStation) {
+				return;
+			}
+		}
 		destHgStations.push(destHgStation);
-		slopesTable.clear();
+		
 		pathDistance = pathSrcToDest.path.GetRailDistance();
 		
 		destHgStation.AddUsingRoute(this); // ChangeDestination失敗時に駅が消されるのを防ぐ
@@ -1189,6 +1224,12 @@ class TrainRoute extends Route {
 	
 	function AddBranchLine(station, srcToDest, destToSrc) {
 		branchLines.rawset(station.id, [srcToDest,destToSrc]);
+		local point = srcToDest.path.GetLastTile();
+		foreach(length, table in slopesTable) {
+			if(table.lastPoint == null) {
+				table.lastPoint = point;
+			}
+		}
 		Save();
 	}
 
@@ -1515,36 +1556,6 @@ class TrainRoute extends Route {
 		}
 		engineVehicles.rawdelete(vehicle);
 		CommonRoute.vehicleRemoving.rawdelete(vehicle);
-	}
-	
-	function OnVehicleWaitingInDepot(engineVehicle) {
-		local execMode = AIExecMode();
-		if(isClosed || reduceTrains) {
-			if(isRemoved || latestEngineVehicle != engineVehicle) { //reopenに備えてlatestEngineVehicleだけ残す
-				SellVehicle(engineVehicle);
-				if(GetNumVehicles()==0) {
-					HgLog.Warning("All vehicles removed."+this);
-					if(isRemoved) {
-						RemoveFinished();
-					}
-					
-				}
-			}
-		} else if(updateRailDepot != null) {
-			if(AIVehicle.GetLocation(engineVehicle) != updateRailDepot) {
-				AIVehicle.StartStopVehicle(engineVehicle);
-			}
-		} else {
-			local execMode = AIExecMode();
-			local latestVehicle = GetLatestVehicle();
-			if(latestVehicle == engineVehicle) {
-				if(BuildNewTrain()) {
-					SellVehicle(engineVehicle);
-				}
-			} else {
-				SellVehicle(engineVehicle);
-			}
-		}
 	}
 	
 	function IsEqualEngine(vehicle1, vehicle2) {
@@ -1914,6 +1925,41 @@ class TrainRoute extends Route {
 			}
 		}
 	}
+	
+	function OnVehicleWaitingInDepot(engineVehicle) {
+		local execMode = AIExecMode();
+		if(isClosed || reduceTrains) {
+			if(isRemoved || latestEngineVehicle != engineVehicle) { //reopenに備えてlatestEngineVehicleだけ残す
+				SellVehicle(engineVehicle);
+				if(GetNumVehicles()==0) {
+					HgLog.Warning("All vehicles removed."+this);
+					if(isRemoved) {
+						RemoveFinished();
+					}
+					
+				}
+			}
+		} else if(updateRailDepot != null) {
+			local execMode = AIExecMode();
+			local latestVehicle = GetLatestVehicle();
+			if(latestVehicle != engineVehicle) {
+				SellVehicle(engineVehicle);
+			}
+//			if(AIVehicle.GetLocation(engineVehicle) != updateRailDepot) {
+//				AIVehicle.StartStopVehicle(engineVehicle);
+//			}
+		} else {
+			local execMode = AIExecMode();
+			local latestVehicle = GetLatestVehicle();
+			if(latestVehicle == engineVehicle) {
+				if(BuildNewTrain()) {
+					SellVehicle(engineVehicle);
+				}
+			} else {
+				SellVehicle(engineVehicle);
+			}
+		}
+	}
 
 	function CheckTrains() {
 		local execMode = AIExecMode();
@@ -2005,11 +2051,13 @@ class TrainRoute extends Route {
 		if(IsCloneTrain()) {
 			local numClone = 1;
 			if(latestEngineSet != null) {
-				if(latestEngineSet.vehiclesPerRoute - numVehicles >= 9) {
+				if(latestEngineSet.vehiclesPerRoute - numVehicles >= 15) {
+					numClone = 6;
+				} else if(latestEngineSet.vehiclesPerRoute - numVehicles >= 9) {
 					numClone = 4;
-				} else if(latestEngineSet.vehiclesPerRoute - numVehicles >= 6) {
-					numClone = 3;
-				} else if(latestEngineSet.vehiclesPerRoute - numVehicles >= 3) {
+				//} else if(latestEngineSet.vehiclesPerRoute - numVehicles >= 6) {
+				//	numClone = 3;
+				} else if(latestEngineSet.vehiclesPerRoute - numVehicles >= 0) {
 					numClone = 2;
 				}
 			}
@@ -2039,6 +2087,21 @@ class TrainRoute extends Route {
 		local currentRailType = GetRailType();
 
 		if(updateRailDepot != null) {
+			local list1 = GetVehicleList();
+			list1.Valuate(AIVehicle.IsStoppedInDepot);
+			local list2 = AIList();
+			list2.AddList(list1);
+			list1.KeepValue(1);
+			list2.KeepValue(0);
+			list1.Valuate(AIVehicle.GetLocation);
+			list1.KeepValue(updateRailDepot);
+			if(list1.Count()>=1) {
+				list2.Valuate(AIOrder.IsGotoDepotOrder,AIOrder.ORDER_CURRENT);
+				list2.KeepValue(0);
+				foreach(v,_ in list2) {
+					AIVehicle.SendVehicleToDepot(v);
+				}
+			}
 			if(IsAllVehicleInUpdateRailDepot()) {
 				local newEngineSet = ChooseEngineSetAllRailTypes();
 				if(newEngineSet==null) {
@@ -2423,9 +2486,24 @@ class TrainReturnRoute extends Route {
 }
 
 class TrainRouteBuilder extends RouteBuilder {
+	static function CreateByParams(params) {
+		return TrainRouteBuilder(
+			Place.Load(params.dest),
+			Place.Load(params.src),
+			params.cargo,
+			params.options);
+	}
 
+	constructor(dest, src, cargo, options = {}) {
+		RouteBuilder.constructor(dest,src,cargo,options,"TrainRouteBuilder");
+	}
+	
 	function GetRouteClass() {
 		return TrainRoute;
+	}
+	
+	function Load() {
+		DoBuild();
 	}
 
 	function DoBuild() {
@@ -2453,103 +2531,113 @@ class TrainRouteBuilder extends RouteBuilder {
 		
 		local aiExecMode = AIExecMode();
 		
-		local subCargos = [];
-		local isBidirectional = false;
-		local cargoProduction = {};
-		cargoProduction[cargo] <- max(50,src.GetFutureExpectedProduction(cargo, AIVehicle.VT_RAIL));
-		if(dest instanceof Place && src instanceof Place) { //TODO: stationgroupの場合
-			foreach(c in src.GetProducingCargos()) {
-				if(c != cargo && dest.IsCargoAccepted(c)) {
-					cargoProduction[c] <- src.GetFutureExpectedProduction(c, AIVehicle.VT_RAIL);
+		local engineSet = GetBuilt("engineSet");
+		if(engineSet==null) {
+			local subCargos = [];
+			local isBidirectional = false;
+			local cargoProduction = {};
+			cargoProduction[cargo] <- max(50,src.GetFutureExpectedProduction(cargo, AIVehicle.VT_RAIL));
+			if(dest instanceof Place && src instanceof Place) { //TODO: stationgroupの場合
+				foreach(c in src.GetProducingCargos()) {
+					if(c != cargo && dest.IsCargoAccepted(c)) {
+						cargoProduction[c] <- src.GetFutureExpectedProduction(c, AIVehicle.VT_RAIL);
+					}
 				}
+				isBidirectional = dest.IsAcceptingAndProducing(cargo) && src.IsAcceptingAndProducing(cargo);
 			}
-			isBidirectional = dest.IsAcceptingAndProducing(cargo) && src.IsAcceptingAndProducing(cargo);
-		}
-		
-		local trainEstimator = TrainEstimator();
-		trainEstimator.cargo = cargo;
-		trainEstimator.isSingleOrNot = isSingleOrNot; //srcが工場の場合、後から生産量が増加する可能性が高いので複線のみにしておく
-		trainEstimator.cargoProduction = cargoProduction;
-		trainEstimator.distance = distance;
-		trainEstimator.checkRailType = true;
-		trainEstimator.isRoRo = !isTransfer;
-		trainEstimator.isBidirectional = isBidirectional;
-		if(options.rawin("destRoute") && options.destRoute != null) {
-			trainEstimator.SetDestRoute( options.destRoute, dest, src );
-		}
-		if(src instanceof StationGroup) {
-			trainEstimator.cargoIsTransfered[cargo] <- true;
-		}
-		local engineSets = trainEstimator.GetEngineSetsOrder();
-		/*
-		foreach(engineSet in engineSets) {
-			HgLog.Info(engineSet.GetTrainString());
-		}*/
-		
-		if(engineSets.len()==0) {
-			if(trainEstimator.tooShortMoney == true) {
-				HgLog.Info("TrainRoute: tooShortMoney "+explain);
-				return false;
+			
+			local trainEstimator = TrainEstimator();
+			trainEstimator.cargo = cargo;
+			trainEstimator.isSingleOrNot = isSingleOrNot; //srcが工場の場合、後から生産量が増加する可能性が高いので複線のみにしておく
+			trainEstimator.cargoProduction = cargoProduction;
+			trainEstimator.distance = distance;
+			trainEstimator.checkRailType = true;
+			trainEstimator.isRoRo = !isTransfer;
+			trainEstimator.isBidirectional = isBidirectional;
+			if(options.rawin("destRoute") && options.destRoute != null) {
+				trainEstimator.SetDestRoute( Route.allRoutes[options.destRoute], dest, src );
 			}
-			HgLog.Info("TrainRoute: Not found enigneSet "+explain);
-			return null;
-		}
-		HgLog.Info("TrainRoute railType:"+AIRail.GetName(engineSets[0].railType));
-		HgLog.Info("AIRail.GetMaintenanceCostFactor:"+AIRail.GetMaintenanceCostFactor(engineSets[0].railType));	
-		AIRail.SetCurrentRailType(engineSets[0].railType);
-		
-		local destTile = null;
-		local destHgStation = null;
-		destTile = dest.GetLocation();
-		local useSingle = engineSets[0].isSingle; //HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(100000) && !HogeAI.Get().HasIncome(20000);
-		local destStationFactory = TerminalStationFactory();
-		destStationFactory.distance = distance;
-		destStationFactory.useSingle = useSingle;
-		if(dest instanceof Place) {
-			local destPlace = dest;
-			if(destPlace.GetProducing().IsTreatCargo(cargo)) { // bidirectional
-				destPlace = destPlace.GetProducing();
+			if(src instanceof StationGroup) {
+				trainEstimator.cargoIsTransfered[cargo] <- true;
 			}
-			destHgStation = destStationFactory.CreateBest(destPlace, cargo, src.GetLocation());
-		} else  {
-			destStationFactory.useSimple = true;
-			destHgStation = destStationFactory.CreateBest( dest, cargo, src.GetLocation() );
+			local engineSets = trainEstimator.GetEngineSetsOrder();
+			/*
+			foreach(engineSet in engineSets) {
+				HgLog.Info(engineSet.GetTrainString());
+			}*/
+			
+			if(engineSets.len()==0) {
+				if(trainEstimator.tooShortMoney == true) {
+					HgLog.Info("TrainRoute: tooShortMoney "+explain);
+					return false;
+				}
+				HgLog.Info("TrainRoute: Not found enigneSet "+explain);
+				return null;
+			}
+			engineSet = engineSets[0];
+			SetBuilt("engineSet",engineSet);
 		}
-
+		local useSingle = engineSet.isSingle; //HogeAI.Get().GetUsableMoney() < HogeAI.Get().GetInflatedMoney(100000) && !HogeAI.Get().HasIncome(20000);
+		HgLog.Info("TrainRoute railType:"+AIRail.GetName(engineSet.railType)+" isSingle:"+useSingle);
+		HgLog.Info("AIRail.GetMaintenanceCostFactor:"+AIRail.GetMaintenanceCostFactor(engineSet.railType));	
+		AIRail.SetCurrentRailType(engineSet.railType);
+		
+		local destHgStation = GetBuilt("destHgStation");
 		if(destHgStation == null) {
-			HgLog.Warning("TrainRoute: No destStation."+explain);
-			Place.AddNgPlace(dest, cargo, AIVehicle.VT_RAIL);
-			return null;
-		}
-		
-		local srcStatoinFactory = SrcRailStationFactory();
-		srcStatoinFactory.platformLength = destHgStation.platformLength;
-		srcStatoinFactory.useSimple = destStationFactory.useSimple;
-		srcStatoinFactory.useSingle = useSingle;
-		local srcHgStation = srcStatoinFactory.CreateBest(src, cargo, destTile);
-		if(srcHgStation == null) {
-			HgLog.Warning("TrainRoute: No srcStation."+explain);
-			Place.AddNgPlace(src, cargo, AIVehicle.VT_RAIL);
-			return null;
-		}
+			local destStationFactory = TerminalStationFactory();
+			local canChangeDest = options.rawin("canChangeDest") ? options.canChangeDest : true;
+			destStationFactory.distance = (useSingle || isTransfer || !canChangeDest) ? distance : TrainRoute.GetIdealDistance(cargo);
+			destStationFactory.useSingle = useSingle;
+			if(dest instanceof Place) {
+				local destPlace = dest;
+				if(destPlace.GetProducing().IsTreatCargo(cargo)) { // bidirectional
+					destPlace = destPlace.GetProducing();
+				}
+				destHgStation = destStationFactory.CreateBest(destPlace, cargo, src.GetLocation());
+			} else  {
+				destStationFactory.useSimple = true;
+				destHgStation = destStationFactory.CreateBest( dest, cargo, src.GetLocation() );
+			}
 
-		srcHgStation.cargo = cargo;
-		srcHgStation.isSourceStation = true;
-		if(!srcHgStation.BuildExec()) { 
-			HgLog.Warning("TrainRoute: srcHgStation.BuildExec failed. platform:"+srcHgStation.GetPlatformRectangle()+" "+explain);
-			Rollback();
-			return null;
+			if(destHgStation == null) {
+				HgLog.Warning("TrainRoute: No destStation."+explain);
+				Place.AddNgPlace(dest, cargo, AIVehicle.VT_RAIL);
+				return null;
+			}
 		}
-		AddRollback(srcHgStation);
+		local srcHgStation = GetBuilt("srcHgStation");
+		if(srcHgStation == null) {
+			local srcStatoinFactory = SrcRailStationFactory();
+			srcStatoinFactory.platformLength = destHgStation.platformLength;
+			srcStatoinFactory.useSimple = dest instanceof Place ? false : true;
+			srcStatoinFactory.useSingle = useSingle;
+			srcHgStation = srcStatoinFactory.CreateBest(src, cargo, dest.GetLocation());
+			if(srcHgStation == null) {
+				HgLog.Warning("TrainRoute: No srcStation."+explain);
+				Place.AddNgPlace(src, cargo, AIVehicle.VT_RAIL);
+				return null;
+			}
+
+			srcHgStation.cargo = cargo;
+			srcHgStation.isSourceStation = true;
+			if(!srcHgStation.BuildExec()) { 
+				HgLog.Warning("TrainRoute: srcHgStation.BuildExec failed. platform:"+srcHgStation.GetPlatformRectangle()+" "+explain);
+				Rollback();
+				return null;
+			}
+			AddBuilt("srcHgStation",srcHgStation);
+		}
 		
-		destHgStation.cargo = cargo;
-		destHgStation.isSourceStation = false;
-		if(!destHgStation.BuildExec()) {
-			HgLog.Warning("TrainRoute: destHgStation.BuildExec failed. platform:"+destHgStation.GetPlatformRectangle()+" "+explain);
-			Rollback();
-			return null;
+		if(GetBuilt("destHgStation") == null) {
+			destHgStation.cargo = cargo;
+			destHgStation.isSourceStation = false;
+			if(!destHgStation.BuildExec()) {
+				HgLog.Warning("TrainRoute: destHgStation.BuildExec failed. platform:"+destHgStation.GetPlatformRectangle()+" "+explain);
+				Rollback();
+				return null;
+			}
+			AddBuilt("destHgStation",destHgStation);
 		}
-		AddRollback(destHgStation);
 		
 		local pathfinding = Pathfinding();
 		local hogeAI = HogeAI.Get();
@@ -2560,17 +2648,21 @@ class TrainRouteBuilder extends RouteBuilder {
 			pathfinding.industries.push(dest.industry);
 		}
 		hogeAI.pathfindings.rawset(pathfinding,0);
-		local railBuilder;
-		local adjustedPathFindLimit = !hogeAI.HasIncome(10000) && !hogeAI.IsRich() ? hogeAI.pathFindLimit * 3 : hogeAI.pathFindLimit;
-		if(useSingle) {
-			railBuilder = SingleStationRailBuilder(srcHgStation, destHgStation, adjustedPathFindLimit, pathfinding);
-		} else {
-			railBuilder = TwoWayStationRailBuilder(srcHgStation, destHgStation, adjustedPathFindLimit, pathfinding);
+		local railBuilder = GetBuilt("railBuilder");
+		if(railBuilder == null) {
+			if(useSingle) {
+				railBuilder = SingleStationRailBuilder();
+			} else {
+				railBuilder = TwoWayStationRailBuilder();
+			}
 		}
-		railBuilder.engine = engineSets[0].engine;
+		local adjustedPathFindLimit = !hogeAI.HasIncome(10000) && !hogeAI.IsRich() ? hogeAI.pathFindLimit * 3 : hogeAI.pathFindLimit;
+		railBuilder.Initialize(srcHgStation, destHgStation, adjustedPathFindLimit, pathfinding);
+		railBuilder.engine = engineSet.engine;
 		railBuilder.cargo = cargo;
 		railBuilder.platformLength = destHgStation.platformLength;
 		railBuilder.distance = distance;
+		railBuilder.noRollbackOnLoad = true;
 		if(!useSingle) {
 			if(hogeAI.IsEnableVehicleBreakdowns()) {
 				railBuilder.isBuildDoubleDepots = true;
@@ -2578,8 +2670,8 @@ class TrainRouteBuilder extends RouteBuilder {
 				railBuilder.isBuildSingleDepotDestToSrc = true;
 			}
 		}
+		AddBuilt("railBuilder",railBuilder);
 		local isSuccess = railBuilder.Build();
-		AddRollback(railBuilder);
 		hogeAI.pathfindings.rawdelete(pathfinding);
 		if(!isSuccess) {
 			HgLog.Warning("TrainRoute: railBuilder.Build failed."+explain);
@@ -2639,43 +2731,67 @@ class TrainRouteBuilder extends RouteBuilder {
 
 	
 }
+Construction.nameClass.TrainRouteBuilder <- TrainRouteBuilder;
 
 class TrainRouteExtendBuilder extends RouteModificatin {
+
+	static function CreateByParams(params) {
+		return TrainRouteExtendBuilder(
+			Route.allRoutes[params.routeId], 
+			Place.Load(params.additionalPlace));
+	}
+
 	additionalPlace = null;
 	
 	constructor(route,additionalPlace) {
-		RouteModificatin.constructor(route);
+		RouteModificatin.constructor(route,{
+			typeName = "TrainRouteExtendBuilder"
+			additionalPlace = additionalPlace.Save()
+		});
 		this.additionalPlace = additionalPlace;
 	}
 	
+	function Load() {
+		if(DoBuild()!=0) {
+			Rollback();
+		}
+	}
+	
 	function DoBuild() {
+		// 0:成功 1:station作成失敗 2:失敗
 		HgLog.Info("# TrainRoute: Try Extend:"+additionalPlace.GetName()+" route: "+route);
+		local execMode = AIExecMode();
 		AIRail.SetCurrentRailType(route.GetRailType());
 		if(additionalPlace.GetProducing().IsTreatCargo(route.cargo)) {
 			additionalPlace = additionalPlace.GetProducing();
 		}
-		local stationFactory = TerminalStationFactory();
-		stationFactory.platformLength = route.srcHgStation.platformLength;
-		stationFactory.minPlatformLength = route.GetPlatformLength();
-		if(CargoUtils.IsPaxOrMail(route.cargo)) {
-			stationFactory.platformNum = 3;
-		}
-		local additionalHgStation = stationFactory.CreateBest(additionalPlace, route.cargo, route.destHgStation.platformTile);
+		local additionalHgStation = GetBuilt("destStation");
 		if(additionalHgStation == null) {
-			HgLog.Info("TrainRoute: cannot build additional station");
-			return 1;
-		}
+			local stationFactory = TerminalStationFactory();
+			stationFactory.platformLength = route.srcHgStation.platformLength;
+			stationFactory.minPlatformLength = route.GetPlatformLength();
+			if(CargoUtils.IsPaxOrMail(route.cargo)) {
+				stationFactory.platformNum = 3;
+			}
+			additionalHgStation = stationFactory.CreateBest(additionalPlace, route.cargo, route.destHgStation.platformTile);
+			if(additionalHgStation == null) {
+				HgLog.Info("TrainRoute: cannot build additional station");
+				return 1;
+			}
 
-		local aiExecMode = AIExecMode();
-
-		additionalHgStation.cargo = route.cargo;
-		additionalHgStation.isSourceStation = false;
-		if(!additionalHgStation.BuildExec()) {
-			return 1;
+			additionalHgStation.cargo = route.cargo;
+			additionalHgStation.isSourceStation = false;
+			if(!additionalHgStation.BuildExec()) {
+				return 1;
+			}
+			AddBuilt("destStation",additionalHgStation);
 		}
-		AddRollback(additionalHgStation);
 		
-		local railBuilder = TwoWayPathToStationRailBuilder(
+		local railBuilder = GetBuilt("railBuilder");
+		if(railBuilder==null) {
+			railBuilder = TwoWayPathToStationRailBuilder();
+		}
+		railBuilder.Initialize(
 			GetterFunction( function():(route) {
 				return route.GetTakeAllPathSrcToDest();
 			}),
@@ -2683,7 +2799,6 @@ class TrainRouteExtendBuilder extends RouteModificatin {
 				return route.GetTakeAllPathDestToSrc().Reverse();
 			}),
 			additionalHgStation, HogeAI.Get().pathFindLimit, HogeAI.Get());
-			
 		railBuilder.engine = route.GetLatestEngineSet().engine;
 		railBuilder.cargo = route.cargo;
 		railBuilder.platformLength = route.GetPlatformLength();
@@ -2693,15 +2808,17 @@ class TrainRouteExtendBuilder extends RouteModificatin {
 		} else {
 			railBuilder.isBuildSingleDepotDestToSrc = true;
 		}
+		railBuilder.noRollbackOnLoad = true;
+		AddBuilt("railBuilder",railBuilder);
 		if(!railBuilder.Build()) {
 			HgLog.Warning("TrainRoute: railBuilder.Build failed.");
 			Rollback();
 			return 2;
 		}
-		ClearRollback();
 		
 		if(additionalHgStation.stationGroup == null) {
 			HgLog.Warning("TrainRoute: additionalHgStation was removed."); // 稀に建設中に他ルートの削除と重なって駅が削除される事がある
+			Rollback();
 			return 1;
 		}
 		
@@ -2726,21 +2843,19 @@ class TrainRouteExtendBuilder extends RouteModificatin {
 		route.pathDestToSrc = removeRemain2[1];
 		route.pathSrcToDest.route = route;
 		route.pathDestToSrc.route = route;
+		route.AddDestination( additionalHgStation );
+		route.AddBranchLine( oldDestStation, BuildedPath(removePath1, route), BuildedPath(removePath2, route ));
 		route.Save();
 		route.CalculateUseDepots();
 
 		oldDestStation.RemoveDepots();
-		
-		
-		route.AddDestination( additionalHgStation );
-		route.AddBranchLine( oldDestStation, BuildedPath(removePath1, route), BuildedPath(removePath2, route ));
-
 		
 		HgLog.Info("# TrainRoute: Extend succeeded: "+route);
 		return 0;
 	}
 	
 }
+Construction.nameClass.TrainRouteExtendBuilder <- TrainRouteExtendBuilder;
 
 class TrainReturnRouteBuilder extends RouteModificatin {
 
@@ -2780,7 +2895,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 			
 
 			
-			railBuilderTransferToPath = TailedRailBuilder.PathToStation(GetterFunction( function():(route) {
+			railBuilderTransferToPath = RailPathBuilder().PathToStation(GetterFunction( function():(route) {
 				local returnPath = route.GetPathAllDestToSrc();
 				return returnPath.SubPathEnd(returnPath.GetLastTileAt(4)).Reverse();
 			}), transferStation, 150, HogeAI.Get(), null, false);
@@ -2789,7 +2904,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 			railBuilderTransferToPath.platformLength = route.GetPlatformLength();
 			railBuilderTransferToPath.isReverse = true;
 			railBuilderTransferToPath.isTwoway = false;
-			if(!railBuilderTransferToPath.BuildTails()) {
+			if(!railBuilderTransferToPath.Build()) {
 				HgLog.Warning("TrainRoute: cannot build railBuilderTransferToPath");
 				Rollback();
 				return null;
@@ -2798,7 +2913,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 			AddRollback(railBuilderTransferToPath.buildedPath); // TODO Rollback時に元の線路も一緒に消える事がある。limit date:300の時に消えている
 			
 			local pointTile = railBuilderTransferToPath.buildedPath.path.GetFirstTile();
-			railBuilderPathToTransfer = TailedRailBuilder.PathToStation(GetterFunction( function():(route, pointTile) {
+			railBuilderPathToTransfer = RailPathBuilder().PathToStation(GetterFunction( function():(route, pointTile) {
 				return route.GetPathAllDestToSrc().SubPathStart(pointTile);
 			}), transferStation, 150, HogeAI.Get());
 			railBuilderPathToTransfer.engine = route.GetLatestEngineSet().engine;
@@ -2806,7 +2921,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 			railBuilderPathToTransfer.platformLength = route.GetPlatformLength();
 			railBuilderPathToTransfer.isTwoway = false;
 			
-			if(!railBuilderPathToTransfer.BuildTails()) {
+			if(!railBuilderPathToTransfer.Build()) {
 				HgLog.Warning("TrainRoute: cannot build railBuilderPathToTransfer");
 				Rollback();
 				return null;
@@ -2867,6 +2982,7 @@ class TrainReturnRouteBuilder extends RouteModificatin {
 				Rollback();
 				return null;
 			}
+			AddRollback(railBuilderReturnDest);
 			
 
 			local returnRoute = TrainReturnRoute(route, transferStation, returnDestStation, 
@@ -2909,7 +3025,6 @@ class MainLineRefactor extends RouteModificatin {
 	constructor(route, pointSrcToDest, pointDestToSrc) {
 		RouteModificatin.constructor(route, {
 			typeName = "MainLineRefactor"
-			routeId = route.id
 			pointSrcToDest = pointSrcToDest
 			pointDestToSrc = pointDestToSrc
 		});
@@ -2919,7 +3034,7 @@ class MainLineRefactor extends RouteModificatin {
 	
 	function Load() {
 		Rollback();
-		Build();
+		DoBuild();
 	}
 
 	function DoBuild() {
@@ -3127,5 +3242,4 @@ class MainLineRefactor extends RouteModificatin {
 		return true;
 	}
 }
-
 Construction.nameClass.MainLineRefactor <- MainLineRefactor;

@@ -139,6 +139,7 @@ class AirRoute extends CommonRoute {
 	constructor() {
 		CommonRoute.constructor();
 		useDepotOrder = false;
+		useServiceOrder = false;
 		isDestFullLoadOrder = true;
 	}
 	
