@@ -670,17 +670,23 @@ class TrainRoute extends Route {
 		return a[0];
 	}
 	
-	function IsValidEngineSetCache() {
-		return engineSetsCache != null && ( AIDate.GetCurrentDate() < engineSetsDate || TrainRoute.instances.len()<=1) && engineSetsCache.len() >= 1;
-	}
 	
 	function GetEngineSets(isAll=false, additionalDistance=null) {
-		local production = GetRoundedProduction(max(50,GetProduction()));
-		if(!isAll && additionalDistance==null && IsValidEngineSetCache() 
-				&& (lastCheckProduction==null || production < lastCheckProduction * 3 / 2)) {
-			return engineSetsCache;
+		// additionalDistanceは使用されてないかも
+		if(!isAll && additionalDistance==null && engineSetsCache != null && engineSetsCache.len() >= 1) {
+			if(TrainRoute.instances.len()<=1) {
+				return engineSetsCache;
+			}
+			local latestEngineSet = GetLatestEngineSet();
+			if(latestEngineSet!=null && engineSetsDate + max(365,latestEngineSet.days * 3) < AIDate.GetCurrentDate()) {
+				return engineSetsCache;
+			}
+			local production = GetRoundedProduction(max(50,GetProduction()));
+			if(lastCheckProduction!=null && production < lastCheckProduction * 3 / 2) {
+				return engineSetsCache;
+			}
+			lastCheckProduction = production;
 		}
-		lastCheckProduction = production;
 		InitializeSubCargos(); // 使えるcargoが増えているかもしれないので再計算をする。
 	
 		local execMode = AIExecMode();
@@ -718,7 +724,7 @@ class TrainRoute extends Route {
 		// TODO: ほとんど変わらないのにコストをかけて車両交換する事が多い。あまり変わらない場合は更新しない
 		// productionが在庫で変動するので、頻繁に変更もかかる。長距離路線だと一往復もしないうちの事が多い
 		saveData.engineSetsCache = engineSetsCache = trainEstimator.GetEngineSetsOrder();
-		saveData.engineSetsDate = engineSetsDate = AIDate.GetCurrentDate() + (IsSingle() ? 3000 : 1000) + AIBase.RandRange(500);
+		saveData.engineSetsDate = engineSetsDate = AIDate.GetCurrentDate(); // + (IsSingle() ? 3000 : 1000) + AIBase.RandRange(500);
 
 		return engineSetsCache;
 	}
@@ -1595,7 +1601,7 @@ class TrainRoute extends Route {
 	function ReOpen() {
 		HgLog.Warning("ReOpen route:"+this);
 		saveData.isClosed = isClosed = false;
-		PlaceDictionary.Get().AddRoute(this);
+		//PlaceDictionary.Get().AddRoute(this);
 		if(returnRoute != null) {
 			returnRoute.ReOpen();
 		}

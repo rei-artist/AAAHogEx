@@ -944,7 +944,7 @@ class Rectangle {
 	}
 	
 	function GetCorners() {
-		return [lefttop,GetRightTop(),rightbottom,GetLeftBottom()];
+		return [ lefttop, GetRightTop(), rightbottom, GetLeftBottom() ];
 	}
 	
 	function GetCenter() {

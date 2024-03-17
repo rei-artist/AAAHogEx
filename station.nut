@@ -637,7 +637,13 @@ class StationFactory {
 		if(HogeAI.Get().IsDistantJoinStations() == false) {
 			this.nearestFor = toTile;
 		} else {
-			this.nearestFor = stationGroup.hgStations[0].platformTile;
+			local tileDist = AIList();
+			foreach(corner in stationGroup.hgStations[0].GetPlatformRectangle().GetCorners()) {
+				tileDist.AddItem(corner.tile, AIMap.DistanceManhattan(corner.tile, toTile));
+			}
+			tileDist.Sort(AIList.SORT_BY_VALUE, true);
+		
+			this.nearestFor = tileDist.Begin();
 			this.nearestFor2 = toTile;
 		}
 		local result = this.SelectBestHgStation( 

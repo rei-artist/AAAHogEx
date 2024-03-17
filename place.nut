@@ -1653,6 +1653,18 @@ class Place {
 	function _GetExpectedProductionAll(cargo, vehicleType) {
 		local production = GetLastMonthProduction(cargo);
 		local placeProduction = PlaceProduction.Get();
+		if( !HogeAI.Get().ecs && !HogeAI.Get().firs ) {
+			if( HogeAI.Get().buildingTimeBase && IsProcessing()) { //support routeの見積もりはbuildingTimeBaseのみ
+				local inputableProduction = 0;
+				foreach(acceptingCargo in GetAccepting().GetCargos()) {
+					if( CargoUtils.IsDelivable(acceptingCargo) ) {
+						inputableProduction += placeProduction.GetArroundProductionCount(acceptingCargo, GetLocation())[0];
+					}
+				}
+				production += inputableProduction * 2 / 3;
+			}
+			
+		}
 		if(HogeAI.Get().firs && !HogeAI.Get().roiBase) {
 		
 			local inputableProduction = 0;
@@ -1679,18 +1691,6 @@ class Place {
 					production *= 3;
 				}			
 			}
-		}
-		if(HogeAI.Get().buildingTimeBase/*support routeの見積もりはbuildingTimeBaseのみ*/ 
-				&& !HogeAI.Get().ecs && !HogeAI.Get().firs && IsProcessing()) {
-			local inputableProduction = 0;
-			foreach(acceptingCargo in GetAccepting().GetCargos()) {
-				if( CargoUtils.IsDelivable(acceptingCargo) ) {
-					inputableProduction += placeProduction.GetArroundProductionCount(acceptingCargo, GetLocation())[0];
-				}
-			}
-			//HgLog.Warning("GetExpectedProductionAll production:"+production+" inputableProduction/4:"+(inputableProduction/4)+" "+GetName()+" cargo:"+AICargo.GetName(cargo)+" "+vehicleType);
-			production += inputableProduction * 2 / 3;// / 2; //max(0,(inputableProduction - production));
-			//production = max(production, inputableProduction / 2);
 		}
 		if(HogeAI.Get().ecs /*GetUsableMoney() >= HogeAI.Get().GetInflatedMoney(2000000)*/ && IsRaw() && production >= 1) {
 			// 4d656f9f 00:coal mine 300 / 02:sand pit 900
@@ -2234,7 +2234,7 @@ class HgIndustry extends Place {
 	}
 	
 	// 入力すると出力が増えるかどうか or 入力が無くて勝手に増えるかどうか
-	function IsIncreasable(inputCargo = null) {
+	function IsIncreasable() {
 		if(HogeAI.Get().ecs || HogeAI.Get().yeti) {
 			return true;
 		}
@@ -2249,8 +2249,6 @@ class HgIndustry extends Place {
 					return false; // 入出力に同じものがある(例:銀行)
 				}
 			}
-		}
-		if(inputCargo != null) {
 		}
 		
 		return true;
@@ -2614,6 +2612,8 @@ class TownCargo extends Place {
 		if(cargo == this.cargo) {
 			return true;
 		}
+		return AITile.GetCargoAcceptance(GetLocation(),cargo,1,1,GetRadius()) >= 8;
+/*		
 		local townEffect = AICargo.GetTownEffect(cargo);
 		if(townEffect == AICargo.TE_GOODS) {
 			return AITown.GetPopulation(town) >= 1200;
@@ -2626,7 +2626,7 @@ class TownCargo extends Place {
 		}
 		if(townEffect == AICargo.TE_WATER || townEffect == AICargo.TE_FOOD ) {
 			return AITown.GetPopulation(town) >= 1000;
-		}
+		}*/
 		return false;
 	}
 	
