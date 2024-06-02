@@ -33,30 +33,20 @@ class RoadPathFinder
 	cost = null;                   ///< Used to change the costs.
 	_running = null;
 	_goals = null;
+	debug = null;
 	
 	runnableRoadTypes = null;
 
 	constructor()
 	{
 		this._max_cost = 10000000;
-		this._cost_tile = 100;
-		this._cost_no_existing_road = 40;
-		this._cost_turn = 100;
-		this._cost_slope = 200;
-		this._cost_bridge_per_tile = 150;
-		this._cost_tunnel_per_tile = 120;
-		this._cost_coast = 20;
-		this._cost_drivethroughstation = 1000;
-		this._cost_level_crossing = 1000;
-		this._cost_demolish_tile = 2000;
-		this._max_bridge_length = 50; //10;
-		this._max_tunnel_length = 20;
 		this._estimate_rate = 2;
 		this._goals = null;
 		this._pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
 
 		this.cost = this.Cost(this);
 		this._running = false;
+		this.debug = false;
 	}
 
 	/**
@@ -179,10 +169,18 @@ function RoadPathFinder::_GetBridgeNumSlopes(end_a, end_b)
 	return slopes;
 }
 
+function RoadPathFinder::DebugSign(tile,text) {
+	if(debug) {
+		local execMode = AIExecMode();
+		AISign.BuildSign(tile, text)
+	}
+}
+
 function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 {
 	/* path == null means this is the first node of a path, so the cost is 0. */
 	if (path == null) return 0;
+	self.DebugSign(new_tile,path.GetCost().tostring());
 
 	local prev_tile = path.GetTile();
 
@@ -242,7 +240,7 @@ function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 
 	if (AITile.HasTransportType(new_tile, AITile.TRANSPORT_RAIL)) {
 		cost += self._cost_level_crossing;
-	}
+	}	
 	return path.GetCost() + cost;
 }
 

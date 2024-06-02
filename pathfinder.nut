@@ -37,6 +37,7 @@ class RailPathFinder
 	_bottom_ex2_bridge_length = null;
 	_can_build_water = null;
 	_estimate_rate = null;
+	_max_slope = null;
 
 	_running = null;
 	_goals = null;
@@ -58,6 +59,8 @@ class RailPathFinder
 	isSingle = null;
 	reversePath = null;
 	revOkTiles = null;
+	orgTile = null;
+	trainDirection = null; // 列車進行方向 0:goal方向 1:start方向 2:双方向
 	
 	isFoundPath = false;
 	
@@ -91,11 +94,14 @@ class RailPathFinder
 		this._goalTiles = {};
 
 		this.isRevReverse = false;
+		this.trainDirection = 2;
 		this.isSingle = false;
 		this.revOkTiles = {};
 	}
 
 	function InitializeParameters() {
+		//debug = true;
+		
 		this._Cost = debug ? this._DebugCost : this._NormalCost;
 		_pathfinder = this._aystar_class(this, this._Cost, this._Estimate, this._Neighbours, this._CheckDirection);
 		_pathfinder.debug = debug;
@@ -103,10 +109,10 @@ class RailPathFinder
 		_cost_level_crossing = 900;
 		_cost_crossing_reverse = 300;
 		if(isSingle) {
-			_cost_bridge_per_tile_ex = 100;
-			_cost_bridge_per_tile_ex2 = 200;
-			_cost_tunnel_per_tile_ex  = 100;
-			_cost_tunnel_per_tile_ex2 = 200;
+			_cost_bridge_per_tile_ex = 10;
+			_cost_bridge_per_tile_ex2 = 100;
+			_cost_tunnel_per_tile_ex  = 10;
+			_cost_tunnel_per_tile_ex2 = 100;
 		} else {
 			/*_cost_bridge_per_tile_ex = 600;
 			_cost_bridge_per_tile_ex2 = 900;
@@ -127,25 +133,50 @@ class RailPathFinder
 		_estimate_rate = 2;
 		_cost_tile = 100;
 		_cost_turn = 300;
-		_cost_tight_turn = 1500; //isReverse ? 300 : 1500;
-		_cost_tight_turn_rev = 3000;
+		_cost_tight_turn = distance!=null && distance<40 ? 100 : 1500; //isReverse ? 300 : 1500;
+		_cost_tight_turn_rev = 1500;
 		_cost_bridge_per_tile = 100;//50
-		_cost_tunnel_per_tile = 100;//50
+		_cost_tunnel_per_tile = 0;//100;//50　// トンネルではなく山登りをしない為にコスト0に
 		_max_bridge_length = 30; //platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
 		_max_tunnel_length = 11; //platformLength == null ? 11 : max( 7, platformLength * 3 / 2 );
-		_bottom_ex_bridge_length = platformLength == null ? 7 : max( 7, platformLength );
+		_bottom_ex_bridge_length = 7;//platformLength == null ? 7 : max( 7, platformLength ); 列車が長いからといって列車間隔が長くなるわけではない
 		_bottom_ex2_bridge_length = _bottom_ex_bridge_length * 3 / 2 + 1;
-		_bottom_ex_tunnel_length = platformLength == null ? 7 : max( 7, platformLength );
+		_bottom_ex_tunnel_length = 7; //platformLength == null ? 7 : max( 7, platformLength );
 		_bottom_ex2_tunnel_length = _bottom_ex_tunnel_length  * 3 / 2 + 1;
 		
-		_cost_slope = 0;
-		
-		if(engine != null) {
-			if(AIEngine.GetMaxTractiveEffort(engine) < HogeAI.Get().GetTrainSlopeSteepness() * 50 ) {// engineSet.trainEngine AICompany.GetBankBalance(AICompany.COMPANY_SELF) > 500000) {
+		_cost_slope = 100; // トンネルを使ってもらう為にこれくらい必要
+		_max_slope = 2;
+		if(engine != null && cargo != null) {/*
+			local totalWeight = VehicleUtils.GetCargoWeight(cargo,30*13) + 18*13 + 145;
+			local maxSpeed = AIEngine.GetMaxSpeed(engine);
+			local requestSpeed = 30;
+			local acc = VehicleUtils.GetAcceleration( 
+					VehicleUtils.GetSlopeForce(totalWeight,totalWeight)
+					+ VehicleUtils.GetAirDrag(requestSpeed, maxSpeed, 14),
+				requestSpeed,
+				AIEngine.GetMaxTractiveEffort(engine),
+				AIEngine.GetPower(engine), totalWeight);
+			if(maxSpeed < 150 && acc < 0) {
 				HgLog.Info("TrainRoute: pathfinding consider slope");
 				_cost_slope = 1500;
 				_cost_turn = 100;
-				//_cost_tight_turn = 300;
+			}*/
+		
+			local slopeSteepness = HogeAI.Get().GetTrainSlopeSteepness();
+			local avoidSlope = false;
+			if(AIEngine.GetMaxTractiveEffort(engine) < slopeSteepness * 50) {
+				_max_slope = 2;
+				avoidSlope = true;
+			} else if(HogeAI.Get().mountain && AIEngine.GetPower(engine) < slopeSteepness * 600) {
+				_max_slope = 5;
+				avoidSlope = true;
+			}
+			if(avoidSlope) {
+				HgLog.Info("TrainRoute: pathfinding consider slope");
+				if(isOutward || isSingle) {
+					_cost_slope = 1500;
+				}
+				_cost_turn = 100;
 			}
 		}
 		
@@ -162,29 +193,16 @@ class RailPathFinder
 		_InitializeDangerTiles();
 	}
 	
-	function FindPathDay(limitDay,eventPoller) {
-		return FindPath(null,eventPoller,limitDay);
-	}
 	
-	function FindPath(limitCount,eventPoller,limitDay=null) {
-		if(limitDay != null) {
-			limitDay /= HogeAI.Get().GetDayLengthFactor();
-			limitCount = 1000; // 設定によってはメモリ不足になるので限界値を設定
-			HgLog.Info("TrainRoute: Pathfinding...limit date:"+limitDay+" distance:"+distance);
-		} else {
-			HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount+" distance:"+distance);
-			limitCount *= 3;
-		}
+	function FindPath(limitCount,eventPoller) {
+		HgLog.Info("TrainRoute: Pathfinding...limit count:"+limitCount+" distance:"+distance);
+		limitCount *= 3;
 		local counter = 0;
 		local path = false;
 		local startDate = AIDate.GetCurrentDate();
-		local endDate = limitDay != null ? startDate + limitDay : null;
 		local totalInterval = 0;
 		while (path == false) {
 			if(limitCount < counter) {
-				break;
-			}
-			if(endDate != null && AIDate.GetCurrentDate() > endDate + totalInterval) {
 				break;
 			}
 			PerformanceCounter.Clear();
@@ -258,7 +276,12 @@ class RailPathFinder
 	
 	function InitializePath(sources, goals, ignored_tiles = [], reversePath = null) {
 		local testMode = AITestMode(); // _Costメソッドが呼ばれるので
+		this.reversePath = reversePath;
+		if(isOutward == null) {
+			isOutward == reversePath == null;
+		}
 		InitializeParameters();
+		
 		if(sources[0].len() >= 3) {
 			_InitializePath2(sources, goals, ignored_tiles, reversePath);
 			return;
@@ -273,10 +296,7 @@ class RailPathFinder
 			nsources.push(path);
 		}
 		_InitializeGoals(goals);
-		SetReversePath(reversePath);
-		if(isOutward == null) {
-			isOutward == reversePath == null;
-		}
+		SetReverseNears();
 		this._pathfinder.InitializePath(nsources, goals, ignored_tiles);
 		
 	}
@@ -297,7 +317,7 @@ class RailPathFinder
 			nsources.push(path);
 		}
 		_InitializeGoals(goals);
-		SetReversePath(reversePath);
+		SetReverseNears();
 		this._pathfinder.InitializePath(nsources, goals, ignored_tiles);
 	}
 	
@@ -323,12 +343,11 @@ class RailPathFinder
 		}
 	}
 	
-	function SetReversePath(reversePath) {
+	function SetReverseNears() {
 		//HgLog.Info("SetReversePath:"+reversePath+" debug:"+debug);
 		if(reversePath == null) {
 			return;
 		}
-		this.reversePath = reversePath;
 	
 		
 		local nears = {};
@@ -342,28 +361,32 @@ class RailPathFinder
 			local tile = path.GetTile();
 			_reverseTiles.rawset(tile,0);
 			if(prev != null) {
-				local revDir = _GetRevDir(prev,tile);
 				local d = AIMap.DistanceManhattan(prev,tile);
-				if(d > 1) {
-					local offset;
-					if(AIMap.GetTileX(prev) == AIMap.GetTileX(tile)) {
-						offset = AIMap.GetTileIndex(0,1);
-					} else {
-						offset = AIMap.GetTileIndex(1,0);
-					}
-					for(local i=0; i<d; i++) {
-						nears.rawset(tile + i * offset + revDir,0);
-						_reverseNears.rawset(tile + i * offset + revDir,0)
-						//DebugSign(tile + i * offset + revDir,"0");
-					}
+				if(d==0) {
+					HgLog.Warning("distance0 (SetReversePath)"+HgTile(prev));
 				} else {
-					nears.rawset(tile + revDir,0);
-					_reverseNears.rawset(tile + revDir,0);
-					//DebugSign(tile + revDir,"0");
-					if(prevprev != null && AIMap.DistanceManhattan(prevprev,prev)==1 && prev == prevprev + revDir) {
-						nears.rawset(prev,0);
-						_reverseNears.rawset(prev,0);
-						//DebugSign(prev,"0");
+					local revDir = _GetRevDir(prev,tile);
+					if(d > 1) {
+						local offset;
+						if(AIMap.GetTileX(prev) == AIMap.GetTileX(tile)) {
+							offset = AIMap.GetTileIndex(0,1);
+						} else {
+							offset = AIMap.GetTileIndex(1,0);
+						}
+						for(local i=0; i<d; i++) {
+							nears.rawset(tile + i * offset + revDir,0);
+							_reverseNears.rawset(tile + i * offset + revDir,0)
+							//DebugSign(tile + i * offset + revDir,"0");
+						}
+					} else {
+						nears.rawset(tile + revDir,0);
+						_reverseNears.rawset(tile + revDir,0);
+						//DebugSign(tile + revDir,"0");
+						if(prevprev != null && AIMap.DistanceManhattan(prevprev,prev)==1 && prev == prevprev + revDir) {
+							nears.rawset(prev,0);
+							_reverseNears.rawset(prev,0);
+							//DebugSign(prev,"0");
+						}
 					}
 				}
 			}
@@ -650,11 +673,21 @@ class RailPathFinder
 				cost += self._cost_water;
 			}
 			if(self._cost_slope > 0) {
-				if(t.len() >= 4) {
-					local h1 = AITile.GetMaxHeight(t[3])
+				if(t.len() >= self._max_slope+2) {
+					local h1 = AITile.GetMaxHeight(t[self._max_slope+1]); //[3]
 					local h2 = AITile.GetMaxHeight(t[0]);
-					if(abs(h2-h1) >= 2) {
-						cost += self._cost_slope;
+					if(self.trainDirection == 2) {
+						if(abs(h2-h1) >= self._max_slope) { //2
+							cost += self._cost_slope;
+						}
+					} else if(self.trainDirection == 1) {
+						if(h1-h2 >= self._max_slope) { //2
+							cost += self._cost_slope;
+						}
+					} else if(self.trainDirection == 0) {
+						if(h2-h1 >= self._max_slope) { //2
+							cost += self._cost_slope;
+						}
 					}
 				}
 			}
@@ -681,7 +714,10 @@ class RailPathFinder
 			if(dirs.len() >= 6) { // 半径2左カーブ
 				if(dirs[0] == dirs[1] && dirs[4] == dirs[5] && dirs[0] != dirs[4] && dirs[4] == -revDir) {
 					//HgLog.Warning("CURV:"+HgTile(t[0])+"-"+HgTile(t[1])+"-"+HgTile(t[2])+"["+HgTile(t[3])+"]"+HgTile(t[4])+"-"+HgTile(t[5])+"-"+HgTile(t[6]));
-					cost += 500;
+					cost += 300;
+					if(distances[0]>1) {
+						cost += 600;
+					}
 				}
 			}
 			if(distance > 1) {
@@ -692,11 +728,11 @@ class RailPathFinder
 				if(mode != null && mode instanceof RailPathFinder.Underground) {
 					local underGround = self._GetUndergroundTunnel(t[3] + revDir, t[2] + revDir, t[1] + revDir, mode.level, t[0] + revDir);
 					if(underGround.len() == 0) {
-						cost += 1500;
+						cost += 3000;
 					}
 				} else if(AITunnel.GetOtherTunnelEnd(t[0])==t[1]) {
 					if(AITunnel.GetOtherTunnelEnd(t[0]+revDir)!=t[1]+revDir || !AITunnel.BuildTunnel(AIVehicle.VT_RAIL,t[0]+revDir)) {
-						cost += 1500;
+						cost += 3000;
 						//HgLog.Warning("Tunnel NG:"+HgTile(t[0])+"-"+HgTile(t[1])+" "+HgTile(t[1] + revDir));
 					} else {
 						//HgLog.Warning("Tunnel OK:"+HgTile(t[0])+"-"+HgTile(t[1])+" "+HgTile(t[1] + revDir));
@@ -707,7 +743,7 @@ class RailPathFinder
 								&& AITile.GetMaxHeight(t[1]) == AITile.GetMaxHeight(t[1] + revDir)
 								&& AITile.GetMaxHeight(t[0]) == AITile.GetMaxHeight(t[0] + revDir))
 							&& AITunnel.GetOtherTunnelEnd(t[1] + revDir) != t[0] + revDir) {
-						cost += 1500;
+						cost += 3000;
 						//HgLog.Warning("BRIDGE NG:"+HgTile(prev_tile)+"-"+HgTile(new_tile)+" "+HgTile(prev_tile + revDir));
 					} else {
 						//HgLog.Warning("BRIDGE OK:"+HgTile(prev_tile)+"-"+HgTile(new_tile)+" "+HgTile(prev_tile + revDir));
@@ -715,12 +751,12 @@ class RailPathFinder
 				}
 			} else {
 				if(!HogeAI.IsBuildable(t[1] + revDir) || !HogeAI.IsBuildable(t[0] + revDir) 
-						|| (AITile.IsCoastTile(t[0] + revDir) && HgTile.GetBoundMaxHeight(t[0] + revDir, t[1] + revDir) == 0)
+						|| HgTile.GetBoundMaxHeight(t[0] + revDir, t[1] + revDir) == 0
 						|| (turn && ( 
 							(dirs[1]==revDir && AITile.IsCoastTile(t[1]) && HgTile(t[1]).GetMaxHeightCount()<3) // 右ターンの場合
 							 || (dirs[2]==revDir && AITile.IsCoastTile(t[2]) && HgTile(t[2]).GetMaxHeightCount()<3) )) ) {
-					if(!self.revOkTiles.rawin(t[0]+revDir)) {
-						cost += 500;
+					if(!self.revOkTiles.rawin(RailPathFinder.Get2TileKey(t[0]+revDir,t[1]+revDir))) {
+						cost += 3000;
 					}
 				}
 			}
@@ -775,6 +811,9 @@ class RailPathFinder
 				guide = self._cost_guide * 20;
 			}
 		}
+		if(self.orgTile != null) {
+			guide += AIMap.DistanceManhattan(self.orgTile,cur_tile) * 100;
+		}
 		
 		//counter.Stop();
 		
@@ -816,6 +855,31 @@ class RailPathFinder
 		//HgLog.Info("_CanChangeBridge:"+HgTile(cur_node));
 		return true;
 	}
+	
+	static function CanChangeBridgeStatic(cur_node, checkUnderBridge=true) {
+		local tracks = AIRail.GetRailTracks(cur_node);
+		local direction;
+		if(tracks == AIRail.RAILTRACK_NE_SW) {
+			direction = AIMap.GetTileIndex(1, 0);
+		} else if(tracks == AIRail.RAILTRACK_NW_SE) {
+			direction = AIMap.GetTileIndex(0, 1);
+		} else {
+			return false;
+		}
+		local n_node = cur_node - direction;
+		for(local i=0; i<=2; i++) {
+			if(AIRail.GetRailTracks(n_node) != tracks 
+					|| !AICompany.IsMine(AITile.GetOwner(n_node))
+					|| RailPathFinder._IsSlopedRail(n_node - direction, n_node, n_node + direction) 
+					|| AITile.IsStationTile(n_node)
+					|| (checkUnderBridge && RailPathFinder._IsUnderBridge(n_node))) {
+				return false;
+			}
+			n_node += direction;
+		}
+		return true;
+	}
+	
 	
 	function _IsUnderBridge(node) {
 		local offsets = [AIMap.GetTileIndex(0, 1), AIMap.GetTileIndex(1, 0)];
@@ -1017,10 +1081,9 @@ class RailPathFinder
 			// [parpar]-<tunnel>-[par(PM_UNDERGROUND)][cur(slope)][next]
 			if(par != null && par.mode != null && par.mode instanceof RailPathFinder.Underground) {
 				local next_tile = cur_node + (cur_node - par_tile);
-				foreach (offset in offsets) {
-					if (self._BuildRail(cur_node, next_tile, next_tile + offset)) {
-						tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, true)]);
-					}
+				if (self._BuildRail(par_tile, cur_node, next_tile)) {
+					//HgLog.Warning("next underGround:"+HgTile(par_tile)+"-"+HgTile(cur_node)+"-"+HgTile(next_tile));
+					tiles.push([next_tile, self._GetDirection(par_tile, cur_node, next_tile, false)]);
 				}
 				return tiles;
 			}
@@ -1169,17 +1232,18 @@ class RailPathFinder
 
 	function _BuildTunnelEntrance( A0, A1, A2, L, testMode = true ) {
 		if(!testMode || (AITile.IsBuildable(A0) && AITile.IsBuildable(A1) && AITile.IsBuildable(A2))) {
-			local maxa1a2 = HgTile.GetBoundMaxHeight(A0, A1);
-			local m = AITile.GetMinHeight(A2);
-			if(!(maxa1a2 - 1 <= m)) {
+			
+			local maxa0a1 = HgTile.GetBoundMaxHeight(A0, A1);
+			/*local m = AITile.GetMinHeight(A2);
+			if(maxa0a1 <= m - 1) {
 				if(testMode) return false;
-				HgLog.Warning("!(maxa1a2 - 1 <= m) "+maxa1a2+" "+m+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2));
-			}
-			if(L < maxa1a2) {
+				HgLog.Warning("maxa0a1 <= m - 1 "+maxa0a1+" "+m+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2));
+			}*/
+			if(L < maxa0a1) {
 				if(testMode) return false;
-				HgLog.Warning("L < maxa1a2 "+L+" "+maxa1a2+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2));
+				HgLog.Warning("L < maxa0a1 "+L+" "+maxa0a1+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2));
 			}
-			local l = AITile.GetMaxHeight(A2);
+			/*local l = AITile.GetMaxHeight(A2);
 			if(l==m) {
 				if(!(L-1 == l || L == l)) {
 					if(testMode) return false;
@@ -1190,14 +1254,15 @@ class RailPathFinder
 					if(testMode) return false;
 					HgLog.Warning("!(L==l && L-1==m) "+L+" "+l+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2));
 				}
-			}
+			}*/
 			local A3 = A2 + (A2 - A1);
+			/*
 			if(!(AITile.GetMaxHeight(A3) <= L+1)) {
 				if(testMode) return false;
 				HgLog.Warning("!(AITile.GetMaxHeight(A3) <= L+1) "+L+" "+AITile.GetMaxHeight(A3)+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2)+" "+HgTile(A3));
-			}
+			}*/
 			if(!HgTile.LevelBound(A2,A3,L) || !HgTile.LevelBound(A1,A2,L-1)) {
-				if(!testMode) HgLog.Warning("LevelBound failed "+L+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2)+" "+HgTile(A3));
+				if(!testMode) HgLog.Warning("LevelBound failed L:"+L+" "+HgTile(A0)+" "+HgTile(A1)+" "+HgTile(A2)+" "+HgTile(A3));
 				return false;
 			}
 			return true;
@@ -1224,8 +1289,8 @@ class RailPathFinder
 					return result;
 				}
 				return _GetUndergroundTunnel(A0, A1, A2, l+1);
-			} else if(l+2 == m) { // tight slope
-				L = l+1;
+			} else if(l == m+2) { // tight slope
+				L = m+1;
 			} else {
 				L = l;
 			}
@@ -1246,22 +1311,36 @@ class RailPathFinder
 			local B2 = A2 + i * dir;
 			local B1 = B2 + dir;
 			local B0 = B1 + dir;
+			local entrance = false;
 			if(b2 == null) {
 				if(significant && _BuildTunnelEntrance(B0, B1, B2, L)) {
 					if(_IsCollideTunnel(A2 ,B2, L)) {
 						return result;
 					}
+					//HgLog.Info("_GetUndergroundTunnel "+HgTile(A2)+"-"+HgTile(B2)+" L:"+L);
 					result.push([B2, _GetDirection(A0, A1, A2, true), RailPathFinder.Underground(L)]);
+					entrance = true;
 					//return result;
 				}
 			} else if(b2 == B2){
 				if(_BuildTunnelEntrance(B0, B1, B2, L)) {
+					//HgLog.Info("_GetUndergroundTunnel "+HgTile(A2)+"-"+HgTile(B2)+" L:"+L);
 					result.push([B2, _GetDirection(A0, A1, A2, true), RailPathFinder.Underground(L)]);
 					return result;
 				}
 			}
-			if(AITile.GetMinHeight(B2) < L) {
+			if(AITile.GetMinHeight(B2) < L && !HgTile.LevelBound(B2,B1,L)) {
 				return result;
+			}
+			if(entrance) {
+				if(isOutward) {
+					local revDir = _GetRevDir(A1,A0);
+					if(_BuildTunnelEntrance(B0+revDir, B1+revDir, B2+revDir, L)) {
+						return result;
+					}
+				} else {
+					return result;
+				}
 			}
 		}
 		return result;
@@ -1430,6 +1509,62 @@ class RailPathFinder
 		local h1 = AITile.GetMaxHeight(start);
 		local h2 = AITile.GetMaxHeight(start + dir);
 		return h2 < h1;
+	}
+
+	static function FindStraightLines(tiles, length) {
+		local result = [];
+		local past = [];
+		foreach(t in tiles) {
+			past.insert(0,t);
+			if(past.len()>length) {
+				past.pop();
+			}
+			if(past.len()==length) {
+				local tracks = AIRail.GetRailTracks(past[0]);
+				if(!RailPathFinder.IsStraightTrack(tracks)) {
+					continue;
+				}
+				local fail = false;
+				for(local i=1; i<length; i++) {
+					if(AIMap.DistanceManhattan(past[i-1],past[i])!=1 || AIRail.GetRailTracks(past[i]) != tracks) {
+						fail = true;
+						break;
+					}
+				}
+				if(fail) continue;
+				result.push(clone past);
+			}
+		}
+		return result;
+	}
+	
+	static function IsStraightTrack(tracks) {
+		return tracks ==  AIRail.RAILTRACK_NE_SW || tracks == AIRail.RAILTRACK_NW_SE;
+	}
+	
+	static function IsDoubleDiagonalTrack(track) {
+		if(track == (AIRail.RAILTRACK_NW_SW | AIRail.RAILTRACK_NE_SE)) {
+			return true;
+		}
+		if(track == (AIRail.RAILTRACK_SW_SE | AIRail.RAILTRACK_NW_SE)) {
+			return true;
+		}
+		return false;
+	}
+	
+	static function SetRevOkTiles(revOk, tiles) {
+		foreach(index,t in tiles) {
+			if(index==0) continue;
+			//HgLog.Warning("SetRevOk "+ HgTile(t)+" "+HgTile(tiles[index-1]));
+			local key = RailPathFinder.Get2TileKey(t,tiles[index-1]);
+			revOk.rawset(key,key);
+		}
+	}
+	
+	static function Get2TileKey(t1,t2) {
+		local minT = min(t1,t2);
+		local maxT = max(t1,t2);
+		return minT+"-"+maxT;
 	}
 }
 

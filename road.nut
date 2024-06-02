@@ -148,6 +148,34 @@ class RoadRoute extends CommonRoute {
 		return AIEngine.GetCapacity(engine);
 	}
 	
+	static function GetRoadCruiseSpeed(engine,cargo,capacity) {
+		local maxTe = AIEngine.GetMaxTractiveEffort(engine);
+		local power = AIEngine.GetPower(engine);
+		local weight = VehicleUtils.GetCommonCargoWeight(cargo,capacity) + AIEngine.GetWeight(engine);
+		local coeff = AIEngine.HasPowerOnRoad(engine, AIRoad.ROADTYPE_TRAM) ? 40 : 75;
+		local axleFriction  = 10 * weight;
+		local maxSpeed = AIEngine.GetMaxSpeed(engine);
+		local minSpeed = 0;
+		
+		while(true) {
+			local speed = (maxSpeed + minSpeed) / 2;
+			if(maxSpeed - minSpeed < 5) {
+				return speed;
+			}
+			local rollingFriction = (coeff * (128 + speed) / 128) * weight;
+			local airDrag = 30 * speed;
+			local force = min(maxTe * 1000, (power * 746) / (speed * 5/18));
+			local acc = force - rollingFriction - axleFriction - airDrag;
+			if(acc == 0) {
+				return speed;
+			} else if(acc < 0) {
+				maxSpeed = speed;
+			} else {
+				minSpeed = speed;
+			}
+		}
+	}
+	
 	depots = null;
 	roadType = null;
 	usedTiles = null;
@@ -245,7 +273,7 @@ class RoadRoute extends CommonRoute {
 	}
 
 	function EstimateMaxRouteCapacity(infrastractureType, engineCapacity) {
-		return 5 * engineCapacity;
+		return engineCapacity * 10; //5;
 	}
 
 	
@@ -468,7 +496,7 @@ class RoadRoute extends CommonRoute {
 				} else if(AIRoad.IsRoadTile(tile)) {
 					HgLog.Info("Demolish Road:"+HgTile(tile));
 					RoadRoute.DemolishArroundDepot(tile);
-					if(!BuildUtils.DemolishTileSafe(tile)) {
+					if(!BuildUtils.DemolishTileSafe(tile)) { // TODO:RemoveRoadにしない？
 						HgLog.Warning("DemolishTile failed:"+HgTile(tile)+AIError.GetLastErrorString());
 						RoadRoute.pendingDemolishLines.push([tile]);
 					}
@@ -556,20 +584,26 @@ class RoadRouteBuilder extends CommonRouteBuilder {
 		return RoadRoute;
 	}
 	
-	function CreateStationFactory(target) { 
+	function CreateStationFactory(target,engineSet) { 
 		if(AIRoad.GetRoadTramType(AIRoad.GetCurrentRoadType()) == AIRoad.ROADTRAMTYPES_TRAM) {
-			return RoadStationFactory(cargo); // Tramは線路がpiecestationで終わっているとUターンできない
+			return RoadStationFactory(cargo,false,engineSet); // Tramは線路がpiecestationで終わっているとUターンできない
 		} else {
-			if(target instanceof TownCargo && AITown.GetPopulation(target.town) < 1300 && !HogeAI.Get().IsDistantJoinStations()) {
-				return RoadStationFactory(cargo,true/*isPieceStation*/);
+			// TODO: 他経路を妨害する
+			if(HogeAI.Get().roiBase && target instanceof TownCargo /*&& AITown.GetPopulation(target.town) < 1300*/ && !HogeAI.Get().IsDistantJoinStations()) {
+				return RoadStationFactory(cargo,true,engineSet);
 			}
-			return PriorityStationFactory([RoadStationFactory(cargo),RoadStationFactory(cargo,true/*isPieceStation*/)]);
+			return PriorityStationFactory([RoadStationFactory(cargo,false,engineSet), RoadStationFactory(cargo,true/*isPieceStation*/,engineSet)]);
 		}
 		//return RoadStationFactory(cargo);
 	}
 	
 	function CreatePathBuilder(engine, cargo) {
-		return RoadBuilder(engine, cargo);
+		local result = RoadBuilder(engine, cargo);
+		/*
+		if(src.GetName().find("Tarnington Forest")!=null) {
+			result.debug = true;
+		}*/
+		return result;
 	}
 	
 	//static
@@ -628,17 +662,21 @@ class RoadBuilder {
 	retryCount = null;
 	pathFindLimit = null;
 	
+	debug = null;
+	
 	constructor(engine=null, cargo=null) {
 		this.engine = engine;
 		this.cargo = cargo;
 		this.retryCount = 0;
 		this.ignoreTiles = [];
 		this.pathFindLimit = HogeAI.Get().IsInfrastructureMaintenance() ? 300 : (HogeAI.Get().roiBase ? 100 : 50);
+		this.debug = false;
 	}
 
 	function BuildPath(starts ,goals, suppressInterval=false) {
 		local pathfinder = RoadPathFinder();
 		
+		pathfinder.debug = debug;
 		pathfinder.engine = engine;
 		pathfinder._cost_level_crossing = 1000;
 		pathfinder._cost_drivethroughstation = costDrivethroughstation == null ? 500 : costDrivethroughstation;
@@ -646,8 +684,13 @@ class RoadBuilder {
 		pathfinder._cost_coast = 50;
 		pathfinder._cost_slope = 50;
 		pathfinder._cost_turn = 0;
-		pathfinder._cost_bridge_per_tile = 100;
-		pathfinder._cost_tunnel_per_tile = 100;
+		if(HogeAI.Get().roiBase) {
+			pathfinder._cost_bridge_per_tile = 100;
+			pathfinder._cost_tunnel_per_tile = 100;
+		} else {
+			pathfinder._cost_bridge_per_tile = 10;
+			pathfinder._cost_tunnel_per_tile = 10;
+		}
 		pathfinder._max_bridge_length = 50; //20;
 		if(!HogeAI.Get().IsRich()) {
 			pathfinder._max_tunnel_length = 6;
@@ -845,9 +888,12 @@ class TownBus {
 	}
 
 	
-	static function CanUse(cargo) {
+	static function CanUse(cargo = null) {
 		if(HogeAI.Get().IsDisableRoad()) { // Tramのtownbusは今のところ未対応
 			return false;
+		}
+		if(cargo==null) {
+			cargo = HogeAI.GetPassengerCargo();
 		}
 		if(!CargoUtils.IsPaxOrMail(cargo)) {
 			return false;
@@ -891,7 +937,7 @@ class TownBus {
 			return TownBus.townMap[key].CheckRetry(authorityTown, ignoreTileList, cargo);
 		}
 		if(forTransfer) {
-			if(HogeAI.Get().IsDistantJoinStations()) {
+			if(HogeAI.Get().IsDistantJoinStations() && !HogeAI.Get().IsAvoidExtendCoverageAreaInTowns()) {
 				if(AITown.GetPopulation(authorityTown) < 8000){ //TODO: station spreadによって変える
 					return null;
 				}
@@ -1047,7 +1093,7 @@ class TownBus {
 	function GetOrderStations(bus) {
 		local result = [];
 		local orderCount = AIOrder.GetOrderCount(bus);
-		for(local index = 0; index < orderCount; index++) {
+		for(local index = HogeAI.Get().IsEnableVehicleBreakdowns() ? 1 : 0; index < orderCount; index++) {
 			result.push(AIOrder.GetOrderDestination(bus, index));
 		}
 		return result;
@@ -1409,8 +1455,9 @@ class TownBus {
 		if(stations.len() < 2 || !GetDepot()) {
 			return;
 		}
-		
+		local townLocation = GetPlace().GetLocation();
 		local toHgStation = null;
+		local minDistance = IntegerUtils.IntMax;
 		local placeStationCanBeTransfer = false;
 		foreach(station in placeStation.stationGroup.hgStations) {
 			if((station instanceof PieceStation || station instanceof RoadStation) && station.cargo == cargo) {
@@ -1418,7 +1465,11 @@ class TownBus {
 					if(station == placeStation) {
 						placeStationCanBeTransfer = true;
 					} else {
-						toHgStation = station;
+						local distance = AIMap.DistanceManhattan(station.platformTile,townLocation);
+						if(distance < minDistance) {
+							toHgStation = station;
+							minDistance = distance;
+						}
 					}
 				}
 			}
@@ -1504,7 +1555,7 @@ class TownBus {
 	function CreateRoadBuilder(busEngine) {
 		local result = RoadBuilder(busEngine);
 		//result.maxCost = 5000; // 50tile以内 実際に届かない場合、limit限界まで探索し続けるので遅い
-		result.costDrivethroughstation = 100;
+		result.costDrivethroughstation = 0;
 		result.pathFindLimit = 30;
 		return result;
 	}

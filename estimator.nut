@@ -16,9 +16,15 @@ Estimation <- {
 
 	function GetMaxRouteCapacity(cargo) {
 		if(rawin("maxRouteCapacity")) {
-			return maxRouteCapacity;
+			return maxRouteCapacity; // common
 		}
-		return GetCargoCapcity(cargo) * maxVehicles * 30 / days;
+		//HgLog.Warning("GetMaxRouteCapacity:"+AICargo.GetName(cargo)+" maxVehicles:"+maxVehicles+" days:"+days+" "+this);
+		//return GetCargoCapcity(cargo) * maxVehicles * 30 / days; // rail 小さくなりすぎる事がある
+		if(length < 128 && platformLength != null && length/16 < platformLength-1) { // length < 8 tileの時
+			return GetCargoCapcity(cargo) * min(128,platformLength*16) / length * maxVehicles * 30 / days; // rail
+		} else {
+			return GetCargoCapcity(cargo) * maxVehicles * 30 / days; // rail
+		}
 	}
 
 	function GetCargoCapcity(cargo) {
@@ -30,43 +36,56 @@ Estimation <- {
 	}
 	
 	function GetInterval() {
-		return days / maxVehicles;
+		return (cruiseDays + loadingTime) * 2 / maxVehicles;
 	}
 
 	function CalculateIncome() {
 		buildingTime = GetBuildingTime(); 
-		local totalDays = days + waitingInStationTime - loadingTime;
-		local annualDeliver = capacity * vehiclesPerRoute * 365 / totalDays;
+		local totalDays = max(1,cruiseDays * 2 + waitingInStationTime + loadingTime);
+		local annualDeliver = totalCapacity * vehiclesPerRoute * 365 / totalDays;
 		runningCostPerCargo = (annualDeliver == 0 ? 0 : runningCost * vehiclesPerRoute / annualDeliver) + additionalRunningCostPerCargo;
 		income = incomePerOneTime * 365 / totalDays - runningCost;;
 		routeIncome = income * vehiclesPerRoute - infrastractureCost - additionalRunningCostPerCargo * annualDeliver + additionalRouteIncome;
 		value = GetValue();
 		//HgLog.Warning("CalculateIncome "+GetExplain());
 	}
+	
+	
+	function AppendSubCargoIncome(subCargoEstimate, supportBuildingTime) {
+		buildingTime += supportBuildingTime;
+		//runningCost += subCargoEstimate.runningCost;
+		//incomePerOneTime += subCargoEstimate.incomePerOneTime; // 列車周期が違うので単純には足せない
+		routeIncome += subCargoEstimate.routeIncome;
+		price += subCargoEstimate.price;
+		cargoProduction.rawset(subCargoEstimate.cargo, subCargoEstimate.production);
+	}
 
 	function GetValue() {
 		local lostOpportunity;
 		if(isBidirectional) {
-			lostOpportunity = routeIncome / 2 * (days / 2 + waitingInStationTime) / 365;
-			lostOpportunity += routeIncome / 2 * (days + waitingInStationTime) / 365;
+			lostOpportunity = routeIncome / 2 * (cruiseDays + waitingInStationTime) / 365;
+			lostOpportunity += routeIncome / 2 * (cruiseDays * 2 + loadingTime + waitingInStationTime) / 365;
 		} else {
-			lostOpportunity = routeIncome * (days / 2 + waitingInStationTime) / 365;
+			lostOpportunity = routeIncome * (cruiseDays + waitingInStationTime) / 365;
 		}
 		local cost = max(1,price * vehiclesPerRoute + buildingCost + lostOpportunity);
 		roi = routeIncome * 1000 / cost;
 		local incomePerVehicle = routeIncome / (vehiclesPerRoute + additionalVehiclesPerRoute); 
-		local incomePerBuildingTime = routeIncome * 100 / buildingTime;
+		local incomePerBuildingTime = routeIncome / buildingTime;
 		return HogeAI.Get().GetValue(roi,incomePerBuildingTime,incomePerVehicle);
 	}
 	
-	function EstimateAdditional( dest, src, infrastractureTypes, transferedRoute = null, subCargo = false ) {
+	function EstimateAdditional( dest, src, infrastractureTypes, destinationRoute = null, sourceRoute = null, subCargo = false, notUseSupportRoutes = false, isMinSupport = false ) {
 		/* 転送の終着地点が変わってしまうので誤見積もり if(HogeAI.Get().vehicleProfibitBase) { // このメソッドは必要な追加vehicle数を考慮していないので
 			return;
 		}*/
 	
 		local vehicleType = GetVehicleType();
+		distance = AIMap.DistanceManhattan( dest.GetLocation(), src.GetLocation() );
+		buildingTime = GetBuildingTime(); //TODO: Commonだと再計算されない
 		
-		if(transferedRoute == null && (vehicleType == AIVehicle.VT_AIR || vehicleType == AIVehicle.VT_WATER)) {
+		if(destinationRoute == null && sourceRoute == null && (vehicleType == AIVehicle.VT_AIR || vehicleType == AIVehicle.VT_WATER)) {
+			// 斜め経路ボーナス追加
 			local p1 = src.GetLocation();
 			local p2 = dest.GetLocation();
 			local w = abs(AIMap.GetTileX(p1) - AIMap.GetTileX(p2));
@@ -76,69 +95,91 @@ Estimation <- {
 				HgLog.Warning("EstimateAdditional dest==src");
 				return;
 			}
-			days = days * pathDistance / AIMap.DistanceManhattan(p1,p2);
+			cruiseDays = cruiseDays * pathDistance / AIMap.DistanceManhattan(p1,p2);
 			if(vehicleType == AIVehicle.VT_WATER) {
 				local landRate = WaterRoute.CheckLandRate(p1, p2, max(4,pathDistance/16) ) * 0.36;
 				infraBuildingTime += (infraBuildingTime * landRate).tointeger();
-				days += (days * landRate).tointeger();
+				cruiseDays += (cruiseDays * landRate).tointeger();
 			}
 			CalculateIncome();
 		}
-
-		if(transferedRoute != null) {
-			local finalDestStation = transferedRoute.GetFinalDestStation( null, dest );
-			totalDistance = AIMap.DistanceManhattan( finalDestStation.GetLocation(), src.GetLocation() );
-			additionalCruiseDays = transferedRoute.GetTotalCruiseDays();
-			additionalVehiclesPerRoute = transferedRoute.GetAdditionalVehicles(capacity * vehiclesPerRoute * 30 / days, cargo);
-			if(transferedRoute instanceof TrainReturnRoute || (transferedRoute.IsBiDirectional() && transferedRoute.destHgStation.stationGroup == dest)) {
-				additionalRunningCostPerCargo = 0;
-			} else {
-				local engineSet = transferedRoute.GetLatestEngineSet();
-				additionalRunningCostPerCargo = engineSet != null ? engineSet.runningCostPerCargo : 0;
-			}
-			if(finalDestStation.place != null) {
-				this.destRouteCargoIncome = finalDestStation.place.GetDestRouteCargoIncome();
-					 // 使われているかわからない * min(100 / (finalDestStation.place.GetUsedOtherCompanyEstimation()+1),70) / 100;
-				this.additionalRouteIncome = finalDestStation.place.GetAdditionalRouteIncome(cargo);
-
-			}
-			Estimate();
-			//HgLog.Warning("EstimateAdditional Estimate:"+this+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
-			
-		} else if(dest instanceof Place) {
-			local destRouteCargoIncome = dest.GetDestRouteCargoIncome();
-			local additionalRouteIncome = dest.GetAdditionalRouteIncome(cargo);
-			if(destRouteCargoIncome > 0 || additionalRouteIncome >= 1) {
-				this.destRouteCargoIncome = destRouteCargoIncome; // 使われているかわからない * min(100 / (dest.GetUsedOtherCompanyEstimation()+1),70) / 100; // TODO: 複数路線
-				this.additionalRouteIncome = additionalRouteIncome;
+		
+		if(destinationRoute != null) {
+			local isDest = dest == destinationRoute.destHgStation.stationGroup;
+			local destStation = isDest ? destinationRoute.srcHgStation : destinationRoute.destHgStation;
+			local dests = destStation.stationGroup.GetDests(cargo, destinationRoute.IsTransfer());
+			if(dests.len()>=1) {
+				local finalDest = dests[0]; //destinationRoute.GetFinalDestStation( null, dest );
+				totalDistance = AIMap.DistanceManhattan( finalDest.GetLocation(), src.GetLocation() );
+				additionalCruiseDays = destinationRoute.GetTotalCruiseDays(cargo);
+				if(vehicleType == AIVehicle.VT_ROAD) {
+					if(destinationRoute.GetVehicleType() == AIVehicle.VT_ROAD) {
+						additionalCruiseDays += 50; // 道路=>道路の転送渋滞コスト
+					}
+				}
+				additionalVehiclesPerRoute = destinationRoute.GetAdditionalVehicles(capacity * vehiclesPerRoute * 30 / days, cargo);
+				if(destinationRoute instanceof TrainReturnRoute || (destinationRoute.IsBiDirectional() && destinationRoute.destHgStation.stationGroup == dest)) {
+					additionalRunningCostPerCargo = 0;
+				} else {
+					local engineSet = destinationRoute.GetLatestEngineSet();
+					additionalRunningCostPerCargo = engineSet != null ? engineSet.runningCostPerCargo : 0;
+				}
+				local place = finalDest.GetAcceptingPlace(cargo);
+				//HgLog.Info("EstimateAdditional finalDest.GetAcceptingPlace:"+place+" destinationRoute:"+destinationRoute+" dest:"+dest+" src:"+src);
+				if(place != null) {
+					this.destRouteCargoIncome = place.GetDestRouteCargoIncome(cargo);
+						 // 使われているかわからない * min(100 / (finalDestStation.place.GetUsedOtherCompanyEstimation()+1),70) / 100;
+					this.additionalRouteIncome = place.GetAdditionalRouteIncome(cargo);
+					//HgLog.Info("EstimateAdditional destRouteCargoIncome:"+destRouteCargoIncome);
+				}
 				Estimate();
 			}
+			//HgLog.Warning("EstimateAdditional Estimate:"+this+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
+			
+		} else if(sourceRoute != null) {
+			local isDest = src == sourceRoute.srcHgStation.stationGroup;
+			local srcStation = isDest ? sourceRoute.destHgStation : sourceRoute.srcHgStation;
+			local latestEngineSet = sourceRoute.GetLatestEngineSet();
+			if(latestEngineSet != null && srcStation.stationGroup != null) {
+				AppendSources(srcStation.stationGroup.GetLocation(), latestEngineSet.cruiseDays, dest);
+				Estimate();
+			}
+		} else {
+			local oldTotalDistance = totalDistance; // cargo距離
+			totalDistance = AIMap.DistanceManhattan( dest.GetLocation(), src.GetLocation() ); // より正確なcargo距離
+			cruiseDays = cruiseDays * totalDistance / oldTotalDistance;
+			if(dest instanceof Place) {
+				local destRouteCargoIncome = dest.GetDestRouteCargoIncome(cargo);
+				local additionalRouteIncome = dest.GetAdditionalRouteIncome(cargo); // 新種cargoで増える分
+				if(destRouteCargoIncome > 0 || additionalRouteIncome > 0) {
+					this.destRouteCargoIncome = destRouteCargoIncome; // 使われているかわからない * min(100 / (dest.GetUsedOtherCompanyEstimation()+1),70) / 100; // TODO: 複数路線
+					this.additionalRouteIncome = additionalRouteIncome;
+//					Estimate();
+				}
+			}
+			Estimate();
 		}
-		if( HogeAI.Get().buildingTimeBase ) {
+		if( !notUseSupportRoutes && HogeAI.Get().buildingTimeBase ) {
 			if(src instanceof Place) {
-				local supportEstimate = src.GetSupportEstimate();
+				local supportEstimate = src.GetSupportEstimate(isMinSupport); //GetSupportRouteEstimate(GetMaxRouteCapacity(cargo));
 				if(supportEstimate.production > 0) {
 					//HgLog.Warning("AppendSupportRouteEstimate "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());	
 					AppendSupportRouteEstimate(src, cargo, supportEstimate);
 				}
 			}
 		}
-		if(!subCargo && vehicleType == AIVehicle.VT_RAIL) {
+		if(!subCargo && !isMinSupport && vehicleType == AIVehicle.VT_RAIL) { // 列車は別のcargoも同時に運べる
 			foreach(eachCargo in src.GetProducingCargos()) {
 				//HgLog.Warning("additional.EstimateAdditional GetProducingCargos:"+AICargo.GetName(eachCargo)+" "+AICargo.GetName(cargo)+" "+dest.GetName()+"<-"+src.GetName());
 				if(eachCargo != cargo && dest.IsAcceptingCargo(eachCargo)) {
 					//HgLog.Warning("additional.EstimateAdditional IsAcceptingCargo:"+AICargo.GetName(eachCargo)+" "+dest.GetName()+"<-"+src.GetName());
-					local production = src.GetExpectedProduction(eachCargo, vehicleType);
+					local production = notUseSupportRoutes ? src.GetCurrentExpectedProduction(eachCargo, vehicleType) : src.GetExpectedProduction(eachCargo, vehicleType);
 					local additional = Route.Estimate( vehicleType, eachCargo, distance, production, isBidirectional, infrastractureTypes );
 					if(additional != null && additional.routeIncome > 0) {
 						additional = clone additional;
-						additional.EstimateAdditional( dest, src, infrastractureTypes, transferedRoute, true);
-						//if(src.GetName().find("Bindwood") != null) {
-							//HgLog.Warning("additional.EstimateAdditional "+additional+" "+dest.GetName()+"<-"+src.GetName());
-						//}
-						//HgLog.Warning("additional.routeIncome "+additional.routeIncome+" "+dest.GetName()+"<-"+src.GetName()+"["+AICargo.GetName(eachCargo)+"]");
-						routeIncome += additional.routeIncome;
-						price += additional.price;
+						local orgBuildingTime = additional.buildingTime;
+						additional.EstimateAdditional( dest, src, infrastractureTypes, destinationRoute, sourceRoute, true, notUseSupportRoutes);
+						AppendSubCargoIncome(additional, notUseSupportRoutes ? 0 : additional.buildingTime - orgBuildingTime);
 					} else {
 						//HgLog.Warning("additional.EstimateAdditional false "+additional+" "+dest.GetName()+"<-"+src.GetName());
 					}
@@ -150,10 +191,22 @@ Estimation <- {
 	
 	function AppendSupportRouteEstimate( srcPlace, cargo, supportEstimate ) {
 		if(supportEstimate.production > 0) {
-			local routeCapacity = max(0, GetRouteCapacity(cargo) - srcPlace.GetLastMonthProduction(cargo));
-			routeIncome += supportEstimate.routeIncome *  routeCapacity / supportEstimate.production;
-			buildingTime += supportEstimate.buildingTime * routeCapacity / supportEstimate.production;
-			value = routeIncome * 100 / buildingTime;		
+			routeIncome += supportEstimate.routeIncome;
+			buildingTime += supportEstimate.buildingTime;
+			value = routeIncome / buildingTime;		
+		}
+	}
+	
+	function AppendCruiseDistance( cruiseDistance ) {
+		cruiseDays = cruiseDays * cruiseDistance / distance;
+	}
+
+	function AppendSources(srcCenterTile, srcCruiseDays, dest) {
+		totalDistance = AIMap.DistanceManhattan(dest.GetLocation(), srcCenterTile);
+		cruiseDays += srcCruiseDays;
+		if(dest instanceof Place) {
+			this.destRouteCargoIncome = dest.GetDestRouteCargoIncome(cargo);
+			this.additionalRouteIncome = dest.GetAdditionalRouteIncome(cargo);
 		}
 	}
 	
@@ -164,11 +217,22 @@ Estimation <- {
 	}
 	
 	
+	function GetTotalProduction() {
+		local result = 0;
+		foreach(cargo, production in cargoProduction) {
+			result += production;
+		}
+		return result;
+	}
+	
 	function GetExplain() {
-		return  value+" roi:"+roi
+		local lostOpportunity = routeIncome * (cruiseDays + waitingInStationTime) / 365;
+		local cost = max(1,price * vehiclesPerRoute + buildingCost + lostOpportunity);
+		return  value + " roi:"+roi+"("+cost+")"
 //			+ " income:"+income+" rc:"+runningCost+" ic:"+infrastractureCost+" ad:"+(capacity * vehiclesPerRoute * 365 / (days + waitingInStationTime - loadingTime))
-			+ " route:"+routeIncome+"("+incomePerOneTime+")" + " speed:"+cruiseSpeed + "("+ days + "+" + waitingInStationTime + "d)"
-			+ " ACD:"+additionalCruiseDays+" TD:"+totalDistance +" DRCI:"+destRouteCargoIncome+(additionalRouteIncome>=1?"("+additionalRouteIncome+")":"")
+			+ " route:"+routeIncome+"("+incomePerOneTime+(incomePerOneTimeReturn>=1?","+incomePerOneTimeReturn:"")+")"
+			+ " speed:"+cruiseSpeed + "("+ cruiseDays + (additionalCruiseDays!=0?"+" + additionalCruiseDays:"")+","+waitingInStationTime + "d)"
+			+ " TD:"+totalDistance+"("+distance+") DRCI:"+destRouteCargoIncome+(additionalRouteIncome>=1?"("+additionalRouteIncome+")":"")
 			+ " ARC:"+additionalRunningCostPerCargo + " BT:" + buildingTime;
 	}
 }
@@ -184,7 +248,7 @@ CommonEstimation <- delegate Estimation : {
 
 		vehiclesPerRoute = max( min( maxVehicles, deliverableProduction * 12 * days / ( 365 * capacity ) + 1 ), 1 );
 		
-		local interval = GetInterval();
+		local interval = (cruiseDays * 2 + loadingTime)  / vehiclesPerRoute;
 		local intervalStock;
 		
 		if(interval <= 10) {
@@ -199,16 +263,19 @@ CommonEstimation <- delegate Estimation : {
 		
 		
 		//local waitingInStationTime = max(loadingTime, (capacity * vehiclesPerRoute - (inputProduction * stationRate / 100 * min(60,days)) / 30)*30 / inputProduction / vehiclesPerRoute );
-		local cargoIncome = AICargo.GetCargoIncome( cargo, totalDistance, days/2 + additionalCruiseDays);
+		local cargoIncome = AICargo.GetCargoIncome( cargo, totalDistance, cruiseDays + additionalCruiseDays);
 		
 		incomePerOneTime = (cargoIncome + destRouteCargoIncome) * capacity;
 		if(isBidirectional) {
 			if(vehicleType == AIVehicle.VT_AIR) {
-				incomePerOneTime += cargoIncome * capacity; // dest側も満タン待機
+				incomePerOneTimeReturn = cargoIncome * capacity; // dest側も満タン待機
 			} else {
-				incomePerOneTime += cargoIncome * min(capacity, intervalStock);
+				incomePerOneTimeReturn = cargoIncome * min(capacity, intervalStock);
 			}
+		} else {
+			incomePerOneTimeReturn = 0;
 		}
+		incomePerOneTime += incomePerOneTimeReturn;
 		cargoIncomes = {};
 		cargoIncomes.rawset(cargo,cargoIncome);
 
@@ -241,7 +308,6 @@ TrainEstimation <- delegate Estimation : {
 
 	function Estimate() {
 		vehiclesPerRoute = 1;
-		
 		if(!isSingle) {
 			foreach(cargo,capacity in cargoCapacity) {
 				if(capacity == 0) {
@@ -257,11 +323,15 @@ TrainEstimation <- delegate Estimation : {
 
 			vehiclesPerRoute = min( vehiclesPerRoute, maxVehicles );
 			vehiclesPerRoute = max( vehiclesPerRoute, 1);
+			vehiclesPerRoute ++;
 		}
 		waitingInStationTime = 10000;
-		local interval = days / vehiclesPerRoute;
-		local baseRate = stationRate - (isSingle ? min(max(0,interval-7) * 4 / 5,130) : 0);
+		local interval = (cruiseDays * 2 + loadingTime)  / vehiclesPerRoute; // 列車の場合、isSingleでなければ誰か駅に居る //
+		local baseRate = stationRate - (vehiclesPerRoute == 1 ? min(max(0,interval-7) * 4 / 5,130) : 0);
 		local maxSpeed = AIEngine.GetMaxSpeed(engine);
+		if(interval > 10000) {
+			HgLog.Warning("cruiseDays:"+cruiseDays+" loadingTime:"+loadingTime+" vehiclesPerRoute:"+vehiclesPerRoute+" interval:"+interval);
+		}
 		
 		cargoRateStock = {};
 		foreach(cargo,capacity in cargoCapacity) {
@@ -275,12 +345,13 @@ TrainEstimation <- delegate Estimation : {
 				waitTime = (capacity - stock) * 30 / production;
 			} else {
 				local rateStock = CargoUtils.GetStationRateStock(cargo, production, baseRate, AIVehicle.VT_RAIL, maxSpeed, interval);
-				if(isSingle) {
+				if(vehiclesPerRoute == 1) {
 					local rateWaitTime = CargoUtils.GetStationRateWaitTimeFullLoad(production, rateStock[0], max(0,capacity - rateStock[1]), maxSpeed);
 					waitTime = rateWaitTime[1];
 				} else {
 					waitTime = max(0,capacity - rateStock[1]) * 30 * 255 / (production * baseRate);
 				}
+				//HgLog.Info("rate:"+rateStock[0]*100/255+" prod:"+production+" stock:"+rateStock[1]+"/"+capacity+" waitTime:"+waitTime+" vehiclesPerRoute:"+vehiclesPerRoute+" interval:"+interval);
 				cargoRateStock.rawset(cargo,rateStock);
 			}
 			
@@ -288,10 +359,12 @@ TrainEstimation <- delegate Estimation : {
 			rateStock = CargoUtils.GetStationRateStock(cargo, production, rateWaitTime[0], AIVehicle.VT_RAIL, maxSpeed, interval);
 			rateWaitTime = CargoUtils.GetStationRateWaitTimeFullLoad(production, rateStock[0], max(0,capacity - rateStock[1]), maxSpeed);
 			rateStock = CargoUtils.GetStationRateStock(cargo, production, rateWaitTime[0], AIVehicle.VT_RAIL, maxSpeed, interval);*/
-			//HgLog.Info("rate:"+rateStock[0]*100/255+" stock:"+rateStock[1]+" waitTime:"+rateWaitTime[1]+" v:"+vehiclesPerRoute);
-			
 			waitingInStationTime = min(max(loadingTime,waitTime), waitingInStationTime);
 		}
+		if(waitingInStationTime > days && vehiclesPerRoute >= 3) {
+			vehiclesPerRoute --; // 2編成以上が同時に待つ事になるので減らす
+		}
+
 
 		/*
 		if(!isSingle && minWaitingInStationTime > loadingTime) {
@@ -328,7 +401,8 @@ TrainEstimation <- delegate Estimation : {
 			local cargoIncome = AICargo.GetCargoIncome( cargo, totalDistance, cruiseDays + additionalCruiseDays );
 			totalDeliver += deliver;
 			incomePerOneTime += (cargoIncome + destRouteCargoIncome) * deliver;
-			incomePerOneTime += !isBidirectional ? 0 : cargoIncome * deliverReturn;
+			incomePerOneTimeReturn = !isBidirectional ? 0 : cargoIncome * deliverReturn;
+			incomePerOneTime += incomePerOneTimeReturn;
 			cargoIncomes.rawset( cargo, cargoIncome + destRouteCargoIncome ); // cascadeで出力ルートからの収入も加算
 
 			//HgLog.Info("income:"+income);
@@ -341,7 +415,7 @@ TrainEstimation <- delegate Estimation : {
 	
 	function GetBuildingTime() {
 		//local result = 470 + distance * 2;
-		local result = 200 + distance * 4;
+		local result = 200 + max(100,distance * 4);
 		if(isSingle) {
 			result = result * 6 / 10;
 		}
@@ -352,7 +426,7 @@ TrainEstimation <- delegate Estimation : {
 	function _tostring() {
 		local explain = GetExplain();
 		explain += " wt:"+waitingInStationTime + "," + loadingTime + "("+intervalStored+")";
-		explain += " acc:"+acceleration+"("+slopes+")";
+		explain += " acc:"+acceleration+","+startDays+"("+slopes+")";
 		local productionString = "";
 		foreach(cargo,production in cargoProduction) {
 			productionString += (productionString.len() >= 1 ? "," : "") + production
@@ -366,6 +440,9 @@ TrainEstimation <- delegate Estimation : {
 		foreach(wagonEngineInfo in wagonEngineInfos) {
 			explain += "-"+AIEngine.GetName(wagonEngineInfo.engine)+"x"+wagonEngineInfo.numWagon;
 		}
+		if(isSingle) {
+			explain += "(single)";
+		}
 		return explain;
 	}
 }
@@ -374,12 +451,48 @@ class Estimator {
 	static buildingTimePerVehicle = 3;
 	
 	route = null;
+	
+	function GetBuildingTime(distance, infrastracture) {
+		// 恣意的だが、場所がなくなる前にrailを作った方が有利な事が多い
+		switch(GetVehicleType()) {	//return distance / 2 + 100; // TODO expectedproductionを満たすのに大きな時間がかかる
+			case AIVehicle.VT_WATER:
+		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
+		//		return distance * 2 + 1800; //TODO: 海率によって異なる
+				if(infrastracture == WaterRoute.IF_CANAL) {
+					//return (250 + pow(distance,1.5) / 5).tointeger();
+					return 125 + distance * 2 + min(distance,30);
+					//return 150 + distance;
+				} else {
+					//return (125 + pow(distance,1.5) / 5).tointeger();
+					return 125 + distance * 2;
+					//return 70 + distance;
+				}
+				local x = distance / 10;
+				return x*x / 5 + x / 5 + 6;
+				
+			case AIVehicle.VT_ROAD:
+	//		return distance + 1200;
+				if(HogeAI.Get().IsInfrastructureMaintenance()) {
+					return 125 + distance * 3;
+				} else {
+					return 125 + distance * 3;
+				}
+			case AIVehicle.VT_AIR:
+				return 300;
+		}
+		assert(false);
+	}
 
 	function SetTransferParams() {
 		local destRoute = route.GetDestRoute();
 		if(route.IsTransfer() && destRoute != false) {
 			totalDistance = AIMap.DistanceManhattan( route.GetFinalDestStation().GetLocation(), route.srcHgStation.GetLocation() );
 			additionalCruiseDays = destRoute.GetTotalCruiseDays();
+			if(GetVehicleType() == AIVehicle.VT_ROAD) {
+				if(destRoute.GetVehicleType() == AIVehicle.VT_ROAD) {
+					additionalCruiseDays += 10; // 道路=>道路の転送渋滞コスト
+				}
+			}
 			if(additionalCruiseDays == null) {
 				additionalCruiseDays = 0;
 			}
@@ -392,10 +505,10 @@ class Estimator {
 		}
 	}
 	
-	function SetRouteCargoIncome() {
+	function SetRouteCargoIncome(cargo) {
 		local finalDestPlace = route.GetFinalDestPlace();
 		if(finalDestPlace != null) {
-			destRouteCargoIncome = finalDestPlace.GetDestRouteCargoIncome() / 2;
+			destRouteCargoIncome = finalDestPlace.GetDestRouteCargoIncome(cargo) / 2;
 		} else {
 			destRouteCargoIncome = 0;
 		}
@@ -496,7 +609,7 @@ class CommonEstimator extends Estimator {
 		}
 		if(destRouteCargoIncome == null) {
 			if(isRouteInstance) {
-				SetRouteCargoIncome();
+				SetRouteCargoIncome(cargo);
 			} else {
 				destRouteCargoIncome = 0;
 			}
@@ -567,9 +680,12 @@ class CommonEstimator extends Estimator {
 		}
 		local ignoreIncome = false;
 		if(isRouteInstance) {
-			ignoreIncome = self.IsTransfer(); // 短路線がマイナス収支で成立しなくなる。 TODO: 転送先とトータルで収益計算しないといけない。
+			ignoreIncome = self.IsSupport(); // 短路線がマイナス収支で成立しなくなる。 TODO: 転送先とトータルで収益計算しないといけない。
 		}
-		
+		/*
+		if(!ignoreIncome && CargoUtils.IsSupplyCargo(cargo)) {
+			ignoreIncome = true;
+		}*/
 		
 		engineList.Valuate( function(e):(orderDistance) {
 			local d = AIEngine.GetMaximumOrderDistance(e);
@@ -620,14 +736,20 @@ class CommonEstimator extends Estimator {
 				}
 				
 			
-				local infraBuildingTime = GetBuildingTime(pathDistance, infrastracture);
+				local infraBuildingTime = GetBuildingTime(pathDistance, engineInfrastractureType);
 				local runningCost = AIEngine.GetRunningCost(e);
 				local cruiseSpeed;
 				local maxSpeed = AIEngine.GetMaxSpeed(e);
 				if(vehicleType == AIVehicle.VT_AIR) {
 					cruiseSpeed = maxSpeed;
 				} else {
-					cruiseSpeed = max( 4, maxSpeed * (100 + (useReliability ? AIEngine.GetReliability(e) : 100)) / 200);
+					if(vehicleType == AIVehicle.VT_ROAD) {
+						cruiseSpeed = RoadRoute.GetRoadCruiseSpeed(e,cargo,capacity);
+						//HgLog.Warning("GetRoadCruiseSpeed:"+cruiseSpeed+" "+AIEngine.GetName(e)+" "+AICargo.GetName(cargo));
+					} else {
+						cruiseSpeed = maxSpeed;
+					}
+					cruiseSpeed = max( 4, cruiseSpeed * (100 + (useReliability ? AIEngine.GetReliability(e) : 100)) / 200);
 				}
 				local infraSpeed = infrastracture.maxSpeed;
 				if(infraSpeed >= 1) {
@@ -656,6 +778,7 @@ class CommonEstimator extends Estimator {
 				switch(vehicleType) {
 					case AIVehicle.VT_ROAD:
 						loadingSpeed = 18; //実測だとこれくらい。 37;
+						if(CargoUtils.IsPaxOrMail(cargo)) loadingSpeed /= 2;
 						break;
 					case AIVehicle.VT_AIR:
 						loadingSpeed = 74;
@@ -673,7 +796,7 @@ class CommonEstimator extends Estimator {
 				if(cargo == HogeAI.GetMailCargo() && vehicleType == AIVehicle.VT_AIR) {
 					loadingSpeed /= 2; //実測では半分程度。機体毎に違うのかもしれない。
 				}
-				local loadingTime = max(1, capacity / loadingSpeed);
+				local loadingTime = max(1, (capacity+loadingSpeed-1) / loadingSpeed);
 				
 				/*if(vehicleType == AIVehicle.VT_ROAD) {
 					loadingTime = CargoUtils.IsPaxOrMail(cargo) ? capacity / 6 : capacity / 10;
@@ -681,19 +804,27 @@ class CommonEstimator extends Estimator {
 					loadingTime = min(10, capacity / 10);
 				}*/
 				
+				local realPathDistance = pathDistance;
 				if(vehicleType == AIVehicle.VT_AIR) {
-					pathDistance += 60; // 着陸に必要な追加航路
+					realPathDistance += 30; // 着陸に必要な追加航路
+					if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
+						realPathDistance += 50; // depotへ行く
+					}
 				}
 
 				local days;
+				local avgBrokenDistance = null;
+				local cruiseDays;
 				if(vehicleType == AIVehicle.VT_AIR && cruiseSpeed > 80 && useReliability) {
-					local avgBrokenDistance = min(100 * pathDistance / ( (AIEngine.GetReliability(e) * 150 / 100) * cruiseSpeed * 24 / 664), 100) * pathDistance / (100 * 2);
-					days = (VehicleUtils.GetDays(pathDistance - avgBrokenDistance,cruiseSpeed) + VehicleUtils.GetDays(avgBrokenDistance,80) + loadingTime) * 2;
+					avgBrokenDistance = min(100 * realPathDistance / ( (AIEngine.GetReliability(e) * 150 / 100) * cruiseSpeed * 24 / 664), 100) * realPathDistance / (100 * 2);
+					cruiseDays = VehicleUtils.GetDays(avgBrokenDistance,80) + VehicleUtils.GetDays(realPathDistance-avgBrokenDistance,cruiseSpeed);
 					//local days2 = (pathDistance * 664 / cruiseSpeed / 24 + loadingTime) * 2;
 					//HgLog.Info("debug: avgBrokenDistance:" + avgBrokenDistance + " d:"+pathDistance+" v:"+cruiseSpeed+" r:"+AIEngine.GetReliability(e)+" "+AIEngine.GetName(e));
 				} else {
-					days = (VehicleUtils.GetDays(pathDistance,cruiseSpeed) + loadingTime) * 2;
+					cruiseDays = VehicleUtils.GetDays(realPathDistance,cruiseSpeed);
 				}
+				if(vehicleType == AIVehicle.VT_ROAD) cruiseDays += 4; // 両端の車庫分
+				days = (cruiseDays + loadingTime) * 2;
 				days = max(days,1);
 				
 				//ocal useTownBus = !isTownBus && TownBus.CanUse(cargo) && !HogeAI.Get().IsDistantJoinStations();
@@ -714,7 +845,7 @@ class CommonEstimator extends Estimator {
 				cargoProduction.rawset(cargo,production);
 				
 				local estimation = delegate CommonEstimation : {
-
+					designedDate = AIDate.GetCurrentDate()
 					engine = e
 					vehicleType = vehicleType
 					cargo = cargo
@@ -735,8 +866,10 @@ class CommonEstimator extends Estimator {
 					runningCost = runningCost
 					maxSpeed = maxSpeed
 					cruiseSpeed = cruiseSpeed
+					cruiseDays = cruiseDays
 					days = days
 					capacity = capacity
+					totalCapacity = capacity
 					cargoCapacity = cargoCapacity
 					buildingCost = buildingCost
 					maxRouteCapacity = maxRouteCapacity
@@ -750,6 +883,7 @@ class CommonEstimator extends Estimator {
 					buildingTime = null
 					cargoIncomes = null
 					incomePerOneTime = null
+					incomePerOneTimeReturn = null
 					income = null
 					routeIncome = null
 					roi = null
@@ -759,7 +893,15 @@ class CommonEstimator extends Estimator {
 				estimation.Estimate();
 				if(ignoreIncome || estimation.routeIncome >= 0) {
 					result.push(estimation);
+					//HgLog.Info(estimation);
+				} else {
+					//HgLog.Warning("routeIncome<0:"+estimation);
+					//HgLog.Warning("estimation:"+HgTable(estimation));
 				}
+				/*
+				if(vehicleType == AIVehicle.VT_AIR && cargo==HogeAI.Get().GetPassengerCargo()) {
+					HgLog.Info("test:"+avgBrokenDistance+"/"+realPathDistance+" "+estimation);
+				}*/
 			}
 		}
 		result.sort(function(a,b) {
@@ -768,39 +910,11 @@ class CommonEstimator extends Estimator {
 		return result;
 	}
 
-	function GetBuildingTime(distance, infrastracture) {
-		// 恣意的だが、場所がなくなる前にrailを作った方が有利な事が多い
-		switch(GetVehicleType()) {	//return distance / 2 + 100; // TODO expectedproductionを満たすのに大きな時間がかかる
-			case AIVehicle.VT_WATER:
-		//		return (pow(distance / 20,2) + 150).tointeger(); //TODO: 海率によって異なる
-		//		return distance * 2 + 1800; //TODO: 海率によって異なる
-				if(infrastracture == WaterRoute.IF_CANAL) {
-					//return (250 + pow(distance,1.5) / 5).tointeger();
-					return 250 + distance * 2;
-					//return 150 + distance;
-				} else {
-					//return (125 + pow(distance,1.5) / 5).tointeger();
-					return 125 + distance * 2;
-					//return 70 + distance;
-				}
-				local x = distance / 10;
-				return x*x / 5 + x / 5 + 6;
-				
-			case AIVehicle.VT_ROAD:
-	//		return distance + 1200;
-				if(HogeAI.Get().IsInfrastructureMaintenance()) {
-					return 125 + distance * 3;
-				} else {
-					return 125 + distance * 3;
-				}
-			case AIVehicle.VT_AIR:
-				return 300;
-		}
-		assert(false);
-	}
 }
 
-class TrainEstimator extends Estimator{
+class TrainEstimator extends Estimator {
+
+	static wagonEnginesCache = ExpirationTable(90);
 
 	cargo = null;
 	cargoProduction = null;
@@ -830,6 +944,7 @@ class TrainEstimator extends Estimator{
 	isSingleOrNot = null;
 	isLimitIncome = null;
 	cargoIsTransfered = null;
+	forRawPlace = null;
 	
 	// result
 	tooShortMoney = null;
@@ -1081,6 +1196,122 @@ class TrainEstimator extends Estimator{
 		return result;
 	}
 	
+	function GetWagonSelectors(cargo,railSpeed) {
+		local result = [];
+		// バランス
+		result.push(function(engine):(cargo,railSpeed) {
+			local wagonInfo = TrainInfoDictionary.Get().GetTrainInfo(engine);
+			if(wagonInfo==null) {
+				return 0;
+			}
+			local cost = (AIEngine.GetPrice(engine) + AIEngine.GetRunningCost(engine) * 3) / HogeAI.GetInflationRate();
+			local speed = min( railSpeed, AIEngine.GetMaxSpeed(engine)==0 ? railSpeed : AIEngine.GetMaxSpeed(engine) );
+			local capa = (wagonInfo.cargoCapacity.rawin(cargo) ? wagonInfo.cargoCapacity[cargo] : 0) * 256;
+			if(capa==0) {
+				return 0;
+			}
+			local a = ( speed.tofloat()*24 - cost/capa).tointeger();
+			//HgLog.Info("GetWagonSelectors "+AIEngine.GetName(engine) + " "+ a+ " "+cost+" "+speed+" "+capa+" "+wagonInfo.length);
+			return a;
+		});
+		// 容量重視
+		result.push(function(engine):(cargo) {
+			local wagonInfo = TrainInfoDictionary.Get().GetTrainInfo(engine);
+			if(wagonInfo==null || wagonInfo.length==0) {
+				return 0;
+			}
+			local capa = (wagonInfo.cargoCapacity.rawin(cargo) ? wagonInfo.cargoCapacity[cargo] : 0) * 256;
+			return capa / wagonInfo.length;
+		});
+		// スピード重視
+		result.push(function(engine):(railSpeed) {
+			return min(railSpeed,AIEngine.GetMaxSpeed(engine)==0?railSpeed:AIEngine.GetMaxSpeed(engine)); // / (AIEngine.GetCost(engine) + AIEngine.GetRunningCost(engine))
+		});
+		// ランコス重視
+		result.push(function(engine) {
+			local cost = AIEngine.GetRunningCost(engine);
+			if(cost <= 0) return 0;
+			return IntegerUtils.IntMax / AIEngine.GetRunningCost(engine);
+		});
+		// コスト重視
+		result.push(function(engine) {
+			local cost = AIEngine.GetPrice(engine);
+			if(cost <= 0) return 0;
+			return IntegerUtils.IntMax / cost;
+		});
+		return result;
+	}
+	
+	function GetWagonEngines(cargo, railType) {
+		local key = cargo + " " + railType;
+		if(wagonEnginesCache.rawin(key)) {
+			return wagonEnginesCache.rawget(key);
+		}
+		local result = _GetWagonEngines(cargo, railType);
+		wagonEnginesCache.rawset(key, result);
+		return result;
+	}
+	
+	function _GetWagonEngines(cargo, railType) {
+		local railSpeed = 10000;
+		if(railType != null) {
+			railSpeed = AIRail.GetMaxSpeed(railType);
+			if(railSpeed <= 0) {
+				railSpeed = 10000;
+			}
+		}
+		local wagonSelectors = GetWagonSelectors(cargo,railSpeed);
+		local wagonEngines = AIEngineList(AIVehicle.VT_RAIL);
+		wagonEngines.Valuate(AIEngine.IsWagon);
+		wagonEngines.KeepValue(1);
+		wagonEngines.Valuate(AIEngine.IsBuildable);
+		wagonEngines.KeepValue(1);
+		wagonEngines.Valuate(AIEngine.CanRefitCargo, cargo);
+		wagonEngines.KeepValue(1);
+		if(railType != null) {
+			wagonEngines.Valuate(AIEngine.CanRunOnRail, railType);
+			wagonEngines.KeepValue(1);
+		}
+		/*
+		if(checkRailType || limitWagonEngines != null) {
+			if(checkRailType || limitWagonEngines == 1) {
+				foreach(w,v in wagonEngines) {
+					local wagonSpeed = AIEngine.GetMaxSpeed(w);
+					if(wagonSpeed <= 0) {
+						wagonSpeed = 200;
+					}
+					local wagonInfo = TrainInfoDictionary.Get().GetTrainInfo(w);
+					if(wagonInfo != null) {
+						local wagonCapacity = wagonInfo.cargoCapacity.rawin(cargo) ? wagonInfo.cargoCapacity[cargo] : 0;
+						wagonEngines.SetValue(w,min(railSpeed,wagonSpeed) * wagonCapacity);
+					}
+				}
+			} else {
+				wagonEngines.Valuate(AIBase.RandItem);
+			}
+			if(additonalWagonEngine != null && (railType == null || AIEngine.CanRunOnRail(additonalWagonEngine, railType))) {
+				wagonEngines.RemoveItem(additonalWagonEngine);
+				wagonEngines.AddItem(additonalWagonEngine, 4294967295);
+				//HgLog.Info("additonalWagonEngine:"+AIEngine.GetName(additonalWagonEngine));
+			}
+			wagonEngines.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
+		}*/
+		
+		wagonEngines.Sort(AIList.SORT_BY_VALUE,true);
+		wagonEngines.Valuate(AIBase.RandItem);
+		foreach(engine,_ in wagonEngines) {
+			TrainInfoDictionary.Get().GetTrainInfo(engine);	 // Valuateの中でBuildTrainが呼ばれるのを防ぐ
+		}
+		foreach(index, selector in wagonSelectors) {
+			local tmp = AIList();
+			tmp.AddList(wagonEngines);
+			tmp.Valuate(selector);
+			local wagon = tmp.Begin();
+			wagonEngines.SetValue(wagon, min(index, wagonEngines.GetValue(wagon)));
+		}
+		return wagonEngines;
+	}
+	
 	function Estimate() {
 		local engineSets = GetEngineSetsOrder();
 		if(engineSets.len() >= 1) {
@@ -1091,11 +1322,6 @@ class TrainEstimator extends Estimator{
 	}
 	
 	function GetEngineSets() {
-		if(platformLength == null) {
-			local stationFactory = RailStationFactory();
-			stationFactory.distance = distance;
-			platformLength = stationFactory.GetMaxStatoinLength(cargo);
-		}
 		if(pathDistance == null) {
 			pathDistance = distance;
 		}
@@ -1109,15 +1335,25 @@ class TrainEstimator extends Estimator{
 		}
 		if(destRouteCargoIncome == null) {
 			if(route != null) {
-				SetRouteCargoIncome();
+				SetRouteCargoIncome(cargo);
 			} else {
 				destRouteCargoIncome = 0;
+			}
+		}
+		if(additonalTrainEngine != null) {
+			if(!AIEngine.IsBuildable(additonalTrainEngine)) {
+				additonalTrainEngine = null;
+			}
+		}
+		if(additonalWagonEngine != null) {
+			if(!AIEngine.IsBuildable(additonalWagonEngine)) {
+				additonalWagonEngine = null;
 			}
 		}
 	
 		local result = [];
 		local useReliability = HogeAI.Get().IsEnableVehicleBreakdowns();
-				
+		
 		/*
 		if(CargoUtils.IsPaxOrMail(cargo) && isBidirectional && RoadRoute.GetMaxTotalVehicles() <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD)) {
 			production /= 4; // フィーダーのサポートが無いと著しく収益性が落ちる placeでやる
@@ -1133,53 +1369,17 @@ class TrainEstimator extends Estimator{
 		local maxBuildingCost = !isLimitIncome || !checkRailType ? 0 : GetMaxBuildingCost();
 		local vehiclesRoom = TrainRoute.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, TrainRoute.GetVehicleType());
 		
-		local wagonEngines = AIEngineList(AIVehicle.VT_RAIL);
-		wagonEngines.Valuate(AIEngine.IsWagon);
-		wagonEngines.KeepValue(1);
-		wagonEngines.Valuate(AIEngine.IsBuildable);
-		wagonEngines.KeepValue(1);
-		wagonEngines.Valuate(AIEngine.CanRefitCargo, cargo);
-		wagonEngines.KeepValue(1);
-		if(railType != null) {
-			wagonEngines.Valuate(AIEngine.CanRunOnRail, railType);
-			wagonEngines.KeepValue(1);
-		}
-		if(checkRailType || limitWagonEngines != null) {
-			if(checkRailType || limitWagonEngines == 1) {
-				foreach(w,v in wagonEngines) {
-					local wagonSpeed = AIEngine.GetMaxSpeed(w);
-					if(wagonSpeed <= 0) {
-						wagonSpeed = 200;
-					}
-					local wagonInfo = TrainInfoDictionary.Get().GetTrainInfo(w);
-					if(wagonInfo != null) {
-						local wagonCapacity = wagonInfo.cargoCapacity.rawin(cargo) ? wagonInfo.cargoCapacity[cargo] : 0;
-						/*if(wagonInfo.isMultipleUnit) {
-							wagonCapacity = 300; // 仮
-						}*/
-						wagonEngines.SetValue(w,min(railSpeed,wagonSpeed) * wagonCapacity);
-					}
-				}
-			} else {
-				wagonEngines.Valuate(AIBase.RandItem);
-			}
-			if(additonalWagonEngine != null && (railType == null || AIEngine.CanRunOnRail(additonalWagonEngine, railType))) {
-				wagonEngines.RemoveItem(additonalWagonEngine);
-				wagonEngines.AddItem(additonalWagonEngine, 4294967295);
-				//HgLog.Info("additonalWagonEngine:"+AIEngine.GetName(additonalWagonEngine));
-			}
-			wagonEngines.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
-		}
-		local waginEngineArray = [];
-		foreach(wagonEngine,_ in wagonEngines) {
-			waginEngineArray.push(wagonEngine);
-		}
-		//waginEngineArray.push(null); // wagonが無い場合がある
-		
 		local countWagonEngines = 0;
-		foreach(wagonEngine in waginEngineArray) {
-			if(limitWagonEngines != null && countWagonEngines > limitWagonEngines && result.len() >= 1/*候補が一つもまだ無い場合はlimitを無視しないと何も鉄道が作られない*/) {
-				break;
+		foreach(wagonEngine,_ in GetWagonEngines(cargo, railType)) {
+			if(limitWagonEngines != null && countWagonEngines >= limitWagonEngines) {
+				if(result.len() >= 1) {
+					break;
+				}
+				if(countWagonEngines >= limitWagonEngines+1) { // 条件が悪くてwagonの種類が多い時、全部見に行って異常に時間がかかる
+					//HgLog.Warning("result.len()==0 break."+countWagonEngines);
+					break;
+				}
+				//HgLog.Warning("result.len()==0 continued."+countWagonEngines);
 			}
 			if(wagonEngine != null && (!AIEngine.IsValidEngine(wagonEngine) || !AIEngine.IsBuildable(wagonEngine))) {
 				continue;
@@ -1246,6 +1446,10 @@ class TrainEstimator extends Estimator{
 				countWagonEngines ++;
 			}
 			local countTrainEngines = 0;
+			//local wagonEngineEstimations = AIList();
+			//wagonEngineEstimations.Sort(AIList.SORT_BY_VALUE, false);
+			/*HgLog.Info("GetEngineSets wagon:"+(wagonEngine==null?"no wagon":AIEngine.GetName(wagonEngine))+" loco:"+limitTrainEngines+"/"+trainEngines.Count()
+				+" "+HgTable(cargoProduction)+" distance:"+distance);*/
 			foreach(trainEngine,v in trainEngines) {
 				if(!AIEngine.IsValidEngine(trainEngine) || !AIEngine.IsBuildable(trainEngine)) {
 					continue;
@@ -1344,6 +1548,7 @@ class TrainEstimator extends Estimator{
 
 
 				local infraEstimation = delegate TrainEstimation : {
+					designedDate = AIDate.GetCurrentDate()
 					cargo = cargo
 					engine = trainEngine
 					railType = trainRailType
@@ -1355,7 +1560,6 @@ class TrainEstimator extends Estimator{
 					cargoProduction = cargoProduction
 					cargoIsTransfered = cargoIsTransfered
 					stationRate = stationRate
-					platformLength = platformLength
 					additionalCruiseDays = additionalCruiseDays
 					additionalVehiclesPerRoute = 0
 					additionalRunningCostPerCargo = additionalRunningCostPerCargo
@@ -1367,6 +1571,7 @@ class TrainEstimator extends Estimator{
 					numLoco = null
 					wagonEngineInfos = null
 					capacity = null
+					totalCapacity = null
 					length = null
 					weight = null
 					price = null
@@ -1383,6 +1588,8 @@ class TrainEstimator extends Estimator{
 					runningCost = null
 					runningCostPerCargo = null
 					slopes = null
+					platformLength = null
+					startDays = null
 					
 					isSingle = null
 					infrastractureCost = null
@@ -1395,6 +1602,7 @@ class TrainEstimator extends Estimator{
 					cargoRateStock = null
 					cargoIncomes = null
 					incomePerOneTime = null
+					incomePerOneTimeReturn = null
 					income = null
 					routeIncome = null
 					roi = null
@@ -1413,16 +1621,14 @@ class TrainEstimator extends Estimator{
 						trainPlan.IncreaseNumWagon();
 					}
 					//HgLog.Info("numLoco:"+trainPlan.locoInfo.numLoco+" numWagon:"+trainPlan.numWagon+" length:"+trainPlan.GetLength());
-					if(trainPlan.GetLength() > platformLength * 16) {
+					local usedPlatformLength = platformLength == null ? (trainPlan.GetLength()+15)/16 : platformLength;
+					usedPlatformLength = min(HogeAI.Get().maxStationSpread, usedPlatformLength);
+					if(trainPlan.GetLength() > usedPlatformLength * 16) {
 						break;
 					}
 					
 					increaseLoco = false;
 					
-					local totalCapacity = trainPlan.GetCargoCapacity()[cargo];
-					if(totalCapacity == 0) {
-						continue;
-					}
 					local price = trainPlan.GetPrice();
 					if(firstRoute && price * 3 / 2 > HogeAI.GetUsableMoney()) {
 						if(tooShortMoney == null) {
@@ -1444,7 +1650,7 @@ class TrainEstimator extends Estimator{
 						continue;
 					}
 					
-					local requestSpeed = max(10, min(40, maxSpeed / 4));  // min(40, max(10, maxSpeed / 10));
+					local requestSpeed = max(10, min(40, maxSpeed / 3));  // min(40, max(10, maxSpeed / 10));
 					local slopes = GetSlopes(trainPlan.GetLength());
 					local acceleration = trainPlan.GetAcceleration(requestSpeed, GetSlopes(trainPlan.GetLength()));
 					if(acceleration <= 0) {
@@ -1457,24 +1663,39 @@ class TrainEstimator extends Estimator{
 					if(useReliability) {
 						cruiseSpeed = (60 + cruiseSpeed * 3) / 4;
 					}
+					/*
 					local startDays = 8.0 / (trainPlan.GetPower().tofloat() / trainPlan.GetWeight().tofloat()) * cruiseSpeed / 100;
 					local startDistance = VehicleUtils.GetDistance(cruiseSpeed/2, startDays).tointeger();
 					
 					local stationLimitTime = isRoRo ? 10 : 20;
-					local stationInOutTime = VehicleUtils.GetDays( max(platformLength,7), cruiseSpeed ) * (isRoRo ? 1 : 2) / 2;
+					local stationInOutTime = VehicleUtils.GetDays( max(usedPlatformLength,7), cruiseSpeed ) * (isRoRo ? 1 : 2) / 2;*/
+					
+					
+					// cruiseSpeedに到達するまで、平均cruiseSpeed/2の速度で走行していると仮定
+					// それまでcruiseSpeed/2の時の加速度で等加速度運動していると仮定
+					local accelerationFlat = trainPlan.GetAcceleration(cruiseSpeed/2, 0);
+					local startDays = cruiseSpeed / (accelerationFlat / 2);
+//					local startDays = 8.0 / (trainPlan.GetPower().tofloat() / trainPlan.GetWeight().tofloat()) * cruiseSpeed / 100;
+					local startDistance = VehicleUtils.GetDistance(cruiseSpeed/2, startDays).tointeger();
+					
+					local stationLimitTime = 0; //isRoRo ? 7 : 10;
+					local inOutDistance = usedPlatformLength + 7;
+					local stationInOutTime = (VehicleUtils.GetDays( max(0,inOutDistance-startDistance),cruiseSpeed ) 
+						+ VehicleUtils.GetDays( max(startDistance-inOutDistance,startDistance),cruiseSpeed/2 )) * (isRoRo ? 2 : 3) / 2 + 2;
 					
 					local cruiseDays = 
 						(VehicleUtils.GetDays( max(0,pathDistance-startDistance),cruiseSpeed ) 
 						+ VehicleUtils.GetDays( max(startDistance-pathDistance,startDistance),cruiseSpeed/2 )) * 150 / (trainReiliability+50);
 					local days = (cruiseDays + loadingTime) * 2;
 					
-					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime));
+					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime) + 2); //+2は駅停車中分
 					maxVehicles = min( maxVehicles, vehiclesRoom );
 
 					local trainEstimation = clone infraEstimation;
 					trainEstimation.numLoco = trainPlan.locoInfo.numLoco;
 					trainEstimation.wagonEngineInfos = trainPlan.CloneWagonInfos();
-					trainEstimation.capacity = totalCapacity;
+					trainEstimation.capacity = trainPlan.GetCargoCapacity()[cargo];
+					trainEstimation.totalCapacity = trainPlan.GetTotalCapacity();
 					trainEstimation.length = trainPlan.GetLength();
 					trainEstimation.weight = trainPlan.GetWeight();
 					trainEstimation.price = price;
@@ -1488,6 +1709,9 @@ class TrainEstimator extends Estimator{
 					trainEstimation.cruiseDays = cruiseDays;
 					trainEstimation.runningCost = trainPlan.GetRunningCost();
 					trainEstimation.slopes = slopes;
+					trainEstimation.platformLength = usedPlatformLength;
+					trainEstimation.startDays = startDays;
+					
 
 					foreach(isSingle in [true,false]) {
 						if(isSingleOrNot != null && isSingleOrNot != isSingle) {
@@ -1498,9 +1722,10 @@ class TrainEstimator extends Estimator{
 						}
 
 						local realBuildingCost = isSingle ? buildingCost / 2 : buildingCost;
+						local realMaxVehicles = isSingle ? 1 : maxVehicles;
 						if(maxBuildingCost > 0 && price > 0) {
-							maxVehicles = min(maxVehicles, (maxBuildingCost - realBuildingCost) / price);
-							if(maxVehicles <= 0) {
+							realMaxVehicles = min(realMaxVehicles, (maxBuildingCost - realBuildingCost) / price);
+							if(realMaxVehicles <= 0) {
 								if(tooShortMoney == null) {
 									tooShortMoney = true;
 								}
@@ -1512,7 +1737,7 @@ class TrainEstimator extends Estimator{
 						local estimation = clone trainEstimation;
 						estimation.infrastractureCost = infrastractureCost / (isSingle ? 2 : 1);
 						estimation.buildingCost = realBuildingCost;
-						estimation.maxVehicles = isSingle ? 1 : maxVehicles;
+						estimation.maxVehicles = realMaxVehicles;
 						estimation.isSingle = isSingle;
 						
 						estimation.Estimate();
@@ -1524,20 +1749,37 @@ class TrainEstimator extends Estimator{
 						}*/
 						
 						if( estimation.income > 0) {
-							result.push(estimation);
+							//wagonEngineEstimations.AddItem(result.len(),estimation.value);
+							if(forRawPlace!=null && forRawPlace && route == null) {
+								if(estimation.days < 90) {
+									if(estimation.isSingle) {
+										result.push(estimation);
+									}
+								} else {
+									if(!estimation.isSingle) {
+										result.push(estimation);
+									}
+								}
+							} else {
+								result.push(estimation);
+							}
+							//HgLog.Info(estimation);
 						} else {
 							if(checkRailType) {
 								//HgLog.Info(estimation+" "+route);
 							}
 						}
 					}
-					if(slopedSpeed < maxSpeed * 0.8) {
+					if(slopedSpeed < maxSpeed * 0.9) {
 						//HgLog.Warning("acceleration:"+acceleration);
 						increaseLoco = true;
 						continue;
 					}
 				}
 			}
+			/*if(wagonEngineEstimations.Count() >= 1) {
+				HgLog.Info("GetEngineSets estimation:"+result[wagonEngineEstimations.Begin()]);
+			}*/
 		}
 		return result;
 	}
@@ -1692,7 +1934,9 @@ class TrainPlan {
 	function IncreaseNumWagon() {
 		local delta;
 		if(skipWagonNum != 1) {
-			delta = skipWagonNum;
+			// skipWagonNum=3: 1,2,4,8,16,32,64,128...
+			// skipWagonNum=5: 1,2,5,13,34,...
+			delta = max( 1, numWagon * skipWagonNum / 3 ); 
 		} else {
 			delta = max( 1, numWagon / 3 ); // 1,2,3,4,5,6,7,9,12,16,21,28,37...
 		}
@@ -1830,6 +2074,14 @@ class TrainPlan {
 		return cargoCapacity;
 	}
 	
+	function GetTotalCapacity() {
+		local result = 0;
+		foreach(cargo,capacity in cargoCapacity) {
+			result += capacity;
+		}
+		return result;
+	}
+	
 	function GetLength() {
 		return length;
 	}
@@ -1893,7 +2145,10 @@ class TrainPlan {
 	}
 	
 	function GetAcceleration(requestSpeed,slopes) {
-		return VehicleUtils.GetAcceleration( GetSlopeForce(slopes), requestSpeed, GetTractiveEffort(), GetPower(), weight);
+		local maxSpeed = AIEngine.GetMaxSpeed(locoInfo.engine);
+		return VehicleUtils.GetAcceleration( 
+			GetSlopeForce(slopes) + VehicleUtils.GetAirDrag(requestSpeed, maxSpeed, numWagon + locoInfo.numLoco), 
+			requestSpeed, GetTractiveEffort(), GetPower(), weight);
 	}
 	
 	function GetSlopeForce(slopes) {
@@ -1906,7 +2161,6 @@ class TrainPlan {
 			return result;
 		}
 	}
-	
 	
 	function GetCruiseSpeed(maxSlopes) {
 		local maxSpeed = AIEngine.GetMaxSpeed(locoInfo.engine);

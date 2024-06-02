@@ -1,7 +1,7 @@
 ﻿
 class StationGroup {
 	static idCounter = IdCounter();
-	
+
 	id = null;
 	hgStations = null;
 	isVirtual = null;
@@ -10,17 +10,31 @@ class StationGroup {
 	coverageTileList = null;
 	coverageRectangles = null;
 	cargoProducingPlaces = null;
+	cargoAcceptingPlaces = null;
 	
 	acceptingCargoCache = null;
 	producingCargoCache = null;
+	acceptingCargoHereCache = null;
+	producingCargoHereCache = null;
+	sourcesCache = null;
+	expectedProductionCache = null;
+	
+	routes = null;
+	usingRoutesAsDest = null;
+	usingRoutesAsSource = null;
 	
 	constructor() {
 		id = idCounter.Get();
 		hgStations = [];
 		isVirtual = false;
 		cargoProducingPlaces = ExpirationTable(3*365);
-		acceptingCargoCache = ExpirationTable(7);
-		producingCargoCache = ExpirationTable(7);
+		cargoAcceptingPlaces = ExpirationTable(3*365);
+		acceptingCargoCache = ExpirationTable(90);
+		producingCargoCache = ExpirationTable(3*365); // producingはあまり変化しない
+		acceptingCargoHereCache = ExpirationTable(90);
+		producingCargoHereCache = ExpirationTable(3*365);
+		sourcesCache = ExpirationTable(3*365);
+		expectedProductionCache = ExpirationTable(30);
 	}
 
 	function GetGId() {
@@ -36,50 +50,83 @@ class StationGroup {
 
 	function AddHgStation(hgStation) {
 		hgStations.push(hgStation);
-		coverageTileList = null;
-		coverageRectangles = null;
-		cargoProducingPlaces.clear();
+		ClearCache();
 	}
 	
 	function RemoveHgStation(hgStation) {
 		hgStations = HgArray(hgStations).Remove(hgStation).array;
+		ClearCache();
+	}
+	
+	function ClearCache() {
 		coverageTileList = null;
 		coverageRectangles = null;
 		cargoProducingPlaces.clear();
-		return;
+		cargoAcceptingPlaces.clear();
+		acceptingCargoCache.clear();
+		producingCargoCache.clear();
+		acceptingCargoHereCache.clear();
+		producingCargoHereCache.clear();
+		usingRoutesAsDest = null;
+		usingRoutesAsSource = null;
+		expectedProductionCache.clear();
+		sourcesCache.clear();
 	}
 	
 	function GetRoutesUsingDest() {
 		return GetUsingRoutesAsDest();
 	}
-	
+
 	function GetUsingRoutesAsDest() {
-		local result = [];
+		if(usingRoutesAsDest != null) {
+			return usingRoutesAsDest;
+		}
+		return usingRoutesAsDest = _GetUsingRoutesAsDest();
+	}
+	
+	function _GetUsingRoutesAsDest() {
+		local map = {};
 		foreach(route in GetUsingRoutes()) {
 			if(route.destHgStation.stationGroup == this) {
-				result.push(route);
+				map.rawset(route,route);
 			}
 		}
-		return result;
+		return HgTable(map).Keys();
 	}
 
-	function GetRoutesUsingSource() {
-		return GetUsingRoutesAsSource();
+	function GetUsingRoutesAsSource() {
+		if(usingRoutesAsSource != null) {
+			return usingRoutesAsSource;
+		}
+		return usingRoutesAsSource = _GetUsingRoutesAsSource();
 	}
 	
-	function GetUsingRoutesAsSource() {
-		local result = [];
+	function _GetUsingRoutesAsSource() {
+		local map = {};
 		foreach(route in GetUsingRoutes()) {
 			if(route.srcHgStation.stationGroup == this) {
-				result.push(route);
+				map.rawset(route,route);
 			}
 			if(route.IsBiDirectional()) {
 				if(route.destHgStation.stationGroup == this) {
-					result.push(route);
+					map.rawset(route,route);
 				}
 			}
 		}
-		return result;
+		return HgTable(map).Keys();
+	}
+
+	function GetRoutesUsingSource(cargo = null) {
+		if(cargo == null) {
+			return GetUsingRoutesAsSource()
+		}
+		local result = []
+		foreach(route in GetUsingRoutesAsSource()) {
+			if(route.IsDeliveringCargo(cargo)) {
+				result.push(route);
+			}
+		}
+		return result;	
 	}
 
 	function GetUsingRoutes() {
@@ -125,15 +172,16 @@ class StationGroup {
 	}
 
 	function GetStationCandidatesInSpread(stationFactory,checkedTile=null) {
+		/* Articulatedだと足りない
 		if( stationFactory.GetVehicleType() == AIVehicle.VT_ROAD ) {
 			local tileList = AITileList_StationType( GetAIStation(), stationFactory.GetStationType());
 			if(tileList.Count() >= 4) {
 				return []; // 美的観点から同一道路ステーションは4つまで
 			}
-		}
+		}*/
 	
 		local maxStationSpread = HogeAI.Get().maxStationSpread;
-		local maxRadius = min(maxStationSpread, max(stationFactory.GetPlatformNum(),stationFactory.GetPlatformLength()) + 12);
+		local maxRadius = min(maxStationSpread, max(stationFactory.GetPlatformNum(),stationFactory.GetPlatformLength()) + 12); // 広すぎると重いので適当な所で制限
 		local rectangle = GetBuildablePlatformRectangle(maxStationSpread - stationFactory.GetSpreadMargin(), maxRadius);
 		//HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle);
 		local result = null;
@@ -150,7 +198,7 @@ class StationGroup {
 		foreach(s in result) {
 			s.stationGroup = this;
 		}
-		HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle+" result:"+result.len());
+		HgLog.Info("StationGroup.GetStationCandidatesInSpread rectangle:"+rectangle+" result:"+result.len()+" "+this);
 		return result;
 	}
 	
@@ -159,7 +207,7 @@ class StationGroup {
 		foreach(station in hgStations) {
 			aroundTiles.extend(station.GetPlatformRectangle().GetAroundTiles());
 		}
-		return HgTable.Keys(HgTable.FromArray(aroundTiles));
+		return HgTable(HgTable.FromArray(aroundTiles)).Keys();
 	}
 	
 	function GetAroundTileList() {
@@ -171,20 +219,14 @@ class StationGroup {
 	}
 	
 	function GetFutureExpectedProduction( cargo, vehicleType ) {
-		return GetExpectedProduction( cargo, vehicleType );
+		return GetExpectedProduction( cargo, vehicleType, true, null, true );
 	}
-
 
 	function GetLastMonthProduction( cargo )  {
 		local result = 0;
-		foreach(place in GetProducingHgIndustries(cargo)) {
+		foreach(place in GetProducingPlaces(cargo)) {
 			result += place.GetLastMonthProduction(cargo, vehicleType, isMine);
 		}
-		local townCargo = GetTownCargo(cargo);
-		if(townCargo != null) {
-			result += townCargo.GetLastMonthProduction(cargo,vehicleType,isMine);
-		}
-
 		foreach(transferRoute in GetUsingRoutesAsDest()) {
 			if(transferRoute.IsTownTransferRoute()) { // TownCargo.GetExpectedProductionに含まれる
 				continue;
@@ -202,83 +244,83 @@ class StationGroup {
 		return GetExpectedProduction( cargo, vehicleType, isMine, callers );
 	}
 	
-	function GetExpectedProduction( cargo, vehicleType, isMine = false, callers = null)  {
-		local result = 0;
-		foreach(place in GetProducingHgIndustries(cargo)) {
-			local prod = place.GetCurrentExpectedProduction(cargo, vehicleType, isMine);
-			result += prod;
-			//HgLog.Info("GetExpectedProduction place:"+place+" prod:"+prod);
+	function GetExpectedProduction( cargo, vehicleType, isMine = false, callers = null, isFuture = false)  {
+		local key = cargo + "-" + vehicleType + "-" + isMine + "-" + isFuture;
+		if(expectedProductionCache.rawin(key)) {
+			return expectedProductionCache.rawget(key);
 		}
-		local townCargo = GetTownCargo(cargo);
-		if(townCargo != null) {
-			result += townCargo.GetCurrentExpectedProduction(cargo,vehicleType,isMine);
-		}
-
-		foreach(transferRoute in GetUsingRoutesAsDest()) {
-			if(transferRoute.IsTownTransferRoute()) { // TownCargo.GetExpectedProductionに含まれる
-				continue;
-			}
-			//HgLog.Info("GetUsingRoutesAsDest:"+route+" "+this+" "+callers.rawin(route)+" "+route.HasCargo(cargo));
-			if(callers == null) {
-				callers = {};
-			}
-			if(!callers.rawin(transferRoute) && transferRoute.IsTransfer() && transferRoute.srcHgStation.stationGroup != this) {
-				result += transferRoute.GetDelivableProduction(cargo, callers);
-			}
-		}
-		local usings = max(1, GetUsingRoutesAsSource().len() + (!isMine ? 1 : 0));
-		return result / usings;
-	}
-	
-	function GetExpectedProductionInfos( cargo, vehicleType, isMine = false, callers = null ) {
-		// 使われてない？ n対nの輸送路評価用
-		local result = {}
-		local location = GetLocation();
-		foreach(place in GetProducingHgIndustries(cargo)) {
-			result.push({
-				location = location
-				cruiseDays = 0
-				production = place.GetCurrentExpectedProduction(cargo, vehicleType, isMine)
-			});
-		}
-		local townCargo = GetTownCargo(cargo);
-		if(townCargo != null) {
-			result.push({
-				location = location
-				cruiseDays = 0
-				production = townCargo.GetCurrentExpectedProduction(cargo,vehicleType,isMine)
-			});
-		}
-		foreach(transferRoute in GetUsingRoutesAsDest()) {
-			if(transferRoute.IsTownTransferRoute()) { // TownCargo.GetExpectedProductionに含まれる
-				continue;
-			}
-			
-			//HgLog.Info("GetUsingRoutesAsDest:"+route+" "+this+" "+callers.rawin(route)+" "+route.HasCargo(cargo));
-			if(callers == null) {
-				callers = {};
-			}
-			if(!callers.rawin(transferRoute) && transferRoute.IsTransfer() && transferRoute.srcHgStation.stationGroup != this) {
-				result.extend( transferRoute.GetDelivableProductionInfos(cargo, callers) );
-			}
-		}
-		local usings = max(1, GetUsingRoutesAsSource().len() + (!isMine ? 1 : 0));
-		foreach( productionInfo in result ) {
-			productionInfo.production /= usings;
-		}
+		local result = _GetExpectedProduction(cargo,vehicleType,isMine,callers,isFuture);
+		expectedProductionCache.rawset(key,result);
 		return result;
 	}
+	
+	function _GetExpectedProduction( cargo, vehicleType, isMine = false, callers = null, isFuture = false)  {
+		local result = 0;
+		foreach(place in GetProducingPlaces(cargo)) {
+			/* local placeStationGroups = place.GetStationGroups(); このチェック不要では
+			if(placeStationGroups.len()>=1) {
+				if(!placeStationGroups.rawin(this)) {
+					continue; // 他で使ってる
+				}
+			}*/
+			local prod;
+			if(isFuture) {
+				prod = place.GetFutureExpectedProduction(cargo, vehicleType, isMine);
+			} else {
+				prod = place.GetCurrentExpectedProduction(cargo, vehicleType, isMine, callers);
+			}
+			result += prod * 2 / 3;
+			//HgLog.Info("GetExpectedProduction place:"+place+" prod:"+prod+ " result:"+result+" ["+AICargo.GetName(cargo)+"] "+isFuture+" at "+this);
+		}
 
-	function GetTownCargo(cargo) {
+		foreach(srcRoute in GetUsingRoutesAsDest()) {
+			if(srcRoute.IsTownTransferRoute()) { // TownCargo.GetExpectedProductionに含まれる
+				continue;
+			}
+			//HgLog.Info("GetUsingRoutesAsDest:"+route+" "+this+" "+callers.rawin(route)+" "+route.HasCargo(cargo));
+			if(callers == null) {
+				callers = {};
+			}
+			if(!callers.rawin(srcRoute) 
+					&& (srcRoute.IsTransfer() || !IsAcceptingCargoHere(cargo))
+					&& srcRoute.srcHgStation.stationGroup != this) {
+				local a = srcRoute.GetDelivableProduction(cargo, callers, isFuture);
+				if(a==0) {
+					HgLog.Info("GetDelivableProduction:"+a+" ["+AICargo.GetName(cargo)+"] srcRoute:"+srcRoute+" at "+this);
+				}
+				result += a;
+			}
+		}
+		local usings = isMine ? 0 : 1;
+		foreach(destRoute in GetUsingRoutesAsSource()) {
+			if(destRoute.IsDeliveringCargo(cargo)) {
+				usings ++;
+			}
+		}
+		/*
+		if(this.tostring().find("0024K")!=null) {
+			HgLog.Info("GetUsingRoutesAsSource:"+usings+" "+this);
+			foreach(route in GetUsingRoutesAsSource()) {
+				HgLog.Info("GetUsingRoutesAsSource:"+route);
+			}
+		}*/
+		return result / max(1,usings);
+	}
+	
+	function GetExpectedProductionHere(cargo, vehicleType, isMine) {
+	}
+	
+	function GetTownCargos(cargo) {
+		local result = {};
 		if(!CargoUtils.IsPaxOrMail(cargo)) {
-			return null;
+			return result;
 		}
 		foreach(station in hgStations) {
 			if(station.place != null && station.place instanceof TownCargo) {
-				return TownCargo(station.place.town, cargo, true);
+				result.rawset(station.place.town, TownCargo(station.place.town, cargo, true));
 			}
 		}
-		return null;
+		return result;
 	}
 	
 	function IsCargoTransferToHere(cargo) {
@@ -289,6 +331,15 @@ class StationGroup {
 			}
 		}
 		//HgLog.Info("IsCargoTransferToHere false "+AICargo.GetName(cargo)+" "+AIStation.GetName(GetAIStation()));
+		return false;
+	}
+	
+	function IsCargoDeliverToHere(cargo) {
+		foreach(transferRoute in GetUsingRoutesAsDest()) {
+			if(!transferRoute.IsTransfer() && transferRoute.HasCargo(cargo)) {
+				return true;
+			}
+		}
 		return false;
 	}
 	
@@ -379,6 +430,15 @@ class StationGroup {
 	}
 	
 	function IsAcceptingCargoHere(cargo) {
+		if(acceptingCargoHereCache.rawin(cargo)) {
+			return acceptingCargoHereCache.rawget(cargo);
+		}
+		local result = _IsAcceptingCargoHere(cargo);
+		acceptingCargoHereCache.rawset(cargo,result);
+		return result;
+	}
+
+	function _IsAcceptingCargoHere(cargo) {
 		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
 			return hgStations[0].IsAcceptingCargo(cargo);
 		}
@@ -410,10 +470,19 @@ class StationGroup {
 	}
 	
 	function _IsProducingCargo(cargo) {
-		return IsProducingCargoHere(cargo) || IsCargoTransferToHere(cargo);
+		return GetSources(cargo).len() >= 1;
 	}
 	
 	function IsProducingCargoHere(cargo) {
+		if(producingCargoHereCache.rawin(cargo)) {
+			return producingCargoHereCache.rawget(cargo);
+		}
+		local result = _IsProducingCargoHere(cargo);
+		producingCargoHereCache.rawset(cargo,result);
+		return result;
+	}
+	
+	function _IsProducingCargoHere(cargo) {
 
 		if(hgStations.len()==1 && hgStations[0]instanceof PlaceStation) {
 			return hgStations[0].IsProducingCargo(cargo);
@@ -450,44 +519,93 @@ class StationGroup {
 		return IsProducingCargo(cargo) && IsAcceptingCargo(cargo);
 	}
 	
-	function GetProducingHgIndustries(cargo) {
+	function GetProducingPlaces(cargo) {
 		if(!cargoProducingPlaces.rawin(cargo)) { // 駅が作られた後に建設された施設は見つけられない。定期的にキャッシュクリアが必要
-			cargoProducingPlaces.rawset(cargo, SearchHgIndustries(cargo,true));
+			cargoProducingPlaces.rawset(cargo, GetPlaces(cargo,true));
 		}
 		return cargoProducingPlaces.rawget(cargo);
 	}
 	
-	function SearchHgIndustries(cargo, isProducing) {
+	function GeAcceptingPlaces(cargo) {
+		if(!cargoAcceptingPlaces.rawin(cargo)) { // 駅が作られた後に建設された施設は見つけられない。定期的にキャッシュクリアが必要
+			cargoAcceptingPlaces.rawset(cargo, GetPlaces(cargo,false));
+		}
+		return cargoAcceptingPlaces.rawget(cargo);
+	}
+
+	function GetAcceptingPlace(cargo) {
+		local r = GeAcceptingPlaces(cargo);
+		if(r.len() >= 1) {
+			return r[0]; // acceptされるのは1つ
+		} else {
+			return null;
+		}
+	}
+	
+	function GetPlaces(cargo, isProducing) {
 		local result = [];
 		local industryList = AIList();
-		foreach(tile,_ in GetCoverageTileList()) {
-			if(isProducing) {
-				if(AITile.GetCargoProduction(tile, cargo, 1, 1, 0 ) >= 1) {
-					industryList.AddItem(AIIndustry.GetIndustryID(tile),0);
+		local townList = AIList();
+		foreach(station in hgStations) {
+			if(station.place == null) continue;
+			if(station instanceof PlaceStation) { // PlaceStationはCoverageTileを持たない
+				if(	station.place instanceof HgIndustry ) {
+					if(station.place.GetProducingOr(isProducing).IsTreatCargo(cargo)) {
+						industryList.AddItem(station.place.industry,0);
+					}
 				}
 			} else {
-				if(AITile.IsAcceptingCargo(tile, cargo, 1, 1, 0 ) >= 8) { // TODO: isProducing==falseの場合、最も小さいindustryIdのみを返す
-					industryList.AddItem(AIIndustry.GetIndustryID(tile),0);
+				if(station.place instanceof TownCargo) {
+					townList.AddItem(station.place.town,0);
 				}
 			}
 		}
-		foreach(station in hgStations) {
-			if(station instanceof PlaceStation // PlaceStationはCoverageTileを持たない
-					&& station.place != null 
-					&& station.place instanceof HgIndustry 
-					&& station.place.IsTreatCargo(cargo, isProducing)) {
-
-				industryList.AddItem(station.place.industry,0);
+		if(industryList.Count()==0) {
+			if(isProducing) {
+				foreach(tile,_ in GetCoverageTileList()) {
+					if(AITile.GetCargoProduction(tile, cargo, 1, 1, 0 ) >= 1) {
+						local industryId = AIIndustry.GetIndustryID(tile);
+						if(AIIndustry.IsValidIndustry(industryId)) {
+							industryList.AddItem(AIIndustry.GetIndustryID(tile),0);
+						}
+					}
+				}
+			} else {
+				local industryId = GetAcceptIndustryId(cargo, hgStations[0].GetPlatformRectangle(), GetCoverageTileList());
+				if(industryId != null) {
+					industryList.AddItem(industryId,0);
+				}
 			}
 		}
 		//HgLog.Info("SearchHgIndustries:"+industryList.Count()+" cargo:"+AICargo.GetName(cargo)+" isProducing:"+isProducing+" "+this);
-		local result = [];
 		foreach(industry,_ in industryList) {
 			result.push(HgIndustry(industry, isProducing));
 		}
+		foreach(town,_ in townList) {
+			result.push(TownCargo(town, cargo, isProducing));
+		}
 		return result;
 	}
+	
+	function GetAcceptIndustryId(cargo, platformRectangle, coverageTileList) {
+		local minDistance = IntegerUtils.IntMax;
+		// TODO: 等距離の場合はid順、xyが削除された場合はtruncateが必要。つまりxyは取っておく必要がある
+		local xy = platformRectangle.GetCenter().tile; //多分...
+		local industryId = null;
+		foreach(tile,_ in coverageTileList) {
+			if(AITile.GetCargoAcceptance(tile, cargo, 1, 1, 0 ) >= 8) {
+				local d = AIMap.DistanceMax(tile,xy);
+				local i = AIIndustry.GetIndustryID(tile);
+				if((d < minDistance || (d==minDistance && i < industryId)) && AIIndustry.IsValidIndustry(i)) {
+					industryId = i;
+					minDistance = d;
+				}
+			}
+		}
+		return industryId;
+	}
 
+	
 	function GetCoverageRectangles() {
 		if(coverageRectangles == null) {
 			coverageRectangles = TileListUtils.GetRectangles( GetCoverageTileList() );
@@ -497,13 +615,16 @@ class StationGroup {
 
 	function GetCoverageTileList() {
 		if(coverageTileList == null) {
+			local stationId = GetAIStation();
+			if(stationId == null) {
+				return AITileList();
+			}
 			if(HogeAI.Get().openttdVersion >= 14) {
-				coverageTileList = AITileList_StationCoverage( GetAIStation() );
+				coverageTileList = AITileList_StationCoverage( stationId );
 				//HgLog.Info("AITileList_StationCoverage:"+coverageTileList.Count());
 			} else {
 				coverageTileList = AITileList();
 				local stationTypes = {};
-				local stationId = hgStations[0].stationId;
 				foreach(station in hgStations) {
 					if(station.GetStationType() != null) {
 						stationTypes.rawset(station.GetStationType(),station);
@@ -520,6 +641,101 @@ class StationGroup {
 		return coverageTileList;
 	}
 	
+	function GetSources(cargo,checkForNew = false, checked = null) {
+		local key = cargo + "-" + checkForNew;
+		if(sourcesCache.rawin(key)) {
+			return sourcesCache.rawget(key);
+		}
+		local result = _GetSources(cargo,checkForNew, checked);
+		sourcesCache.rawset(key,result);
+		return result;
+		
+	}
+	
+	function _GetSources(cargo,checkForNew = false, checked = null) {
+		// ここでacceptされるcargoは取れない事に注意
+		if(checked==null) {
+			checked = {};
+		}
+		if(checked.rawin(this)) {
+			return [];
+		}
+		checked.rawset(this,true);
+		if(checkForNew) {
+			if(!CanUseNewRoute(cargo)) {
+				return [];
+			}
+		}
+		local result = [];
+		if(IsProducingCargoHere(cargo)) {
+			result.push({stationGroup=this, days=0});
+		}
+		foreach(route in GetUsingRoutesAsDest()) {
+			if(!route.CanDeliverCargo(cargo)) {
+				continue;
+			}
+			if(checkForNew) {
+				if(route.GetLeftCapacity(cargo)==0) {
+					continue;
+				}
+			}
+			if(!route.IsTransfer() && IsAcceptingCargoHere(cargo)) {
+				continue;
+			}
+			local srcs = route.srcHgStation.stationGroup.GetSources(cargo, checkForNew, checked);
+			local cruiseDays = route.GetCruiseDays();
+			foreach(r in srcs) {
+				r.days += cruiseDays;
+			}
+			result.extend(srcs);
+		}
+		return result;
+	}
+	
+	function GetDests(cargo, isTransfer=false, checked = null) {
+		if(checked==null) {
+			checked = {};
+		}
+		if(checked.rawin(this)) {
+			return [];
+		}
+		checked.rawset(this,true);
+		local result = [];
+		if(!isTransfer && IsAcceptingCargoHere(cargo)) {
+			result.push(this);
+		} else {
+			foreach(route in GetUsingRoutesAsSource()) {
+				if(route.HasCargo(cargo)) {
+					if(route.IsBiDirectional() && route.destHgStation.stationGroup == this) {
+						result.extend( route.srcHgStation.stationGroup.GetDests(cargo, route.IsTransfer(), checked) );
+					} else {
+						result.extend( route.destHgStation.stationGroup.GetDests(cargo, route.IsTransfer(), checked) );
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+	function CanUseNewRoute(cargo, vehicleType = null) {
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(route.IsOverflow(cargo,route.IsDest(this))) {
+				continue;
+			}
+			return false;
+		}
+		foreach(place in GetProducingPlaces(cargo)) {
+			if(place instanceof TownCargo) continue;
+			foreach(route in place.GetRoutesUsingSource(cargo)) {
+				if(route.IsOverflowPlace(place,cargo)) {
+					continue;
+				}
+				return false;
+			}
+		}
+		return true;
+	}
+
 	function IsTownStop() {
 		foreach(station in hgStations) {
 			if(station.IsTownStop()) {
@@ -535,6 +751,10 @@ class StationGroup {
 				return true;
 			}
 		}
+		return false;
+	}
+	
+	function IsRaw() {
 		return false;
 	}
 	
@@ -554,6 +774,12 @@ class StationGroup {
 		}
 	}
 
+	function NotifyAddTransfer() {
+		expectedProductionCache.clear();
+		producingCargoCache.clear();
+		sourcesCache.clear();
+	}
+
 	function _tostring() {
 		return hgStations.len()>=1 ? hgStations[0].GetName() : "EmptyStationGroup";
 	}
@@ -569,20 +795,28 @@ class StationFactory {
 	ignoreDirectionScore = null;
 	ignoreDirection = null; // assume platformLength=Y, platformNum=X
 	isBiDirectional = null;
+	prohibitAcceptCargos = null;
 
 	place = null;
+	target = null;
+	cargo = null;
+	timeout = null;
 
 	constructor() {
 		levelTiles = true;
 		ignoreDirectionScore = false;
 		ignoreDirection = false;
 		isBiDirectional = false;
+		prohibitAcceptCargos = [];
+		timeout = false;
 		checked = AIList();
 	}
 	
 
 	
 	function CreateBest(target, cargo, toTile, useStationGroup = true) {
+		this.target = target;
+		this.cargo = cargo;
 		if(target instanceof StationGroup) {
 			return CreateBestOnStationGroup(target, cargo, toTile);
 		}
@@ -612,27 +846,30 @@ class StationFactory {
 		if(result == null) {
 			local stations = CreateOnTilesAllDirection(place.GetCargoTileList( GetCoverageRadius() ,cargo ));
 			//HgLog.Info("CreateOnTilesAllDirection "+place.GetName()+" tiles:"+tiles.len()+" stations:"+stations.len()+" coverage:"+coverage+" stationType:"+GetStationType());	
-			result = SelectBestHgStation(stations, place.GetLocation(), toTile, cargo, place.GetName());
+			result = SelectBestHgStation(stations, place.GetLocation(), toTile, place.GetLocation(), cargo, false);
 		}
 		
 		if(result == null /*&& place.IsAccepting()*/ && useStationGroup) {
 			result = SelectBestByStationGroup(place, cargo, toTile);
 		}
-		if(result == null && place instanceof TownCargo && place.IsAccepting()) {
+		if(result == null && place instanceof TownCargo && place.IsAccepting() && !HogeAI.Get().IsAvoidExtendCoverageAreaInTowns()) {
+			this.nearestFor = place.GetLocation();
+			this.nearestFor2 = toTile;
 			result = SelectBestWithPieceStation(place, cargo, toTile);
 		}
 		if(result != null) {
 			result.place = place;
 			result.cargo = cargo;
 		} else {
-			HgLog.Warning("stationPlace "+place.GetName()+" CreateBest returned no stations.");		
+			HgLog.Warning("stationPlace "+place.GetName()+" CreateBest returned no stations."+this);		
 		}
 		return result;
 	}
-		
+
 	function CreateBestOnStationGroup(stationGroup, cargo, toTile) {
 		local testMode = AITestMode();
-		
+		AddProhibitAcceptCargos(stationGroup);
+		this.target = stationGroup;
 		this.place = null;
 		if(HogeAI.Get().IsDistantJoinStations() == false) {
 			this.nearestFor = toTile;
@@ -647,8 +884,7 @@ class StationFactory {
 			this.nearestFor2 = toTile;
 		}
 		local result = this.SelectBestHgStation( 
-			stationGroup.GetStationCandidatesInSpread(this),
-			this.nearestFor, toTile, cargo, "transfer station on "+stationGroup.hgStations[0].GetName());
+			stationGroup.GetStationCandidatesInSpread(this), this.nearestFor, toTile, stationGroup.GetLocation(), cargo, true);
 		if(result != null) {
 			result.cargo = cargo;
 		}
@@ -663,8 +899,12 @@ class StationFactory {
 		return 0;
 	}
 	
-	function SelectBestHgStation(hgStations, fromTile, toTile, cargo, label) {
-		local array = GetBestHgStationCosts(hgStations,fromTile,toTile,cargo,label);
+	function SelectBestHgStation(hgStations, fromTile, toTile, stationOrg, cargo, useStationGroup) {
+		if(hgStations.len() == 0) {
+			//HgLog.Warning("SelectBestHgStation hgStations.len() == 0 useStationGroup:"+useStationGroup+" "+this);
+			return null;
+		}
+		local array = GetBestHgStationCosts(hgStations,fromTile,toTile,stationOrg,cargo,useStationGroup);
 		if(array.len()==0) {
 			return null;
 		} else {
@@ -692,19 +932,23 @@ class StationFactory {
 		}
 	}
 	
-	function GetBestHgStationCosts(hgStations, fromTile, toTile, cargo, label) {
+	function GetBestHgStationCosts(hgStations, fromTile, toTile, stationOrg, cargo, useStationGroup) {
 		local testMode = AITestMode();
 		local dirScore = [0,0,0,0];
 
 		if(!ignoreDirectionScore) {
-			dirScore[HgStation.STATION_NE] = GetDirScore(HgStation.STATION_NE,fromTile,toTile);
-			dirScore[HgStation.STATION_SW] = GetDirScore(HgStation.STATION_SW,fromTile,toTile);
-			dirScore[HgStation.STATION_SE] = GetDirScore(HgStation.STATION_SE,fromTile,toTile);
-			dirScore[HgStation.STATION_NW] = GetDirScore(HgStation.STATION_NW,fromTile,toTile);
+			dirScore[HgStation.STATION_NE] = GetDirScore(HgStation.STATION_NE,stationOrg,toTile);
+			dirScore[HgStation.STATION_SW] = GetDirScore(HgStation.STATION_SW,stationOrg,toTile);
+			dirScore[HgStation.STATION_SE] = GetDirScore(HgStation.STATION_SE,stationOrg,toTile);
+			dirScore[HgStation.STATION_NW] = GetDirScore(HgStation.STATION_NW,stationOrg,toTile);
 		}
 		local stations2 = [];
 		
-		local considerAcceptance = place != null && place instanceof TownCargo;
+		local considerAcceptance = !useStationGroup && place != null && place instanceof TownCargo;
+		local acceptanceScoreMultiplier = 200;
+		if(this instanceof RailStationFactory && considerAcceptance && HogeAI.Get().CanExtendCoverageAreaInTowns()) {
+			acceptanceScoreMultiplier = 12;
+		}
 		local considerProduction = place != null && !considerAcceptance && place.IsProducing();
 		if(this instanceof RoadStationFactory && HogeAI.Get().IsDistantJoinStations()) {
 			considerAcceptance = false;
@@ -713,21 +957,32 @@ class StationFactory {
 		local radius = GetCoverageRadius();
 		local startDate = AIDate.GetCurrentDate();
 		local stationScoreList = AIList();
+		timeout = false;
 		stationScoreList.Sort( AIList.SORT_BY_VALUE , false);
 		foreach(stationIndex, station in hgStations) {
+			if(startDate + 15  < AIDate.GetCurrentDate()) {
+				HgLog.Warning("Station GetBestHgStationCosts reached limitDate1."+stationIndex+"/"+hgStations.len()+ " "+this);
+				timeout = true;
+				break;
+			}
 			if(checked.HasItem(station.platformTile)) {
 				continue;
+			}
+			station.score = 0;
+			local platformRect = station.GetPlatformRectangle();
+			if(considerAcceptance) {
+				local acceptance = AITile.GetCargoAcceptance(station.platformTile, cargo, platformRect.Width(), platformRect.Height(), radius);
+				if(acceptance < 8) {
+					continue;
+				}
+				station.score += acceptance * acceptanceScoreMultiplier / 100;
 			}
 			if(!station.IsBuildablePreCheck()) {
 				continue;
 			}
 			station.cargo = cargo; // WaterStation.GetBuildableScore()で必要
 			station.place = place;
-			station.score = dirScore[station.stationDirection] + station.GetBuildableScore();
-			if(AITile.IsSeaTile(station.platformTile)) {
-				station.score -= 10;
-			}
-			local platformRect = station.GetPlatformRectangle();
+			station.score += dirScore[station.stationDirection] + station.GetBuildableScore();
 			if(!platformRect.rightbottom.IsValid()) {
 				continue;
 			}
@@ -741,28 +996,16 @@ class StationFactory {
 				}
 				station.score -= distance;
 			}
-			
-			if(considerAcceptance) {
-				local acceptance = AITile.GetCargoAcceptance(station.platformTile, cargo, platformRect.Width(), platformRect.Height(), radius);
-				if(acceptance < 8) {
-					continue;
-				}
-				station.score += acceptance;
-			} else if(considerProduction) {
+			if(considerProduction) {
 				local production = AITile.GetCargoProduction(station.platformTile, cargo, platformRect.Width(), platformRect.Height(), radius);
 				station.score += production;
 			}
 			stationScoreList.AddItem(stationIndex, station.score);
-			if(startDate + 15  < AIDate.GetCurrentDate()) {
-				HgLog.Warning("Station GetBestHgStationCosts reached limitDate1. stationPlace:"+label);
-				break;
-			}
 		}
 		HogeAI.DoInterval();
+		HgLog.Info("GetBestHgStationCosts phase1 days:"+(AIDate.GetCurrentDate()-startDate)+" candidates:"+stationScoreList.Count()+"/"+hgStations.len()
+			+(considerAcceptance?" considerAcceptance":"")+" "+this);
 		startDate = AIDate.GetCurrentDate();
-		HogeAI.DoInterval();
-		HgLog.Info(this+" days:"+(AIDate.GetCurrentDate()-startDate)+" candidates:"+stationScoreList.Count()+"/"+hgStations.len()
-			+" by:"+label+(considerAcceptance?" considerAcceptance":""));
 		local candidates = [];
 		foreach(stationIndex,score in stationScoreList) {
 			local station = hgStations[stationIndex];
@@ -771,68 +1014,88 @@ class StationFactory {
 			if(HgStation.IsNgStationTile(station)) {
 				continue;
 			}
-			if(station.Build(levelTiles, true)) {
-				HgLog.Info("Build succeeded(TestMode) "+station+" stationPlace:"+label);
+			if(CheckFinal(station) && station.Build(levelTiles, true)) {
+				HgLog.Info("Build succeeded(TestMode) "+station+" "+this);
 				station.levelTiles = levelTiles;
 				return [[station,0]]; // この先は重いのでカット
 			}
 			if(startDate + 7 < AIDate.GetCurrentDate()) {
-				HgLog.Warning("Station GetBestHgStationCosts reached limitDate2. stationPlace:"+label);
+				HgLog.Warning("GetBestHgStationCosts reached limitDate2."+this);
+				timeout = true;
 				break;
 			}
 		}
 		return [];
 	}
 	
+	function CheckFinal(station) {
+		foreach(c in prohibitAcceptCargos) {
+			if(station.IsAcceptingCargoWithoutStationGroup(c)) {
+				return false;
+			}
+		}
+		if(place != null && cargo != null && place instanceof HgIndustry && place.IsAccepting() && !station.IsJoin()) {
+			local radius = station.GetCoverageRadius();
+			local rect = station.GetPlatformRectangle()
+			local id = StationGroup.GetAcceptIndustryId(cargo, rect, rect.Extend(radius).GetTileList());
+			//HgLog.Info("GetAcceptIndustryId:"+id+" "+place.industry+" "+this);
+			if(place.industry != id) {
+				return false;;
+			}
+		}
+		return true;
+	}
+	
 	function SelectBestWithPieceStation(place, cargo, toTile) {
-		HgLog.Info("SelectBestWithPieceStation stationPlace:"+place.GetName());
+		HgLog.Info("SelectBestWithPieceStation "+this);
 		local testMode = AITestMode();
 		local stationCoverage = AIStation.GetCoverageRadius(AIStation.STATION_TRUCK_STOP);
 		local stationCandidates = [];
 		
+		
 		local pieceStations = [];
 		local tileGen = place.GetTiles(stationCoverage, cargo);
 		local tile;
-		local i=0;
+		local i=0, sccess = 0;
+		local minDistance = IntegerUtils.IntMax;
+		local minPieceStation = null;
 		while((tile = resume tileGen) != null) {
+			if(!AIRoad.IsRoadTile(tile)) continue;
 			local pieceStation = PieceStation(tile);
 			pieceStation.place = place;
 			pieceStation.cargo = cargo;
 			if(pieceStation.Build(false, true)) {
-				pieceStations.push({
-					pieceStation = pieceStation
-					distance = AIMap.DistanceManhattan(toTile, tile)
-				});
-				if(pieceStations.len() >= 30) {
+				local distance =  AIMap.DistanceManhattan(toTile, tile);
+				if(distance < minDistance) {
+					minPieceStation = pieceStation;
+					minDistance = distance;
+				}
+				sccess ++;
+				if(sccess >= 30) {
 					break;
 				}
 			}
 			i++;
 			if(i > 1000) {
-				HgLog.Warning("Reach i==1000. stationPlace:"+place.GetName());
+				HgLog.Warning("Reach i==1000. stationPlace:"+place.GetName()+" "+this);
 				break;
 			}
 		}
-		pieceStations.sort(function(a,b) {
-			return a.distance - b.distance;
-		});
-		
-		if(pieceStations.len() == 0) {
-			HgLog.Warning("Not found piece station room. stationPlace:"+place.GetName());
+		if(minPieceStation == null) {
+			HgLog.Warning("Not found piece station room. stationPlace:"+place.GetName()+" "+this);
 			return null;
 		}
 		
-		local pieceStation = pieceStations[0].pieceStation;
 		local virtualStationGroup = StationGroup();
-		virtualStationGroup.AddHgStation(pieceStation);
+		virtualStationGroup.AddHgStation(minPieceStation);
 		local stationCandidates = virtualStationGroup.GetStationCandidatesInSpread(this);
 		
-		HgLog.Info("GetStationCandidatesInSpread:"+stationCandidates.len()+"pieceStation:"+HgTile(pieceStation.platformTile)+" stationPlace:"+place.GetName());
+		HgLog.Info("GetStationCandidatesInSpread:"+stationCandidates.len()+" pieceStation:"+HgTile(minPieceStation.platformTile)+" "+this);
 		
-		local result = SelectBestHgStation(stationCandidates, place.GetLocation(), toTile, cargo, place.GetName());
+		local result = SelectBestHgStation(stationCandidates, place.GetLocation(), toTile, place.GetLocation(), cargo, true);
 		if(result != null) {
 			result.stationGroup = null; //virtualStationGroupが入っているので
-			result.pieceStationTile = pieceStation.platformTile;
+			result.pieceStationTile = minPieceStation.platformTile;
 		}
 		return result;
 	}
@@ -873,7 +1136,7 @@ class StationFactory {
 			local s = stationGroup.GetStationCandidatesInSpread(this);
 			stations.extend(s);
 		}
-		local result = SelectBestHgStation(stations, place.GetLocation(), toTile, cargo, place.GetName());
+		local result = SelectBestHgStation(stations, place.GetLocation(), toTile, nearestFor, cargo, false);
 		nearestFor = oldNearestFor;
 		return result;
 	}
@@ -997,18 +1260,38 @@ class StationFactory {
 		return [[-w+1,-h+1],[0,-h+1],[-w+1,0],[0,0]];
 	}
 
+	function AddProhibitAcceptCargos(stationGroup) {
+		local usingCargos = {};
+		foreach(route in stationGroup.GetUsingRoutesAsSource()) {
+			if(!route.IsTransfer()) {
+				usingCargos.rawset(route.cargo,0);
+			}
+		}
+		foreach(cargo,_ in usingCargos) {
+			if(!stationGroup.IsAcceptingCargoHere(cargo)) {
+				prohibitAcceptCargos.push(cargo);
+			}
+		}
+	}
+
+	function GetTypeName() {
+		return "Not override GetTypeName()";
+	}
+
 	function _tostring() {
-		return "StationFactory["+VehicleUtils.ToString(GetVehicleType())+"]";
+		return GetTypeName()+":"+target+"["+AICargo.GetName(cargo)+"]";
 	}
 }
 
 class RailStationFactory extends StationFactory {
 	minPlatformLength = null;
+	estimatedPlatformLength = null;
 	platformLength = null;
 	distance = null;
 	
 	constructor() {
 		StationFactory.constructor();
+		estimatedPlatformLength = 0;
 	}
 
 	
@@ -1019,8 +1302,12 @@ class RailStationFactory extends StationFactory {
 		if(platformLength == null) {
 			platformLength = GetMaxStatoinLength(cargo);
 		}
+		local settingMax = AIGameSettings.GetValue("vehicle.max_train_length");
+		platformLength = min(platformLength, settingMax );
+		minPlatformLength = min(minPlatformLength, platformLength);
+		minPlatformLength = min(minPlatformLength, settingMax);
 	
-		for(; platformLength >= minPlatformLength; platformLength -= max(1, platformLength / 4)) {
+		for(; platformLength >= minPlatformLength; platformLength -= max(1, platformLength / (timeout ? 2 : 4))) {
 			HgLog.Info("TrainRoute: RailStationFactory.CreateBest start "+target.GetName()+" platformLength:"+platformLength);
 			local result = StationFactory.CreateBest(target, cargo, toTile, useStationGroup);
 			if(result != null) {
@@ -1033,19 +1320,13 @@ class RailStationFactory extends StationFactory {
 	
 	function GetMaxStatoinLength(cargo) {
 		if(distance != null) {
-			local settingMax = min(HogeAI.Get().maxStationSpread , AIGameSettings.GetValue("vehicle.max_train_length"));
-			return min( 4 + distance / 68, settingMax );
-/*			if(HogeAI.Get().IsDebug()) {
-				return min( 4 + distance / 100, settingMax );
+			if(estimatedPlatformLength != null) {
+				local r = estimatedPlatformLength;
+				r = max(r, 4 + distance / 68);
+				r = min(r, 6 + distance / 8);
+				return r;
 			} else {
-				return min( 4 + distance / 50, settingMax );
-			}
-*/			
-			
-			if(AIMap.GetMapSizeX()*AIMap.GetMapSizeY()>=4096*2048) {
-				return min( 4 + distance / 8, settingMax );
-			} else {
-				return min( 4 + distance / 25, settingMax );
+				return 4 + distance / 25;
 			}
 		} else {
 			return 7;
@@ -1136,15 +1417,19 @@ class PriorityStationFactory extends StationFactory {
 		index = 0;
 		return null;
 	}
-	
+	function GetTypeName() {
+		return "PriorityStationFactory("+GetCurrent().GetTypeName()+")";
+	}
 }
 
 class RoadStationFactory extends StationFactory {
 	cargo = null;
 	isPieceStation = null;
 	platformNum = null;
+	platformLength = null;
+	buildSupportRoad = null;
 	
-	constructor(cargo,isPieceStation = false) {
+	constructor(cargo,isPieceStation = false,engineSet = null) {
 		StationFactory.constructor();
 		this.cargo = cargo;
 		if(isPieceStation) {
@@ -1152,10 +1437,14 @@ class RoadStationFactory extends StationFactory {
 		}
 		this.ignoreDirectionScore = true;
 		this.isPieceStation = isPieceStation;
-		if(!isPieceStation && !HogeAI.Get().IsDistantJoinStations()/* && CargoUtils.IsPaxOrMail(cargo)*/) {
-			platformNum = 2;
-		} else {
-			platformNum = 1;
+		this.platformNum = HogeAI.Get().roiBase || CargoUtils.IsPaxOrMail(cargo) ? 1 : 2;
+		this.platformLength = 1;
+		if(engineSet != null) {
+			this.platformLength = AIEngine.IsArticulated(engineSet.engine) ?  2 : 1;
+		}
+		this.buildSupportRoad = !isPieceStation && HogeAI.Get().IsDistantJoinStations();
+		if(!this.buildSupportRoad) {
+			this.platformNum ++;
 		}
 	}
 
@@ -1181,7 +1470,14 @@ class RoadStationFactory extends StationFactory {
 			result.cargo = cargo;
 			return result;
 		} else {
-			return RoadStation(platformTile,platformNum,stationDirection,GetStationType());
+			return RoadStation(platformTile, platformNum, platformLength, buildSupportRoad, stationDirection, GetStationType());
+		}
+	}
+	function GetTypeName() {
+		if(isPieceStation) {
+			return "PieceStation";
+		} else {
+			return "RoadStation";
 		}
 	}
 
@@ -1213,12 +1509,19 @@ class SrcRailStationFactory extends RailStationFactory {
 	function Create(platformTile,stationDirection) {
 		if(useSimple || useSingle) {
 			local result = SimpleRailStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
-			result.useDepot = true;
+			result.useDepot = !useSimple && HogeAI.Get().IsEnableVehicleBreakdowns();
 			return result;
 		} /*else if(HogeAI.Get().IsInfrastructureMaintenance()) {
 			return SrcRailStation(platformTile, GetPlatformLength(), stationDirection);
 		}*/ else {
 			return RealSrcRailStation(platformTile, GetPlatformLength(), stationDirection);
+		}
+	}	
+	function GetTypeName() {
+		if(useSimple || useSingle) {
+			return "SimpleRailStation";
+		} else {
+			return "RealSrcRailStation";
 		}
 	}
 }
@@ -1240,6 +1543,9 @@ class DestRailStationFactory extends RailStationFactory {
 	function Create(platformTile,stationDirection) {
 		return DestRailStation(platformTile, platformNum, GetPlatformLength(), stationDirection);
 	}
+	function GetTypeName() {
+		return "DestRailStationFactory";
+	}
 }
 
 class TransferStationFactory extends RailStationFactory {
@@ -1255,6 +1561,9 @@ class TransferStationFactory extends RailStationFactory {
 	}
 	function Create(platformTile,stationDirection) {
 		return TransferStation(platformTile, GetPlatformLength(), stationDirection);
+	}
+	function GetTypeName() {
+		return "TransferStationFactory";
 	}
 }
 
@@ -1289,9 +1598,17 @@ class TerminalStationFactory extends RailStationFactory {
 		if(useSimple || useSingle) {
 			return SimpleRailStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
 		} else {
-			return SmartStation(platformTile, GetPlatformNum(), GetPlatformLength(), true, stationDirection);
+			return SmartStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
 		}
 //		return TerminalStation(platformTile, platformNum, GetPlatformLength(), stationDirection);
+	}
+	function GetTypeName() {
+		if(useSimple || useSingle) {
+			return "SimpleRailStation";
+		} else {
+			return "SmartStation";
+		}
+		
 	}
 }
 
@@ -1301,7 +1618,8 @@ class HgStation {
 	static stationGroups = {};
 	static savedDatas = {};
 	static idCounter = IdCounter();
-	static ngStationTiles = {}
+	static ngStationTiles = {};
+	static tileStation = {};
 	
 	
 	static STATION_NW = 0;
@@ -1312,6 +1630,7 @@ class HgStation {
 	static function SaveStatics(data) {
 		data.savedStations <- HgStation.savedDatas;
 		data.ngStationTiles <- HgStation.ngStationTiles;
+		data.tileStation <- HgStation.tileStation;
 	}
 	
 	static function LoadStatics(data) {
@@ -1327,7 +1646,7 @@ class HgStation {
 					station = PlaceStation(t.platformTile);
 					break;
 				case "SmartStation":
-					station = SmartStation(t.platformTile, t.platformNum, t.platformLength, t.slim, t.stationDirection);
+					station = SmartStation(t.platformTile, t.platformNum, t.platformLength, t.stationDirection);
 					break;
 				case "TransferStation":
 					station = TransferStation(t.platformTile, t.platformLength, t.stationDirection);
@@ -1351,7 +1670,7 @@ class HgStation {
 					}
 					break;
 				case "RoadStation":
-					station = RoadStation(t.platformTile, t.platformNum, t.stationDirection, t.stationType);
+					station = RoadStation(t.platformTile, t.platformNum, t.platformLength, t.buildSupportRoad, t.stationDirection, t.stationType);
 					break;
 				case "WaterStation":
 					station = WaterStation(t.platformTile, t.stationDirection);
@@ -1367,6 +1686,9 @@ class HgStation {
 			HgStation.idCounter.Skip(station.id);
 			station.stationId = AIStation.GetStationID(t.platformTile);
 			station.place = t.place != null ? Place.Load(t.place) : null;
+			foreach(subPlace in t.subPlaces) {
+				station.subPlaces.push(Place.Load(subPlace));
+			}
 			station.cargo = t.cargo;
 			station.buildedDate = t.buildedDate;
 			local stationGroup;
@@ -1384,14 +1706,12 @@ class HgStation {
 			
 			stationGroup.hgStations.push(station);
 			HgStation.worldInstances[station.id] <- station;
-			if(station.place != null) {
-				station.place.AddStation(station);
-			}
 			BuildedPath.AddTiles(station.GetTiles(),station);
 		}
 		if(data.rawin("ngStationTiles")) {
 			HgTable.Extend(HgStation.ngStationTiles, data.ngStationTiles);
 		}
+		HgTable.Extend(HgStation.tileStation, data.tileStation); 
 	}
 
 	static function SearchStation(placeOrGroup, stationType, cargo, isAccepting) {
@@ -1460,6 +1780,7 @@ class HgStation {
 	stationId = 0;
 	stationDirection = null;
 	place = null;
+	subPlaces = null;
 	cargo = null;
 	platformNum = null;
 	platformLength = null;
@@ -1482,6 +1803,7 @@ class HgStation {
 		this.levelTiles = true;
 		this.builded = false;
 		this.usingRoutes = [];
+		this.subPlaces = [];
 	}
 	
 	function Save() {
@@ -1491,6 +1813,10 @@ class HgStation {
 		t.platformTile <- platformTile;
 		t.stationDirection <- stationDirection;			
 		t.place <- place != null ? place.Save() : null;
+		t.subPlaces <- [];
+		foreach(subPlace in subPlaces) {
+			t.subPlaces.push(subPlace.Save());
+		}
 		t.cargo <- cargo;
 		t.platformNum <- platformNum;
 		t.platformLength <- platformLength;
@@ -1534,15 +1860,23 @@ class HgStation {
 		if(place != null) {
 			place.AddStation(this);
 		}
-
-		BuildedPath.AddTiles(GetTiles(),this);
-		
+		local tiles = GetTiles();
+		BuildedPath.AddTiles(tiles,this);
+		foreach(t in tiles) {
+			HgStation.tileStation.rawset(t,id);
+		}
 		DoSave();
 	}
 	
 	function RemoveWorld() {
 		HgLog.Info("HgStation.RemoveWorld."+this);
 
+		if(place != null) {
+			place.RemoveStation(this);
+		}
+		foreach(subPlace in subPlaces) {
+			subPlace.RemoveStation(this);
+		}
 		if(worldInstances.rawin(this.id)) {
 			worldInstances.rawdelete(this.id);
 			HgStation.savedDatas.rawdelete(this.id);
@@ -1553,17 +1887,65 @@ class HgStation {
 			stationGroup.RemoveHgStation(this);
 			stationGroup = null;
 		}
-		if(place != null) {
-			place.RemoveStation(this);
-		}
 
 		place = null;
 		id = null;
 		stationId = 0;
 		
-		BuildedPath.RemoveTiles(GetTiles());
+		local tiles = GetTiles();
+		BuildedPath.RemoveTiles(tiles);
+		foreach(t in tiles) {
+			HgStation.tileStation.rawdelete(t);
+		}
+
 	}
 	
+	function AddPlace(place) {
+		if(HasPlace(place)) {
+			return;
+		}
+		subPlaces.push(place);
+		place.AddStation(this);
+		DoSave();
+	}
+	
+	function RemovePlace(place) {
+		local newSubPlaces = [];
+		local found = false;
+		foreach(subPlace in subPlaces) {
+			if(subPlace.IsSamePlace(place)) {
+				place.RemoveStation(this);
+				found = true;
+			} else {
+				newSubPlaces.push(subPlace);
+			}
+		}
+		if(found) {
+			this.subPlaces = newSubPlaces;
+			DoSave();
+		}
+	}
+	
+	function HasPlace(place) {
+		if(this.place != null && this.place.IsSamePlace(place)) {
+			return true;
+		}
+		foreach(subPlace in subPlaces) {
+			if(subPlace.IsSamePlace(place)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function GetPlaces() {
+		local result = [];
+		if(place != null) {
+			result.push(place);
+		}
+		result.extend(subPlaces);
+		return result;
+	}
 
 	function GetLocation() {
 		return platformTile;
@@ -1717,22 +2099,103 @@ class HgStation {
 	}
 	
 	
-	function BuildPieceStation(tile,supressWarning=false) {
+	function BuildPieceStation(tile,place,supressWarning=false, cargo=null) {			
 		local pieceStation = PieceStation(tile);
 		pieceStation.place = place;
-		pieceStation.cargo = cargo;
+		pieceStation.cargo = cargo==null ? this.cargo : cargo;
 		pieceStation.stationGroup = stationGroup;
 		pieceStation.supressWarning = supressWarning;
 		return pieceStation.BuildExec();
 	}
 	
+	function BuildSpreadPieceStations() {
+		local airSpread = this instanceof AirStation && !TownBus.CanUse(cargo);
+	
+		local span = airSpread ? 4 : 5;
+		local success = false;
+		local platform = GetPlatformRectangle();
+		local area = Rectangle.Center(platform.GetCenter(), min(63,HogeAI.Get().maxStationSpread)).GetTileList();
+		platform.Extend(span).RemoveToTileList(area);
+		local existsStations = AITileList();
+		if(!airSpread) {
+			existsStations.AddList(area);
+			existsStations.Valuate(AITile.IsStationTile);
+			existsStations.KeepValue(1);
+			existsStations.Valuate(function(t):(cargo) {
+				if(HgStation.tileStation.rawin(t)) {
+					return HgStation.worldInstances[HgStation.tileStation[t]].cargo == cargo;
+				}
+				return false;
+			});
+			existsStations.KeepValue(1);
+			foreach(t,_ in existsStations) {
+				Rectangle.Center(HgTile(t), span).RemoveToTileList(area);
+			}
+		}
+		area.Valuate(AIRoad.IsRoadTile);
+		area.KeepValue(1);
+		local pieceRadius = AIStation.GetCoverageRadius(PieceStation.GetStationTypeCargo(cargo));
+		area.Sort(AIList.SORT_BY_VALUE, false);
+		area.Valuate(AITile.GetCargoAcceptance, cargo,  1, 1, pieceRadius);
+		area.KeepAboveValue(8);
+		local ngTileList = AITileList();
+		foreach(tile,_ in area) {
+			if(ngTileList.HasItem(tile)) {
+				continue;
+			}
+			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ), true/*supressWarning*/)) {
+				Rectangle.Center(HgTile(tile), span).AppendToTileList(ngTileList);
+				success = true;
+			}
+		}
+		return success;
+/*		
+		local rect = GetPlatformRectangle();
+		local pieces = [platformTile, rect.rightbottom.tile];
+		local tileList = stationGroup.GetBuildablePlatformRectangle().GetTileList();
+		foreach(tile in place.GetTiles(coverageRadius, cargo)) {
+			if(tileList.HasItem(tile) && AIRoad.IsRoadTile(tile)) {
+				local close = false;
+				foreach(p in pieces) {
+					if(AIMap.DistanceManhattan(p,tile) <= 6) {
+						close = true;
+						break;
+					}
+				}
+				if(close) {
+					continue;
+				}
+				if(BuildPieceStation(tile,true)) {
+					pieces.push(tile);
+					success = true;
+				} else if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
+					break;
+				}
+			}
+		}*/
+	}
+	
+	function BuildPieceStationTo(place,cargo) {
+		local tileList = stationGroup.GetBuildablePlatformRectangle().GetTileList();
+		tileList.Valuate(AIRoad.IsRoadTile);
+		tileList.KeepValue(1);
+		tileList.Valuate(AIMap.DistanceManhattan, place.GetLocation());
+		tileList.Sort(AITileList.SORT_BY_VALUE, true);
+		foreach(tile,_ in tileList) {
+			if(BuildPieceStation(tile, place, true, cargo )) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
 	function BuildExec() {
-		local needsPieceStation = false;
+		local isTownPlace = false;
 		local isForTownPaxMail = false;
 		if(!(this instanceof PieceStation)) {
-			needsPieceStation = place != null && cargo != null && place instanceof TownCargo;
-			isForTownPaxMail = needsPieceStation && CargoUtils.IsPaxOrMail(cargo);
-			CheckBuildTownBus(isForTownPaxMail);
+			isTownPlace = place != null && cargo != null && place instanceof TownCargo;
+			//isForTownPaxMail = isTownPlace && CargoUtils.IsPaxOrMail(cargo);
+			CheckBuildTownBus();
 		}
 
 		if(!builded) {
@@ -1744,39 +2207,19 @@ class HgStation {
 		
 		AddWorld();
 
-		if(needsPieceStation) {
-			if(HogeAI.Get().IsDistantJoinStations() && stationGroup.hgStations.len() == 1){
+		if(isTownPlace) {
+			if(HogeAI.Get().CanExtendCoverageAreaInTowns() && stationGroup.hgStations.len() == 1){
 				local success = false;
 				if(pieceStationTile != null) {
-					success = BuildPieceStation(pieceStationTile);
-				} else {
-					local pieces = [platformTile];
-					local tileList = stationGroup.GetBuildablePlatformRectangle().GetTileList();
-					local coverageRadius = AIStation.GetCoverageRadius(PieceStation.GetStationTypeCargo(cargo));
-					foreach(tile in place.GetTiles(coverageRadius, cargo)) {
-						if(tileList.HasItem(tile) && AIRoad.IsRoadTile(tile)) {
-							local close = false;
-							foreach(p in pieces) {
-								if(AIMap.DistanceManhattan(p,tile) <= 6) {
-									close = true;
-									break;
-								}
-							}
-							if(close) {
-								continue;
-							}
-							if(BuildPieceStation(tile,true/*supressWarning*/)) {
-								pieces.push(tile);
-							} else if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
-								break;
-							}
+					BuildPieceStation(pieceStationTile, place);
+				}
+				BuildSpreadPieceStations();
+				if(CargoUtils.IsPaxOrMail(cargo) && this instanceof RailStation) {
+					foreach(paxOrMail in HogeAI.Get().GetPaxMailCargos()) {
+						if(TownBus.CanUse(paxOrMail)) {
+							BuildPieceStationTo(place, paxOrMail); // バス用
 						}
 					}
-				}
-				if(!success) {
-					HgLog.Warning("pieceStation.BuildExec failed:"+this+" "+AIError.GetLastErrorString());
-					//Remove(); // 空港建設で支持を落すため、がかなりの確率で失敗するので
-					return true;
 				}
 			}
 		}
@@ -1786,11 +2229,15 @@ class HgStation {
 	}
 	
 	// WaterStationでoverride
-	function CheckBuildTownBus(isForTownPaxMail) {
+	function CheckBuildTownBus() {
 		foreach(corner in GetPlatformRectangle().GetCorners()) { 
 			TownBus.Check(corner.tile, null, HogeAI.Get().GetPassengerCargo(), false);
 		}
-		if(isForTownPaxMail) {
+		local growthTown = place != null && place instanceof TownCargo && place.CanGrowth();
+		if(HogeAI.Get().IsDistantJoinStations() && !growthTown) {
+			return;
+		}
+		if(growthTown) {
 			foreach(cargo in HogeAI.Get().GetPaxMailCargos()) {
 				TownBus.CheckTown(place.town, null, cargo, false);
 			}
@@ -1940,6 +2387,11 @@ class HgStation {
 		return AITile.GetCargoAcceptance(rect.lefttop.tile, cargo, rect.Width(), rect.Height(), coverageRadius ) >= 8;*/
 	}
 	
+	function IsAcceptingCargoWithoutStationGroup(cargo) {
+		local rect = GetPlatformRectangle();
+		local coverageRadius = GetCoverageRadius();
+		return AITile.GetCargoAcceptance(rect.lefttop.tile, cargo, rect.Width(), rect.Height(), coverageRadius ) >= 8;
+	}
 	
 	function IsProducingCargo(cargo) {
 		return stationGroup.IsProducingCargo(cargo);
@@ -1959,10 +2411,6 @@ class HgStation {
 		return stationGroup.GetExpectedProduction( cargo, route.GetVehicleType(), true, callers );
 	}
 	
-	function GetProductionInfos(cargo, route, callers) {
-		return stationGroup.GetExpectedProductionInfos( cargo, route.GetVehicleType(), true, callers );
-	}
-
 	function GetCoverageRadius() {
 		local stationType = GetStationType();
 		if(stationType == null) {
@@ -2032,10 +2480,20 @@ class HgStation {
 	
 	function AddUsingRoute(route) {
 		ArrayUtils.Add(usingRoutes, route);
+		if(stationGroup != null) {
+			stationGroup.usingRoutesAsDest = null;
+			stationGroup.usingRoutesAsSource = null;
+			stationGroup.ClearCache();
+		}
 	}
 	
 	function RemoveUsingRoute(route) {
 		ArrayUtils.Remove(usingRoutes, route);
+		if(stationGroup != null) {
+			stationGroup.usingRoutesAsDest = null;
+			stationGroup.usingRoutesAsSource = null;
+			stationGroup.ClearCache();
+		}
 	}
 	
 	function IsTownStop() {
@@ -2056,6 +2514,21 @@ class HgStation {
 			tileList.AddItem(tile + d3,0);
 		}
 		return tileList;
+	}
+	
+	function GetTileListForLevelTilesFromTileList(tileList) {
+		local result = AIList();
+		local d1 = HgTile.XY(1,0).tile;
+		local d2 = HgTile.XY(0,1).tile;
+		local d3 = HgTile.XY(1,1).tile;
+		local xy;
+		foreach(tile,_ in tileList) {
+			result.AddItem(tile,0);
+			result.AddItem(tile + d1,0);
+			result.AddItem(tile + d2,0);
+			result.AddItem(tile + d3,0);
+		}
+		return result;
 	}
 	
 	function GetArrivalDangerTiles() {
@@ -2092,6 +2565,10 @@ class HgStation {
 	
 	function GetCargoWaiting(cargo) {
 		return AIStation.GetCargoWaiting(stationId, cargo);
+	}
+
+	function GetCargoRating(cargo) {
+		return AIStation.GetCargoRating(stationId, cargo);
 	}
 	
 	function RemoveIfNotUsed() {
@@ -2142,7 +2619,14 @@ class HgStation {
 class RailStation extends HgStation {
 
 	function IsBuildablePreCheck() {
-		return true;
+		local rect = GetPlatformRectangle();
+		if(HogeAI.Get().IsAvoidRemovingWater()) {
+			if(!AITile.IsBuildableRectangle(platformTile,rect.Width(),rect.Height())) {
+				return false;
+			}
+		}
+		return abs(AITile.GetMaxHeight(rect.lefttop.tile) - AITile.GetMaxHeight(rect.rightbottom.tile)) <= 2;
+		//return true;
 /*		local platformRect = GetPlatformRectangle();
 		return HogeAI.IsBuildable(platformRect.lefttop.tile) && HogeAI.IsBuildable(platformRect.rightbottom.tile - AIMap.GetTileIndex(1,1));*/
 	}
@@ -2152,6 +2636,9 @@ class RailStation extends HgStation {
 		foreach(tile in GetPlatformConnectionTiles()) {
 			if(AICompany.IsMine(AITile.GetOwner(tile))) {
 				local tracks = AIRail.GetRailTracks(tile);
+				if(tracks == AIRail.RAILTRACK_INVALID) {
+					continue;
+				}
 				if((tracks & track) != 0) {
 					if(!isTestMode) {
 						HgLog.Warning("Found station connected rail."+HgTile(tile));
@@ -2218,11 +2705,16 @@ class RailStation extends HgStation {
 		local tiles = r.GetTiles();
 		local corner = platformTile + AIMap.GetTileIndex(r.Width()-1, r.Height()-1);
 		AIRail.RemoveRailStationTileRectangle( platformTile, corner, keepRail );
+		local start = AIDate.GetCurrentDate();
+		AIController.Sleep(10);
 		foreach(tile in tiles) {
 			for(local i=0; i<10 && AITile.IsStationTile(tile); i++) {
 				if(!AIRail.RemoveRailStationTileRectangle( tile, tile, keepRail )) {
-					HgLog.Warning("Wait AIRail.RemoveRailStationTileRectangle:"+HgTile(tile)+" "+AIError.GetLastErrorString());
-					AIController.Sleep(100);
+					HgLog.Warning("AIRail.RemoveRailStationTileRectangle failed:"+HgTile(tile)+" "+AIError.GetLastErrorString());
+					if(start + 10 < AIDate.GetCurrentDate()) {
+						return false;
+					}
+					AIController.Sleep(10);
 				}
 			}
 		}
@@ -2255,21 +2747,23 @@ class RoadStation extends HgStation {
 	static roads = [[0,0],[0,1],[1,1],[1,0],[1,-1],[0,-1],[0,0]];
 	
 	stationType = null;
+	buildSupportRoad = null;
 	
-	constructor(platformTile, platformNum, stationDirection, stationType) {
+	constructor(platformTile, platformNum, platformLength, buildSupportRoad, stationDirection, stationType) {
 		HgStation.constructor(platformTile, stationDirection/*HgStation.GetStationDirectionFromTileIndex(frontTile - platformTile)*/);
 		this.stationType = stationType;
 		this.platformNum = platformNum;
-		this.platformLength = 1;
+		this.platformLength = platformLength;
+		this.buildSupportRoad = buildSupportRoad;
 		
 		if(stationDirection == HgStation.STATION_SE) {
-			originTile =  MoveTile(platformTile,0,0);
+			originTile = MoveTile(platformTile, 0, 0); //駅の座標系でplatformをどう動かしたら原点に来るか
 		} else if(stationDirection == HgStation.STATION_NW) {
-			originTile =  MoveTile(platformTile,1-platformNum,0);
+			originTile = MoveTile(platformTile, 1-platformNum, -platformLength+1);
 		} else if(stationDirection == HgStation.STATION_NE) {
-			originTile =  MoveTile(platformTile,0,0);
+			originTile = MoveTile(platformTile,0, -platformLength+1);
 		} else if(stationDirection == HgStation.STATION_SW) {
-			originTile =  MoveTile(platformTile,1-platformNum,0);
+			originTile = MoveTile(platformTile, 1-platformNum, 0);
 		}
 	}
 	
@@ -2281,6 +2775,7 @@ class RoadStation extends HgStation {
 	function Save() {
 		local t = HgStation.Save();
 		t.stationType <- stationType;
+		t.buildSupportRoad <- buildSupportRoad;
 		return t;
 	}
 	
@@ -2310,9 +2805,9 @@ class RoadStation extends HgStation {
 		return 10000;
 	}
 	
-	function BuildStation(joinStation,isTestMode,isSecond=false) {
-		local tile = isSecond ? At(1,0) : At(0,0);
-		local front = isSecond ? At(1,1) : At(0,1);
+	function BuildStation(joinStation,isTestMode,number = 0, index = 0) {
+		local tile = At(number,index);
+		local front = At(number,index+1);
 	
 		if(isTestMode) {
 			local result = AIRoad.BuildDriveThroughRoadStation(tile, front, RoadStation.GetRoadVehicleType(GetStationType()), joinStation);
@@ -2327,15 +2822,18 @@ class RoadStation extends HgStation {
 				}
 				//HgLog.Warning("platformTile:"+HgTile(At(0,0))+" front:"+HgTile(At(1,0))+" GetRoadVehicleType:"+RoadStation.GetRoadVehicleType(GetStationType())+" joinStation:"+AIStation.GetName(joinStation)+" "+AIError.GetLastErrorString());
 			}
-			if(platformNum == 2 && joinStation == AIStation.STATION_NEW && !HogeAI.Get().IsDistantJoinStations()) {
+			if((platformNum >= 2 || platformLength >=2) && joinStation == AIStation.STATION_NEW) {
 				foreach(d in HgTile.DIR8Index) {
 					if(AITile.IsStationTile(tile+d) && AICompany.IsMine(AITile.GetOwner(tile+d))) {
 						return false; // 厳密には成功するケースもあるかもしれないが、簡易にこうしておく
 					}
 				}
 			}
-			if(platformNum == 2 && !isSecond) {
-				return BuildStation(joinStation,isTestMode,true);
+			if(index+1 < platformLength) {
+				return BuildStation(joinStation,isTestMode,number, index+1);
+			}
+			if(number+1 < platformNum) {
+				return BuildStation(joinStation,isTestMode,number+1, 0);
 			}
 			return result;
 		} else {
@@ -2343,7 +2841,7 @@ class RoadStation extends HgStation {
 			HgLog.Info("platformTile:"+HgTile(platformTile));
 			HgLog.Info("At(0,0):"+HgTile(At(0,0)));
 			HgLog.Info("GetPlatformRectangle:"+GetPlatformRectangle());*/
-			if(platformNum == 2 && joinStation != AIStation.STATION_NEW && !isSecond) {
+			if(joinStation != AIStation.STATION_NEW && (number+1 < platformNum || index+1 < platformLength)) {
 				local result = null;
 				foreach(d in HgTile.DIR8Index) {
 					if(AITile.IsStationTile(tile+d) && AICompany.IsMine(AITile.GetOwner(tile+d))) {
@@ -2351,7 +2849,7 @@ class RoadStation extends HgStation {
 							return AIRoad.BuildDriveThroughRoadStation(tile, front, RoadStation.GetRoadVehicleType(GetStationType()), joinStation);
 						});
 						if(!result) {
-							HgLog.Warning("BuildDriveThroughRoadStation failed:"+HgTile(tile)+" front:"+HgTile(front)+" isSecond:"+isSecond+" "+AIError.GetLastErrorString());
+							HgLog.Warning("BuildDriveThroughRoadStation failed1:"+HgTile(tile)+" front:"+HgTile(front)+" ("+number+","+index+") "+" "+AIError.GetLastErrorString());
 						}
 						
 						if(!result && AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
@@ -2361,40 +2859,48 @@ class RoadStation extends HgStation {
 					}
 				}
 				if(result == true) {
-					result = BuildStation(joinStation,isTestMode,true);
+					if(index+1 < platformLength) {
+						result = BuildStation(joinStation,isTestMode,number, index+1);
+					} else if(number+1 < platformNum) {
+						result = BuildStation(joinStation,isTestMode,number+1, 0);
+					}
 					if(result) {
 						return true;
 					}
 				} else if(result == null) { // 周囲にplatformが無い場合
-					result = BuildStation(joinStation,isTestMode,true);
+					if(index+1 < platformLength) {
+						result = BuildStation(joinStation,isTestMode,number, index+1);
+					} else if(number+1 < platformNum) {
+						result = BuildStation(joinStation,isTestMode,number+1, 0);
+					}
 					if(!result) {
 						return false;
 					}
 					result = BuildUtils.RetryUntilFree(function():(joinStation,tile,front) {
 						return AIRoad.BuildDriveThroughRoadStation(tile, front, RoadStation.GetRoadVehicleType(GetStationType()), joinStation);
 					});
-					if(!result) {
-						HgLog.Warning("BuildDriveThroughRoadStation failed:"+HgTile(tile)+" front:"+HgTile(front)+" isSecond:"+isSecond+" "+AIError.GetLastErrorString());
-					}
 					if(result) {
 						return true;
 					}
+					HgLog.Warning("BuildDriveThroughRoadStation failed2:"+HgTile(tile)+" front:"+HgTile(front)+" ("+number+","+index+") "+AIError.GetLastErrorString());
 				}
-				BuildUtils.RemoveRoadStationSafe(At(0,0));
-				BuildUtils.RemoveRoadStationSafe(At(1,0));
+				BuildUtils.RemoveRoadStationSafe(At(number,0));
 				return result;
 			} else {
 				local result = BuildUtils.RetryUntilFree(function():(joinStation,tile,front) {
 					return AIRoad.BuildDriveThroughRoadStation(tile, front, RoadStation.GetRoadVehicleType(GetStationType()), joinStation);
 				});
 				if(!result) {
-					HgLog.Warning("BuildDriveThroughRoadStation failed:"+HgTile(tile)+" front:"+HgTile(front)+" isSecond:"+isSecond+" "+AIError.GetLastErrorString());
+					HgLog.Warning("BuildDriveThroughRoadStation failed3:"+HgTile(tile)+" front:"+HgTile(front)+" ("+number+","+index+") "+AIError.GetLastErrorString());
 				}
-				if(platformNum == 2 && result && !isSecond) {
-					result = BuildStation(AIStation.STATION_JOIN_ADJACENT,isTestMode,true);
+				if(result) {
+					if(index+1 < platformLength) {
+						result = BuildStation(AIStation.STATION_JOIN_ADJACENT,isTestMode,number,index+1);
+					} else if(number+1 < platformNum) {
+						result = BuildStation(AIStation.STATION_JOIN_ADJACENT,isTestMode,number+1,0);
+					}
 					if(!result) {
-						BuildUtils.RemoveRoadStationSafe(At(0,0));
-						BuildUtils.RemoveRoadStationSafe(At(1,0));
+						BuildUtils.RemoveRoadStationSafe(At(number,0));
 					}
 				}
 				return result;
@@ -2444,9 +2950,31 @@ class RoadStation extends HgStation {
 		return true;
 	}
 	
+	
+	function GetRoads() {
+		local result = [];
+		local roadNum = GetRoadNum();
+		for(local x=0; x<roadNum; x++) {
+			for(local y=0; y<platformLength; y++) {
+				result.push([At(x,y),At(x,y+1)]);
+			}
+			result.push([At(x,-1),At(x,0)]);
+			if(x+1<roadNum) {
+				result.push([At(x,platformLength),At(x+1,platformLength)]);
+				result.push([At(x+1,-1),At(x,-1)]);
+			}
+		}
+		return result;
+	}
+	
+	function GetRoadNum() {
+		return platformNum + (buildSupportRoad ? 1 : 0);
+	}
+	
 	function Build(levelTiles=true,isTestMode=true) {
 //		HgLog.Warning("Build levelTiles:"+levelTiles+" isTestMode:"+isTestMode);
 
+		local roads = GetRoads();
 		if(levelTiles) {
 			if(isTestMode) {
 				foreach(tile in GetTiles()) {
@@ -2454,20 +2982,27 @@ class RoadStation extends HgStation {
 						return false;
 					}
 				}
-				local pre = null;
-				foreach(index,roadXY in roads) {
-					local road = At(roadXY[0],roadXY[1]);
-					if(pre != null && AIRoad.IsRoadTile(road)) { // 既存道路がある場合、接続可能かの検査
-						local nextIndex = index == roads.len() - 1 ? 0 : index + 1;
-						local next = At(roads[nextIndex][0],roads[nextIndex][1]);
-						if(!AIRoad.CanBuildConnectedRoadPartsHere(road, pre, next)) {
-							return false;
+				local roadConnections = {};
+				foreach(road in roads) {
+					roadConnections.rawset(road[0],[]);
+					roadConnections.rawset(road[1],[]);
+				}
+				foreach(road in roads) {
+					roadConnections[road[0]].push(road[1]);
+					roadConnections[road[1]].push(road[0]);
+				}
+				foreach(tile,conncetion in roadConnections) {
+					if(AIRoad.IsRoadTile(tile)) { // 既存道路がある場合、接続可能かの検査
+						local start = conncetion[0];
+						for(local i=1; i<conncetion.len(); i++) {
+							if(!AIRoad.CanBuildConnectedRoadPartsHere(tile, start, conncetion[i])) {
+								return false;
+							}
 						}
 					}
-					pre = road;
 				}
 			}
-			if(!GetRectangle(0,-1, 2,2).LevelTiles(GetPlatformRailTrack(), isTestMode)) {
+			if(!GetRectangle(0,-1, GetRoadNum(),platformLength+1).LevelTiles(GetPlatformRailTrack(), isTestMode)) {
 				if(!isTestMode) {
 					HgLog.Warning("LevelTiles failed");
 				}
@@ -2484,32 +3019,24 @@ class RoadStation extends HgStation {
 		if(isTestMode) {
 			return true;
 		}
-		GetRectangle(0,-1, 2,2).LevelTiles(null, isTestMode); // pathfind成功率を上げるためにtrack方向ではない整地も試す
+		GetRectangle(0,-1, GetRoadNum(),platformLength+1).LevelTiles(null, isTestMode); // pathfind成功率を上げるためにtrack方向ではない整地も試す
 
-		local prev = null;
 		foreach(road in roads) {
-			if(prev != null) {
-				if(!RoadRouteBuilder.BuildRoadUntilFree(At(prev[0],prev[1]), At(road[0],road[1])) && AIError.GetLastError() != AIError.ERR_ALREADY_BUILT){ 
-					HgLog.Warning("BuildRoad failed "+HgTile(At(prev[0],prev[1]))+"-"+HgTile(At(road[0],road[1])) + " " + AIError.GetLastErrorString());
-					Demolish(true);
-					return false;
-				}
+			if(!RoadRouteBuilder.BuildRoadUntilFree(road[0], road[1]) && AIError.GetLastError() != AIError.ERR_ALREADY_BUILT){ 
+				HgLog.Warning("BuildRoad failed "+HgTile(road[0])+"-"+HgTile(road[1]) + " " + AIError.GetLastErrorString());
+				Demolish(true);
+				return false;
 			}
-			prev = road;
 		}
-		foreach(index,roadXY in roads) {
-			if(index != 0) {
-				local tile = At(roadXY[0],roadXY[1]);
-				RoadRoute.AddUsedTile(tile);
-			}
+		foreach(tile in GetTiles()) {
+			RoadRoute.AddUsedTile(tile);
 		}
 		
 		return true;
 	}
 	
 	function BuildDepot() {
-		foreach(road in roads) {
-			local tile = At(road[0],road[1]);
+		foreach(tile in GetTiles()) {
 			foreach(hgTile in HgTile(tile).GetDir4()) {
 				if(hgTile.BuildRoadDepot(hgTile.tile, tile)) {
 					return hgTile.tile;
@@ -2520,21 +3047,18 @@ class RoadStation extends HgStation {
 	}
 	
 	function Demolish(isBuilding=false) {
-		if(!BuildUtils.RemoveRoadStationSafe(At(0,0))) {
-			HgLog.Warning("RemoveRoadStation failed:"+HgTile(At(0,0))+" "+AIError.GetLastErrorString());
-			RoadRoute.pendingDemolishLines.push([At(0,0)]);
-		}
-		if(platformNum == 2) {
-			if(!BuildUtils.RemoveRoadStationSafe(At(1,0))) {
-				HgLog.Warning("RemoveRoadStation failed:"+HgTile(At(1,0))+" "+AIError.GetLastErrorString());
-				RoadRoute.pendingDemolishLines.push([At(1,0)]);
+		for(local x=0; x<platformNum; x++) {
+			for(local y=0; y<platformLength; y++) {
+				if(!BuildUtils.RemoveRoadStationSafe(At(x,y))) {
+					HgLog.Warning("RemoveRoadStation failed:"+HgTile(At(x,y))+" "+AIError.GetLastErrorString());
+					RoadRoute.pendingDemolishLines.push([At(x,y)]);
+				}
 			}
 		}
 
 		local removableLines = [];
 		local line = [];
-		foreach(roadXY in roads) {
-			local tile = At(roadXY[0],roadXY[1]);
+		foreach(tile in GetTiles()) {
 			if( ((isBuilding && !RoadRoute.IsUsedTile(tile)) || (!isBuilding && RoadRoute.RemoveUsedTile(tile)))
 					 && AICompany.IsMine( AITile.GetOwner(tile) ) && !AITile.IsStationTile(tile) ) {
 				line.push(tile);
@@ -2547,63 +3071,41 @@ class RoadStation extends HgStation {
 			removableLines.push(line);
 		}
 		RoadRoute.DemolishLines(removableLines);
-		
-/*		
-			local pre = null;
-			local preRemoved = false;
-			foreach(road in roads) {
-				local tile = At(road[0],road[1]);
-				if((isBuilding && !RoadRoute.IsUsedTile(tile)) || (!isBuilding && RoadRoute.RemoveUsedTile(tile))) {
-					if(preRemoved) {
-						if(AICompany.IsMine(AITile.GetOwner(pre)) && AICompany.IsMine(AITile.GetOwner(tile)) && !AIRoad.RemoveRoadFull(pre, tile)) {
-							HgLog.Warning("AIRoad.RemoveRoadFull failed:"+HgTile(pre)+"-"+HgTile(tile)+" "+AIError.GetLastErrorString());
-							RoadRoute.pendingDemolishLines.push([pre,tile]);
-						}
-					}
-					if(!isBuilding) {
-						RoadRoute.DemolishArroundDepot(tile);
-					}
-					preRemoved = true;
-				} else {
-					preRemoved = false;
-				}
-				pre = tile;
-			}
-//		}*/
 		return true;
 	}
 
 
 	function GetTiles() {
+		local map = {};
+		foreach(road in GetRoads()) {
+			map.rawset(road[0],true);
+			map.rawset(road[1],true);
+		}
 		local result = [];
-		foreach(i, road in roads) {
-			if(i==0) {
-				continue;
-			}
-			result.push(At(road[0],road[1]));
+		foreach(v,_ in map) {
+			result.push(v);
 		}
 		return result;
 	}
 	
 	function GetEntrances() {
-		if(platformNum == 1) {
-			return [At(0,0)]
-		} else {
-			return [At(0,0),At(1,0)];
-		}
-		/* 道路が破壊された再検索の場合、stationから検索しないと繋がらない
-		local result = [];
-		foreach(road in roads) {
-			local p = At(road[0],road[1]);
-			if(!AITile.IsStationTile(p)) {
-				result.push(At(road[0],road[1]));
+/*		local result = [];
+		for(local x=0; x<platformNum; x++) {
+			for(local y=0; y<platformLength; y++) {
+				result.push(At(x,y));
 			}
-		}
-		return result;*/
+		}*/
+		return [At(0,0)];
 	}
 	
 	function GetBuildableScore() {
-		return 0;
+		local tileList = GetPlatformRectangle().GetTileList();
+		tileList.Valuate(function(tile){return RoadRoute.used.map.rawin(tile)?1:0});
+		tileList.KeepValue(1);
+		return tileList.Count() == 0 ? 10 : 0;
+		
+		
+		
 /*		local result = 0; //TODO: 周囲がflat isbuildableかどうか
 		
 		foreach(tile in GetTiles()) {
@@ -2754,24 +3256,28 @@ class PieceStation extends HgStation {
 			}
 			return true;
 		}
-		if(AITile.IsStationTile(platformTile)) {
+		if(!supressWarning && AITile.IsStationTile(platformTile)) {
 			HgLog.Warning("AITile.IsStationTile("+HgTile(platformTile)+")==true");
 		}
 		if(AITile.GetSlope(platformTile) == AITile.SLOPE_FLAT && GetTownRating(platformTile) >= AITown.TOWN_RATING_VERY_GOOD && IsDemolishableTownBuilding(platformTile)) {
 			local execMode = AIExecMode(); //なぜかこれが無いと動かない
-			HgLog.Warning("demolish TownBuilding "+HgTile(platformTile)); //なぜか2回呼ばれる
+			if(!supressWarning ) {
+				HgLog.Warning("demolish TownBuilding "+HgTile(platformTile)); //なぜか2回呼ばれる
+			}
 			if(!BuildUtils.DemolishTileSafe(platformTile)) {
-				HgLog.Warning("DemolishTile failed:"+HgTile(platformTile)+" "+AIError.GetLastErrorString());
+				if(!supressWarning ) {
+					HgLog.Warning("DemolishTile failed:"+HgTile(platformTile)+" "+AIError.GetLastErrorString());
+				}
 			}
 		}
 		if(BuildUtils.RetryUntilFree(function():(platformTile,joinStation,roadVehicleType,roadDir) {
 			return AIRoad.BuildDriveThroughRoadStation (platformTile, platformTile + HgTile.DIR4Index[roadDir], roadVehicleType, joinStation);
-		},3)) {
+		},3,supressWarning)) {
 			return true;
 		}
 		if(BuildUtils.RetryUntilFree(function():(platformTile,joinStation,roadVehicleType,otherDir) {
 			return AIRoad.BuildDriveThroughRoadStation (platformTile, platformTile + HgTile.DIR4Index[otherDir], roadVehicleType, joinStation);
-		},3)) {
+		},3,supressWarning)) {
 			return true;
 		}
 		return false;
@@ -2859,6 +3365,25 @@ class PieceStation extends HgStation {
 }
 
 class TransferStation extends RailStation {
+/*
+　　5  d A
+    4  r Ar
+    3  P P
+    2  P P
+    1  P P
+    0  P P
+   -1  s s
+   -2  r Dr
+   -3    D
+       0 1
+
+A: Arrival
+D: Departure
+d: Depot
+P: Platform
+s: Signal
+r: Rail
+*/
 	constructor(platformTile, platformLength, stationDirection) {
 		HgStation.constructor(platformTile,stationDirection);
 
@@ -2880,7 +3405,6 @@ class TransferStation extends RailStation {
 		return "TransferStation";
 	}
 	
-	
 	function GetArrivalsTiles() {
 		return [[At(1,platformLength+1),At(1,platformLength)]];
 	
@@ -2894,7 +3418,6 @@ class TransferStation extends RailStation {
 		return [At(0,-3), At(0,platformLength+1)];
 	}
 
-	
 	function GetRails() {
 		local result = [];
 		
@@ -2904,7 +3427,7 @@ class TransferStation extends RailStation {
 		result.push([[1,-2],[0,-2],[0,-1]]);
 		result.push([[0,-2],[0,-1],[0,0]]);
 
-		local a = [];
+		local a = []; // arrival側
 /*		a.push([[0,-1],[0,0],[-1,0]]);
 		a.push([[0,1],[0,0],[-1,0]]);
 		a.push([[1,-1],[1,0],[2,0]]);
@@ -2913,6 +3436,12 @@ class TransferStation extends RailStation {
 		a.push([[0,-1],[0,0],[1,0]]);
 		a.push([[0,0],[1,0],[1,1]]);
 		a.push([[1,-1],[1,0],[1,1]]);
+
+		// depot用
+		a.push([[0,-1],[0,0],[0,1]]);
+		a.push([[1,-1],[1,0],[0,0]]);
+		a.push([[1,0],[0,0],[0,1]]);
+		
 		foreach(r in a) {
 			local nr = [];
 			foreach(p in r) {
@@ -2924,14 +3453,12 @@ class TransferStation extends RailStation {
 		return result;
 	}
 	
-	
 	function GetMustBuildableAndFlatTiles() {
 		for(local x=0; x<2; x++) {
-			for(local y=-2; y<platformLength+1; y++) {
+			for(local y=-2; y<platformLength+2; y++) {
 				yield [x,y];
 			}
 		}
-		yield [1, platformLength+1];
 		yield [1, -3];
 
 /*		yield [-1,platformLength];
@@ -2940,13 +3467,12 @@ class TransferStation extends RailStation {
 		return null;
 	}
 	
-	
-	function GetHopeBuildableAndFlatTiles() {
-		return [];
-	}
-
 	function GetDepots() {
-		return [];//[[At(-1,platformLength), At(0,platformLength)],[At(2,platformLength), At(1,platformLength)]];
+		return [[At(0,platformLength+1),At(0,platformLength)]];//[[At(-1,platformLength), At(0,platformLength)],[At(2,platformLength), At(1,platformLength)]];
+	}
+	
+	function GetArrivalDepot() {
+		return At(0,platformLength+1);
 	}
 
 	function Build(levelTiles=true, isTestMode=true) {
@@ -2977,7 +3503,6 @@ class TransferStation extends RailStation {
 				return false;
 			}
 		}
-		/*
 		foreach(depot in GetDepots() ) {
 			if(!AIRail.BuildRailDepot(depot[0], depot[1])) {
 				if(!isTestMode) {
@@ -2987,11 +3512,16 @@ class TransferStation extends RailStation {
 					return false;
 				}
 			}
-		}*/
+		}
 		
 		if(isTestMode) {
 			return true;
 		}
+		
+		local level = AITile.GetMaxHeight(platformTile);
+		local l = GetTileListForLevelTiles([[1,-3],[1,platformLength+2]]);
+		TileListUtils.LevelAverage(l, null, isTestMode, level, true);
+		
 		
 		foreach(rail in GetRails()) {
 			if(!RailBuilder.BuildRailSafe(
@@ -3008,15 +3538,13 @@ class TransferStation extends RailStation {
 		return true;
 	}
 	
-	
 	function BuildAfter() {
 	}
 	
 	function RemoveDepots() {
-		/*
 		foreach(depot in GetDepots() ) {
 			AITile.DemolishTile(depot[0]);
-		}*/
+		}
 	}
 	
 	function BuildSignal() {
@@ -3029,7 +3557,6 @@ class TransferStation extends RailStation {
 		BuildUtils.RemoveSignalSafe(At(1,-1),At(1,0));
 	}
 	
-	
 	function Demolish() {
 		local result = true;
 		RemoveSignal();
@@ -3050,7 +3577,7 @@ class TransferStation extends RailStation {
 			}
 		}
 		
-		//RemoveDepots();
+		RemoveDepots();
 		
 		return result;
 	}
@@ -3063,18 +3590,25 @@ class TransferStation extends RailStation {
 		foreach(rail in GetRails()) {
 			result.push(At(rail[1][0],rail[1][1]));
 		}
-/*		result.push(At(-1,platformLength));
-		result.push(At(2,platformLength));*/
+		foreach(depot in GetDepots() ) {
+			result.push(depot[0]);
+		}
 		return result;
 	}
 	
 	function GetBuildableScore() {
 		local result = 0;
-		foreach(xy in GetHopeBuildableAndFlatTiles()) {
-			if(AITile.IsBuildable(At(xy[0],xy[1]))) {
-				result ++;
-				if(IsFlat(At(xy[0],xy[1]))) {
+		foreach(o in [[1,platformLength+2],[-1,-4]]) {
+			local d = o[0], y = o[1];
+			for(local i=0; i<3; i++, y+=d) {
+				local t = At(1,y);
+				if(AITile.IsBuildable(t)) {
 					result ++;
+					if(IsFlat(t)) {
+						result ++;
+					}
+				} else {
+					break;
 				}
 			}
 		}
@@ -3084,29 +3618,39 @@ class TransferStation extends RailStation {
 
 class SmartStation extends RailStation {
 
-	slim = null; // platformNum==3の時に出入口幅も3にする
+	/*
+	(y+platformLength)
+     7     
+	 6   D I
+	 5 A B
+	 4 r r
+	 3 r r r
+	 2 r B r
+	 1 r r r
+	 0 s s
+	   p p
+	   0 1 2
+	*/
 
-	constructor(platformTile, platformNum, platformLength, slim, stationDirection) {
+	constructor(platformTile, platformNum, platformLength, stationDirection) {
 		HgStation.constructor(platformTile,stationDirection);
 
 		this.platformNum = platformNum;
 		this.platformLength = platformLength;
-		this.slim = slim;
 
 		if(stationDirection == HgStation.STATION_SE) {
-			originTile =  MoveTile(platformTile,platformNum-2,0);
+			originTile = MoveTile(platformTile, 0, 0); //駅の座標系でplatformをどう動かしたら原点に来るか
 		} else if(stationDirection == HgStation.STATION_NW) {
-			originTile =  MoveTile(platformTile,-1,-platformLength+1);
+			originTile = MoveTile(platformTile, 1-platformNum, -platformLength+1);
 		} else if(stationDirection == HgStation.STATION_NE) {
-			originTile =  MoveTile(platformTile,platformNum-2,-platformLength+1);
+			originTile = MoveTile(platformTile,0, -platformLength+1);
 		} else if(stationDirection == HgStation.STATION_SW) {
-			originTile =  MoveTile(platformTile,-1,0);
+			originTile = MoveTile(platformTile, 1-platformNum, 0);
 		}
 	}
 	
 	function Save() {
 		local t = HgStation.Save();
-		t.slim <- slim;
 		return t;
 	}
 	
@@ -3116,171 +3660,150 @@ class SmartStation extends RailStation {
 	
 	
 	function GetArrivalsTiles() {
-		if(platformNum==2 || slim) {
-			return [[At(0,platformLength+5),At(0,platformLength+4)]];
-		} else if(platformNum==3) {
-			return [[At(-1,platformLength+6),At(-1,platformLength+5)]];
-		}
-	
+		return [[At(0,platformLength+5),At(0,platformLength+4),At(0,platformLength+3)]];
 	}
 	
 	function GetDeparturesTiles() {
-		return [[At(1,platformLength+4),At(1,platformLength+3)]];
+		return [[At(1,platformLength+6),At(1,platformLength+5),At(1,platformLength+2)]];
 	}
 	
 	function GetArrivalDangerTiles() {
-		if(platformNum==2 || slim) {
+		return [At(-1,platformLength+5), At(-2,platformLength+4), At(-1,platformLength+4)];
+/*		if(platformNum==2 || slim) {
 			return [At(-2,platformLength+5),At(-1,platformLength+5),At(0,platformLength+6)];
 		} else if(platformNum==3) {
 			return [At(-3,platformLength+6),At(-2,platformLength+6),At(-1,platformLength+7)];
-		}
+		}*/
 	}
 
 	function GetDepartureDangerTiles() {
-		return [At(3,platformLength+4),At(2,platformLength+4),At(1,platformLength+5),];
+		return [At(2,platformLength+6),At(3,platformLength+5),At(2,platformLength+5)];
+//		return [At(3,platformLength+4),At(2,platformLength+4),At(1,platformLength+5),];
 	}
 	
 	function GetRails() {
-		local result = [];
-		
-		result.push([[0,-1],[0,0],[0,1]]);
-		result.push([[0,-1],[0,0],[-1,0]]);
-		result.push([[1,0],[0,0],[0,1]]);
+		local rails = [
+			[[0,-1],[0,0],[0,1]],
+			[[1,-1],[1,0],[1,1]],
+			[[0,0],[0,1],[0,2]],
+			[[0,0],[0,1],[1,1]],
+			[[1,0],[1,1],[1,2]],
+			[[0,1],[1,1],[1,2]],
+			[[1,0],[1,1],[2,1]],
+			[[1,1],[2,1],[2,2]],
+			[[0,1],[0,2],[0,3]],
+			[[2,1],[2,2],[2,3]],
+			[[0,2],[0,3],[0,4]],
+			[[2,3],[1,3],[1,4]],
+			[[2,2],[2,3],[1,3]],
+			[[0,3],[0,4],[0,5]],
+			[[1,4],[0,4],[0,5]],
+			[[1,3],[1,4],[0,4]]
+		];
 
-		result.push([[0,0],[-1,0],[-1,1]]);
-
-		result.push([[1,-1],[1,0],[0,0]]);
-		result.push([[1,-1],[1,0],[1,1]]);
-		result.push([[1,0],[1,1],[1,2]]);
-		result.push([[1,1],[1,2],[1,3]]);
-		result.push([[1,2],[1,3],[1,4]]);
-
-		result.push([[-1,0],[-1,1],[-1,2]]);
-
-		result.push([[-1,1],[-1,2],[0,2]]);
-		result.push([[-1,2],[0,2],[0,3]]);
-		result.push([[0,2],[0,3],[1,3]]);
-		result.push([[0,3],[1,3],[1,4]]);
 		
 		if(platformNum==3) {
-			if(slim) {
-				result.push([[-1,-1],[-1,0],[-1,1]]);
-				result.push([[-1,-1],[-1,0],[0,0]]);
-				result.push([[-1,0],[0,0],[0,1]]);
-				result.push([[0,-1],[0,0],[1,0]]);
-				result.push([[0,0],[1,0],[1,1]]);
-			} else {
-				result.push([[-1,-1],[-1,0],[-1,1]]);
-				result.push([[-1,-1],[-1,0],[-2,0]]);
-				result.push([[-1,0],[-2,0],[-2,1]]);
-				result.push([[-2,0],[-2,1],[-2,2]]);
-				result.push([[-2,1],[-2,2],[-1,2]]);
-				result.push([[-2,2],[-1,2],[-1,3]]);
-				result.push([[-1,2],[-1,3],[-1,4]]);
-				result.push([[-1,3],[-1,4],[-1,5]]);
-				result.push([[-1,4],[-1,5],[-1,6]]);
-				result.push([[0,4],[0,5],[-1,5]]);
-				result.push([[0,5],[-1,5],[-1,6]]);
-			}
+			local ext = [
+				[[2,-1],[2,0],[2,1]],
+				[[2,1],[1,1],[1,2]],
+				[[2,0],[2,1],[1,1]],
+				[[2,0],[2,1],[2,2]],// for 3rd platform
+				[[2,2],[2,3],[2,4]] // for depot
+			];
+			rails.extend(ext);
 		}
-
-		local n = [];
-		foreach(r in result) {
-			local nr = [];
-			foreach(p in r) {
-				nr.push([p[0],p[1] + platformLength]);
-			}
-			n.push(nr);
-		}
-
-		return n;
-	}
-	
-	function GetIgnoreTiles() {
-		if(platformNum==3 && !slim) {
-			return [At(0, platformLength+6)];
-		} else {
-			return [];
-		}
-	}
-
-	function GetMustBuildableAndFlatTiles() {
-		if(platformNum==2 || (platformNum==3 && slim)) {
-			for(local x=0; x<2; x++) {
-				for(local y=0; y<=platformLength+6; y++) {
-					yield [x,y];
-				}
-			}
-
-			yield [-1,platformLength];
-			yield [-1,platformLength+1];
-			yield [-1,platformLength+2];
-			if(platformNum == 3) {
-				for(local y=0; y<=platformLength; y++) {
-					yield [-1,y];
-				}
-			}
-		} else if(platformNum==3) {
-			for(local x=-1; x<2; x++) {
-				for(local y=0; y<platformLength+5; y++) {
-					yield [x,y];
-				}
-			}
-			yield [-1,platformLength+6];
-
-			yield [-2,platformLength];
-			yield [-2,platformLength+1];
-			yield [-2,platformLength+2];
-		}
-
-		return null;
-	}
-	
-	function GetHopeBuildableAndFlatTiles() {
+		
 		local result = [];
-		if(platformNum==2) {
-			for(local x=-1; x<3; x++) {
-				for(local y=platformLength+5; y<platformLength+7; y++) {
-					result.push([x,y]);
-				}
+		foreach(rail in rails) {
+			local r = [];
+			foreach(xy in rail) {
+				r.push(At(xy[0],xy[1]+platformLength));
 			}
-			result.push([2,platformLength+4]);
-		} else if(platformNum==3) {
-			for(local x=-2; x<3; x++) {
-				for(local y=platformLength+5; y<platformLength+7; y++) {
-					result.push([x,y]);
-				}
-			}
-			result.push([2,platformLength+4]);
+			result.push(r);
 		}
 		return result;
 	}
+	
+	function GetIgnoreTiles() {
+		return [];
+	}
+	
+	function GetMustBuildableTileList() {
+		local result = AITileList();
+		result.AddRectangle(At(0,0),At(1,platformLength+6));
+		if(platformNum==3) {
+			result.AddRectangle(At(2,0),At(2,platformLength+4));
+		} else {
+			result.AddRectangle(At(2,platformLength+1),At(2,platformLength+3));
+		}
+		return result;
+	}
+	
+	function GetMustFlatTileLists() {
+		local list1 = AITileList();
+		list1.AddRectangle(At(0,platformLength+1),At(1,platformLength+5));
+		if(platformNum==3) {
+			list1.AddRectangle(At(2,platformLength+1),At(2,platformLength+4));
+		} else {
+			list1.AddRectangle(At(2,platformLength+1),At(2,platformLength+3));
+		}
 
-
+		local list2 = AITileList();
+		list2.AddRectangle(At(0,0),At((platformNum==2?1:2),platformLength-1));
+		return [list1,list2];
+	}
+	
+	function GetHopeFlatTileList() {
+		local list = AITileList();
+		list.AddRectangle(At(0,platformLength+5),At(1,platformLength+6));
+		return list;
+	}
+	
 	function Build(levelTiles=true, isTestMode=true) {
-		local tilesGen = GetMustBuildableAndFlatTiles();
-		local tiles = [];
-		local xy;
-		while((xy = resume tilesGen) != null) {
-			if(!HogeAI.IsBuildable(At(xy[0],xy[1]))) {
+		foreach(tile,_ in GetMustBuildableTileList()) {
+			if(!HogeAI.IsBuildable(tile)) {
 				if(!isTestMode) {
-					HgLog.Warning("not IsBuildable "+HgTile(At(xy[0],xy[1])));
+					HgLog.Warning("not IsBuildable "+HgTile(tile));
 				}
 				return false;
 			}
-			tiles.push(xy);
 		}
-
-		if(!TileListUtils.LevelAverage(GetTileListForLevelTiles(tiles), GetPlatformRailTrack(), isTestMode)) {
-			if(!isTestMode) {
-				HgLog.Warning("LevelTiles Failed "+AIError.GetLastErrorString());
+	
+		if(levelTiles) {
+			local preAverage = null;
+			foreach(tileList in GetMustFlatTileLists()) {
+				tileList.Sort(AIList.SORT_BY_VALUE,false);
+				tileList.Valuate(AITile.GetMaxHeight);
+				local maxHeight = tileList.GetValue(tileList.Begin());
+				tileList.Sort(AIList.SORT_BY_VALUE,true);
+				tileList.Valuate(AITile.GetMinHeight);
+				local minHeight = tileList.GetValue(tileList.Begin());
+				if(maxHeight - minHeight >= 4) {
+					if(!isTestMode) {
+						HgLog.Warning("LevelTiles Failed. maxHeight - minHeight >= 4");
+					}
+					return false;
+				}
+				local cornerList = GetTileListForLevelTilesFromTileList(tileList);
+				local average = TileListUtils.CalculateAverageLevel(cornerList);
+				if(preAverage != null && abs(preAverage - average) >= 2) {
+					if(!isTestMode) {
+						HgLog.Warning("LevelTiles Failed. Average levels too far apart");
+					}
+					return false;
+				}
+				preAverage = average;
+				
+				if(!TileListUtils.LevelAverage(cornerList, GetPlatformRailTrack(), isTestMode, average)) {
+					if(!isTestMode) {
+						HgLog.Warning("LevelTiles Failed "+AIError.GetLastErrorString());
+					}
+					return false;
+				}
 			}
-			return false;
 		}
-		if(!isTestMode) {
-			TileListUtils.LevelAverage(GetTileListForLevelTiles(tiles), null, isTestMode, null, true); // pathfind成功率を上げるためにtrack方向ではない整地も試す
-		}
-
+		
+		
 		if(!BuildPlatform(isTestMode)) {
 			if(!isTestMode) {
 				HgLog.Warning("BuildPlatform failed."+AIError.GetLastErrorString());
@@ -3291,58 +3814,71 @@ class SmartStation extends RailStation {
 		local bridge_list = AIBridgeList_Length(4);
 		bridge_list.Valuate(AIBridge.GetMaxSpeed);
 		bridge_list.Sort(AIList.SORT_BY_VALUE, false);
-		if(!BuildUtils.BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), At(0,platformLength+1), At(0,platformLength+4))) {
+		if(!BuildUtils.BuildBridgeSafe(AIVehicle.VT_RAIL, bridge_list.Begin(), At(1,platformLength+2), At(1,platformLength+5))) {
 			if(!isTestMode) {
 				HgLog.Warning("BuildBridge failed."+AIError.GetLastErrorString());
-				return false;
-			} else if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
-				return false;
 			}
+			return false;
 		}
 		
 		if(isTestMode) {
 			return true;
 		}
+		// pathfind成功率を上げるためにtrack方向ではない整地も試す
+		local level = AITile.GetMaxHeight(At(1,platformLength+5));
+		local l = GetTileListForLevelTilesFromTileList(GetHopeFlatTileList());
+		TileListUtils.LevelAverage(l, null, isTestMode, level, true);
 		
 		foreach(rail in GetRails()) {
-			if(!RailBuilder.BuildRailSafe(
-				At(rail[0][0],rail[0][1]),
-				At(rail[1][0],rail[1][1]),
-				At(rail[2][0],rail[2][1]))) {
-				HgLog.Warning("BuildRail Failed."+AIError.GetLastErrorString());
+			if(!RailBuilder.BuildRailSafe(rail[0],rail[1],rail[2])) {
+				HgLog.Warning("BuildRail Failed."+HgTile.GetTilesString(rail)+" "+AIError.GetLastErrorString());
 				return false;
 			}
 		}
 		
+		if(platformNum==3) {
+			if(!BuildUtils.BuildRailDepotSafe(At(2,platformLength+4),At(2,platformLength+3))) {
+				HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
+				return false;
+			}
+		}
+
 		BuildSignal();
-		
-		PurchaseLand(GetArrivalsTiles()[0][0]);
-		PurchaseLand(GetDeparturesTiles()[0][0]);
 		
 		return true;
 	}
 	
+	function GetDepot() {
+		if(platformNum==3) {
+			return At(2,platformLength+4);
+		}
+		return null;
+	}
 	
 	function BuildAfter() {
 	}
 	
-	function RemoveDepots() {
+	function RemoveDepots() { //TrainRouteExtendBuilderから呼ばれる
+		local depot = GetDepot();
+		if(depot != null) {
+			if(!BuildUtils.DemolishTileUntilFree(depot)) {
+				HgLog.Warning("DemolishTileUntilFree(RemoveDepots) failed."+HgTile(depot)+" "+AIError.GetLastErrorString());
+			}
+			if(!RailBuilder.RemoveRailUntilFree(depot, At(2,platformLength+3), At(2,platformLength+2))) {
+				HgLog.Warning("RemoveRailUntilFree(RemoveDepots) failed."+HgTile(depot)+" "+AIError.GetLastErrorString());
+			}
+		}
 	}
 	
 	function BuildSignal() {
-		BuildUtils.BuildSignalSafe(At(1,platformLength+2),At(1,platformLength+1),AIRail.SIGNALTYPE_PBS_ONEWAY );
-		BuildUtils.BuildSignalSafe(At(0,platformLength+3),At(0,platformLength+2),AIRail.SIGNALTYPE_PBS_ONEWAY );
-	}
-	
-	function RemoveSignal() {
-		BuildUtils.RemoveSignalSafe(At(1,platformLength+2),At(1,platformLength+1));
-		BuildUtils.RemoveSignalSafe(At(0,platformLength+3),At(0,platformLength+2));
+		for(local x=0; x<platformNum; x++) {
+			BuildUtils.BuildSignalSafe(At(x,platformLength),At(x,platformLength-1),AIRail.SIGNALTYPE_PBS );
+		}
 	}
 	
 	
 	function Demolish() {
 		local result = true;
-		RemoveSignal();
 		
 		local r = GetPlatformRectangle();
 		if(!DemolishStation()) {
@@ -3351,47 +3887,51 @@ class SmartStation extends RailStation {
 		}
 		
 		foreach(rail in GetRails()) {
-			if(!AIRail.RemoveRail(
-					At(rail[0][0],rail[0][1]),
-					At(rail[1][0],rail[1][1]),
-					At(rail[2][0],rail[2][1]))) {
-				HgLog.Warning("RemoveRail failed. "+HgTile(At(rail[1][0],rail[1][1]))+" "+AIError.GetLastErrorString());
+			if(!AIRail.RemoveRail(rail[0],rail[1],rail[2])) {
+				HgLog.Warning("RemoveRail failed. "+HgTile.GetTilesString(rail)+" "+AIError.GetLastErrorString());
 				result = false;
 			}
 		}
-		
-		AITile.DemolishTile(At(0,platformLength+1));
-		
+		AIBridge.RemoveBridge(At(1,platformLength+2));
+		if(platformNum==3) {
+			AITile.DemolishTile(At(2,platformLength+4));
+		}
 		return result;
 	}
 	
 	function GetTiles() {
-		local result = [];
-		
-		local r = GetPlatformRectangle();
-		result.extend(HgArray.AIListKey(r.GetTileList()).array);
-		foreach(rail in GetRails()) {
-			result.push(At(rail[1][0],rail[1][1]));
+		local result = AITileList();
+		result.AddRectangle(At(0,0),At(1,platformLength+4));
+		if(platformNum==3) {
+			result.AddRectangle(At(2,0),At(2,platformLength+4));
+		} else {
+			result.AddRectangle(At(2,platformLength+1),At(2,platformLength+3));
 		}
-		result.push(At(0,platformLength+1));
-		result.push(At(0,platformLength+4));
-		return result;
+		result.AddTile(At(1,platformLength+5));
+		local tiles = [];
+		foreach(t,_ in result) {
+			tiles.push(t);
+		}
+		return tiles;
 	}
 	
 	function GetBuildableScore() {
 		local result = 0;
-		foreach(xy in GetHopeBuildableAndFlatTiles()) {
-			local tile = At(xy[0],xy[1]);
-			if(AITile.IsBuildable(tile)) {
-				result ++;
-				if(IsFlat(tile)) {
+		for(local y=platformLength+6; y<platformLength+10; y++) {
+			for(local x=0; x<2; x++) {
+				local tile = At(x,y);
+				if(AITile.IsBuildable(tile)) {
 					result ++;
+					if(IsFlat(tile)) {
+						result ++;
+					}
+				} else {
+					return result;
 				}
 			}
 		}
 		return result;
 	}
-	
 }
 
 class DestRailStation extends RailStation {
@@ -4208,6 +4748,20 @@ class SrcRailStation extends RailStation {
 }
 
 class RealSrcRailStation extends RailStation {
+	/*
+	
+	  7   A
+	  6 d B D
+	  5 r r r
+	  4 r r r
+      3 r B r
+      2 r r r
+      1 r r r
+	  0 s s s
+	    p p p 
+	*/
+
+
 
 	constructor(platformTile, platformLength, stationDirection) {
 		HgStation.constructor(platformTile,stationDirection);
@@ -4230,22 +4784,56 @@ class RealSrcRailStation extends RailStation {
 		return "RealSrcRailStation";
 	}
 
-	function Build(levelTiles=false, isTestMode=true) {
-		local tilesGen = GetMustBuildableTiles();
-		local xy;
-		while((xy = resume tilesGen) != null) {
-			if(!HogeAI.IsBuildable(At(xy[0],xy[1]))) {
+
+	function GetMustBuildableTileList() {
+		local result = AITileList();
+		result.AddRectangle(At(0,0),At(2,platformLength+6));
+		result.AddTile(At(1,platformLength+7));
+		return result;
+	}
+	
+	function GetMustFlatTileLists() {
+		local list1 = AITileList();
+		list1.AddRectangle(At(0,platformLength+1),At(2,platformLength+6));
+		list1.AddTile(At(1,platformLength+7));
+		local list2 = AITileList();
+		list2.AddRectangle(At(0,0),At(2,platformLength-1));
+		return [list1,list2];
+	}
+	
+	function GetHopeFlatTileList() {
+		local list = AITileList();
+		list.AddRectangle(At(1,platformLength+6),At(2,platformLength+7));
+		return list;
+	}
+	
+	function Build(levelTiles=true, isTestMode=true) {
+		foreach(tile,_ in GetMustBuildableTileList()) {
+			if(!HogeAI.IsBuildable(tile)) {
 				if(!isTestMode) {
-					HgLog.Warning("not IsBuildable "+HgTile(At(xy[0],xy[1])));
+					HgLog.Warning("not IsBuildable "+HgTile(tile));
 				}
 				return false;
 			}
 		}
+	
 		if(levelTiles) {
 			local preAverage = null;
-			foreach(tiles in GetMustFlatTiles()) {
-				local tileList = GetTileListForLevelTiles(tiles);
-				local average = TileListUtils.CalculateAverageLevel(tileList);
+			foreach(tileList in GetMustFlatTileLists()) {
+				tileList.Sort(AIList.SORT_BY_VALUE,false);
+				tileList.Valuate(AITile.GetMaxHeight);
+				local maxHeight = tileList.GetValue(tileList.Begin());
+				tileList.Sort(AIList.SORT_BY_VALUE,true);
+				tileList.Valuate(AITile.GetMinHeight);
+				local minHeight = tileList.GetValue(tileList.Begin());
+				if(maxHeight - minHeight >= 4) {
+					if(!isTestMode) {
+						HgLog.Warning("LevelTiles Failed. maxHeight - minHeight >= 4");
+					}
+					return false;
+				}
+				local cornerList = GetTileListForLevelTilesFromTileList(tileList);
+				local average = TileListUtils.CalculateAverageLevel(cornerList);
 				if(preAverage != null && abs(preAverage - average) >= 2) {
 					if(!isTestMode) {
 						HgLog.Warning("LevelTiles Failed. Average levels too far apart");
@@ -4254,7 +4842,7 @@ class RealSrcRailStation extends RailStation {
 				}
 				preAverage = average;
 				
-				if(!TileListUtils.LevelAverage(tileList, GetPlatformRailTrack(), isTestMode, average)) {
+				if(!TileListUtils.LevelAverage(cornerList, GetPlatformRailTrack(), isTestMode, average)) {
 					if(!isTestMode) {
 						HgLog.Warning("LevelTiles Failed "+AIError.GetLastErrorString());
 					}
@@ -4291,6 +4879,9 @@ class RealSrcRailStation extends RailStation {
 		if(isTestMode) {
 			return true;
 		}
+		 // pathfind成功率を上げるためにtrack方向ではない整地も試す
+		local level = AITile.GetMaxHeight(At(1,platformLength+6));
+		TileListUtils.LevelAverage(GetTileListForLevelTilesFromTileList(GetHopeFlatTileList()), null, isTestMode, level, true);
 		
 		foreach(rail in GetRails()) {
 			if(!RailBuilder.BuildRailSafe(
@@ -4392,23 +4983,14 @@ class RealSrcRailStation extends RailStation {
 					if(IsFlat(xy)) {
 						result ++;
 					}
+				} else {
+					break;
 				}
 			}
 		}
 		return result;
 	}
 	
-	function GetMustBuildableTiles() {
-		for(local x=0; x<3; x++) {
-			for(local y=0; y<=platformLength+6; y++) {
-				yield [x,y];
-			}
-		}
-		yield [1,platformLength+7];
-		yield [1,platformLength+8];
-		yield [2,platformLength+7];
-		return null;
-	}
 	
 	function GetMustFlatTiles() {
 		local result = [];
@@ -4443,11 +5025,11 @@ class RealSrcRailStation extends RailStation {
 	
 	
 	function GetArrivalsTiles() {
-		return [[At(1,platformLength+7),At(1,platformLength+6)]];
+		return [[At(1,platformLength+7),At(1,platformLength+6),At(1,platformLength+3)]];
 	}
 	
 	function GetDeparturesTiles() {
-		return [[At(2,platformLength+6),At(2,platformLength+5)]];
+		return [[At(2,platformLength+6),At(2,platformLength+5),At(2,platformLength+4)]];
 	}
 	
 	function GetArrivalDangerTiles() {
@@ -4667,14 +5249,16 @@ class SimpleRailStation extends RailStation {
 		
 	function GetBuildableScore() {
 		local result = 0;
-		for(local i=-1; i<=2; i++) {
-			for(local j=platformLength+2; j<=platformLength+3;j++) {
+		for(local i=0; i<2; i++) {
+			for(local j=platformLength+2; j<=platformLength+5;j++) {
 				local xy = At(i,j);
 				if(HogeAI.IsBuildable(xy)) {
 					result ++;
 					if(IsFlat(xy)) {
 						result ++;
 					}
+				} else {
+					break;
 				}
 			}
 		}
@@ -4715,14 +5299,14 @@ class SimpleRailStation extends RailStation {
 		if(platformNum == 1) {
 			return [];
 		}
-		return [At(-2,platformLength+1),At(-1,platformLength+1),At(0,platformLength+2)];
+		return [At(-2,platformLength),At(-1,platformLength+1)];
 	}
 
 	function GetDepartureDangerTiles() {
 		if(platformNum == 1) {
 			return [];
 		}
-		return [At(2,platformLength+1),At(1,platformLength+2)];
+		return [At(2,platformLength+1),At(3,platformLength)];
 	}
 
 	function GetRails() {
@@ -4771,7 +5355,7 @@ class SimpleRailStation extends RailStation {
 	
 	
 	function GetDepotTile() {
-		return At(-1,platformLength);
+		return useDepot ? At(-1,platformLength) : null;
 	}
 	
 	function GetServiceDepotTile() {

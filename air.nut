@@ -270,7 +270,7 @@ class AirRoute extends CommonRoute {
 		} else {
 			local traits = Air.Get().GetAvailableAiportTraits();
 			if(traits.len() >= 1) {
-				return traits[traits.len()-1].stationDateSpan;
+				return traits[traits.len()-1].stationDateSpan + (HogeAI.Get().IsEnableVehicleBreakdowns() ? 10 : 0);
 			} else {
 				return 30;
 			}
@@ -285,6 +285,10 @@ class AirRoute extends CommonRoute {
 			return AIEngine.GetPlaneType(AIVehicle.GetEngineType(vehicle)) == AIAirport.PT_BIG_PLANE;
 		}
 	}
+
+	function OnVehicleLost(vehicle) {
+	}
+	
 	/*
 	function EstimateMaxVehicles(distance, vehicleLength = 0) {
 		local airportTraits = Air.Get().GetAvailableAiportTraits()
@@ -334,7 +338,7 @@ class AirRouteBuilder extends CommonRouteBuilder {
 		return CommonRouteBuilder.Build();
 	}*/
 	
-	function CreateStationFactory(target) { 
+	function CreateStationFactory(target,engineSet) { 
 		return AirportStationFactory([infrastractureType]);
 		/*infrastractureTypeには見積もり結果を使う
 		local airportTypes = GetUsingAirportTypes();
@@ -438,7 +442,6 @@ class ExchangeAirsBuilder {
 		local options = {
 			pendingToDoPostBuild = false
 			destRoute = null
-			noDoRoutePlans = true
 		};
 		local newRoute1 = AirRouteBuilder(s1,d1,cargo,options).DoBuild();
 		if(newRoute1 == null) {
@@ -513,6 +516,9 @@ class AirportStationFactory extends StationFactory {
 			}
 		}
 		return null;
+	}
+	function GetTypeName() {
+		return "AirStation";
 	}
 }
 
@@ -620,18 +626,18 @@ class AirStation extends HgStation {
 	}
 	
 	function IsClosed() {
-		return AIStation.IsAirportClosed(GetAIStation());
+		return AIStation.IsAirportClosed(stationId);
 	}
 	
 	function Open() {
 		if(IsClosed()) {
-			AIStation.OpenCloseAirport(GetAIStation());
+			AIStation.OpenCloseAirport(stationId);
 		}
 	}
 
 	function Close() {
 		if(!IsClosed()) {
-			AIStation.OpenCloseAirport(GetAIStation());
+			AIStation.OpenCloseAirport(stationId);
 		}
 	}
 
@@ -672,6 +678,7 @@ class AirStation extends HgStation {
 			if(route.IsBiDirectional()) {
 				return false;
 			}
+			if(route.GetLatestEngineSet() == null) continue;
 			arrivesPerYear += 365 / route.GetLatestEngineSet().GetInterval();
 			if(arrivesPerYear > 365 / traits.stationDateSpan) {
 				return false;

@@ -140,6 +140,14 @@ class HgArray {
 		return false;
 	}
 	
+	function ToTable() {
+		local result = {};
+		foreach(a in array) {
+			result.rawset(a,a);
+		}
+		return result;
+	}
+	
 	function _tostring() {
 		local result = "";
 		foreach(e in array) {
@@ -284,6 +292,7 @@ class TableUtils {
 		}
 		return keys;
 	}
+
 	static function Extend(table1, table2) {
 		foreach(k,v in table2) {
 			table1.rawset(k,v);
@@ -291,6 +300,89 @@ class TableUtils {
 	}
 }
 
+class HgTable {
+	table = null;
+	
+	constructor(table) {
+		this.table = table;
+	}
+	
+	
+	function _tostring() {
+		local result = "";
+		foreach(k,v in table) {
+			if(result.len() >= 1) {
+				result += ", ";
+			}
+			result += k + "=" + v;
+		}
+		return "{" + result + "}";
+	}
+
+	function Keys() {
+		local result = [];
+		foreach(k,v in table) {
+			result.push(k);
+		}
+		return result;
+	}
+	
+	function Values() {
+		local result = [];
+		foreach(k,v in tbale) {
+			result.push(v);
+		}
+		return result;
+	}
+
+	static function Extend(table1, table2) {
+		foreach(k,v in table2) {
+			table1.rawset(k,v);
+		}
+	}
+
+	static function FromArray(a) {
+		local result = {};
+		foreach(e in a) {
+			result.rawset(e,0);
+		}
+		return result;
+	}
+
+	static function Diff(table1, table2) {
+		local result = {append={},remove={}};
+		foreach(k,v in table1) {
+			if(table2.rawin(k)) continue;
+			result.remove.rawset(k,v); // table1にあってtable2に無い
+		}
+		foreach(k,v in table2) {
+			if(table1.rawin(k)) continue;
+			result.append.rawset(k,v); // table2にあってtable1に無い
+		}
+		return result;
+	}
+
+	
+}
+
+class DefaultTable {
+	table = null;
+	defFunc = null;
+
+	constructor(defFunc, table={}) {
+		this.defFunc = defFunc;
+		this.table = table;
+	}
+	
+	function _get(idx) {
+		if(table.rawin(idx)) {
+			return table.rawget(idx);
+		}
+		local result = defFunc();
+		table.rawset(idx,result);
+		return result;
+	}
+}
 
 class StringUtils {
 	static function SliceMaxLen(str,length) {
@@ -502,17 +594,17 @@ class BuildUtils {
 		},limit);
 	}
 
-	static function RetryUntilFree(func, limit=100) {
+	static function RetryUntilFree(func, limit=100, supressWarning=false) {
 		local i;
 		for(i=0;i<limit;i++) {
 			if(func()) {
-				if(i >= 1) {
+				if(i >= 1 && !supressWarning) {
 					HgLog.Info("RetryUntilFree Succeeded count:"+i);
 				}
 				return true;
 			}
 			if(AIError.GetLastError() == AIError.ERR_VEHICLE_IN_THE_WAY) {
-				if(i==0) {
+				if(i==0 && !supressWarning) {
 					HgLog.Warning("RetryUntilFree(ERR_VEHICLE_IN_THE_WAY) limit:"+limit);
 				}
 				AIController.Sleep(3);
@@ -520,7 +612,7 @@ class BuildUtils {
 			}
 			break;
 		}
-		if(i==limit) {
+		if(i==limit && !supressWarning) {
 			HgLog.Warning("RetryUntilFree limit exceeded:"+limit);
 		}
 		return false;
@@ -594,23 +686,80 @@ class BuildUtils {
 			}
 			return r;
 		}
-		
-	/*
-		local w = 1000;
-		while(true) {
-			if(func()) {
-				return true;
-			}
-			if(AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) {
-				HogeAI.WaitForMoney(w);
-				w *= 2;
-				continue;
-			}
-			break;
-		}
-		return false;*/
 	}
 	
+	static function WaitForMoneyValid(func,valid) {
+		local cost;
+		{
+			local testMode = AITestMode();
+			local accounting = AIAccounting();
+			local r = func();
+			if(r != 0) {
+				if(AIError.GetLastError() != AIError.ERR_NOT_ENOUGH_CASH) {
+					return r; // お金じゃない理由で失敗
+				}
+			}
+			cost = accounting.GetCosts();
+		}
+		if(HogeAI.Get().IsTooExpensive(cost)) {
+			HgLog.Warning("cost too expensive:" + cost);
+			return -1;
+		}
+		while(true) {
+			if(!HogeAI.WaitForPrice(cost)) {
+				return -1;
+			}
+			local r = func();
+			if(!valid(r) && AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 事前チェックしてても失敗する事がある
+				cost += HogeAI.Get().GetInflatedMoney(10000);
+				continue;
+			}
+			return r;
+		}
+	}
+	
+	static function BuildVehicleSafe(a,b) {
+		return BuildUtils.WaitForMoneyValid( function():(a,b) {
+			return AIVehicle.BuildVehicle(a,b);
+		},function(r){ return AIVehicle.IsValidVehicle(r); });
+	}
+
+	static function BuildVehicleWithRefitSafe(a,b,c) {
+		return BuildUtils.WaitForMoneyValid( function():(a,b,c) {
+			return AIVehicle.BuildVehicleWithRefit(a,b,c);
+		},function(r){ return AIVehicle.IsValidVehicle(r); });
+		
+
+	/*
+	static function BuildVehicleWithRefitSafe(a,b,c) {
+		local func = function():(a,b,c) {
+			return AIVehicle.BuildVehicleWithRefit(a, b, c);
+		};
+		local cost;
+		{
+			local testMode = AITestMode();
+			local accounting = AIAccounting();
+			if(func() != 0) {
+				if(AIError.GetLastError() != AIError.ERR_NOT_ENOUGH_CASH) {
+					return null; // お金じゃない理由で失敗
+				}
+			}
+			cost = accounting.GetCosts();
+		}
+		while(true) {
+			if(!HogeAI.WaitForPrice(cost)) {
+				return null;
+			}
+			local r = func();
+			if(!AIVehicle.IsValidVehicle(r) && AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 事前チェックしてても失敗する事がある
+				cost += HogeAI.Get().GetInflatedMoney(10000);
+				continue;
+			}
+			return r;
+		}
+	}*/		
+		
+	}
 	
 	static function LowerTileSafe(a,b) {
 		return BuildUtils.WaitForMoney( function():(a,b) {
@@ -671,34 +820,6 @@ class BuildUtils {
 		});
 	}
 	
-	static function BuildVehicleWithRefitSafe(a,b,c) {
-		local func = function():(a,b,c) {
-			return AIVehicle.BuildVehicleWithRefit(a, b, c);
-		};
-		local cost;
-		{
-			local testMode = AITestMode();
-			local accounting = AIAccounting();
-			if(func() != 0) {
-				if(AIError.GetLastError() != AIError.ERR_NOT_ENOUGH_CASH) {
-					return null; // お金じゃない理由で失敗
-				}
-			}
-			cost = accounting.GetCosts();
-		}
-		while(true) {
-			if(!HogeAI.WaitForPrice(cost)) {
-				return null;
-			}
-			local r = func();
-			if(!AIVehicle.IsValidVehicle(r) && AIError.GetLastError() == AIError.ERR_NOT_ENOUGH_CASH) { // 事前チェックしてても失敗する事がある
-				cost += HogeAI.Get().GetInflatedMoney(10000);
-				continue;
-			}
-			return r;
-		}
-	}
-	
 	static function DemolishTileSafe(a) {
 		return BuildUtils.WaitForMoney( function():(a) {
 			return AITile.DemolishTile(a);
@@ -750,60 +871,6 @@ class BuildUtils {
 
 }
 
-class RailUtils {
-	static straightTracks = [AIRail.RAILTRACK_NW_NE, AIRail.RAILTRACK_SW_SE, AIRail.RAILTRACK_NW_SW, AIRail.RAILTRACK_NE_SE];
-
-	static function IsStraightTrack(track) {
-		foreach(t in RailUtils.straightTracks) {
-			if(t == track) {
-				return true;
-			}
-		}
-		return false;
-	}
-}
-
-class HgTable {
-	table = null;
-	
-	constructor(table) {
-		this.table = table;
-	}
-	
-	function _tostring() {
-		local result = "";
-		foreach(k,v in table) {
-			if(result.len() >= 1) {
-				result += ", ";
-			}
-			result += k + "=" + v;
-		}
-		return "{" + result + "}";
-	}
-
-	static function Extend(table1, table2) {
-		foreach(k,v in table2) {
-			table1.rawset(k,v);
-		}
-	}
-
-	static function FromArray(a) {
-		local result = {};
-		foreach(e in a) {
-			result.rawset(e,0);
-		}
-		return result;
-	}
-	
-	static function Keys(table) {
-		local result = [];
-		foreach(k,v in table) {
-			result.push(k);
-		}
-		return result;
-	}
-}
-
 
 class Container {
 	instance = null;
@@ -849,44 +916,6 @@ class GeneratorContainer {
 	}
 }
 
-class DelayCommandExecuter {
-	static container = Container();
-	static function Get() {
-		return DelayCommandExecuter.container.instance;
-	}
-	
-	list = null;
-	
-	constructor() {
-		DelayCommandExecuter.container.instance = this;
-		list = [];
-	}
-	
-	function Post(delayDate, func) {
-		list.push([delayDate + AIDate.GetCurrentDate(), func]);
-	}
-	
-	function Check() {
-		local today = AIDate.GetCurrentDate();
-		local deletes = [];
-		foreach(e in list) {
-			if(e[0] < today) {
-				e[1]();
-				deletes.push(e);
-			}
-		}
-		if(deletes.len() >= 1) {
-			deletes = HgArray(deletes);
-			local newList = [];
-			foreach(e in list) {
-				if(!deletes.Contains(e)) {
-					newList.push(e);
-				}
-			}
-			list = newList;
-		}
-	}
-}
 
 class PerformanceCounter {	
 	static table = {};
@@ -937,6 +966,18 @@ class PerformanceCounter {
 	}
 }
 
+
+class HgVehicleType {
+	vehicleType = null;
+	
+	constructor(vehicleType) {
+		this.vehicleType = vehicleType;
+	}
+	
+	function _tostring() {
+		return VehicleUtils.GetTypeName(vehicleType);
+	}
+}
 
 class VehicleUtils {
 	static function GetTypeName(vehicleType) {
@@ -993,11 +1034,15 @@ class VehicleUtils {
 		return slopedWeight * HogeAI.Get().GetTrainSlopeSteepness() * 100 + totalWeight * 10 + totalWeight * 15;
 	}
 	
+	static function GetAirDrag(speed, maxSpeed, numParts) {
+		local airDragValue = min(192, max(1,2048 / maxSpeed));
+		local airDragCoefficient = 14 * airDragValue * (1 + numParts * 3 / 20) / 1000.0;
+		return (airDragCoefficient * speed * speed).tointeger();
+	}
+	
 	static function GetRoadSlopeForce(weight) {
 		return weight * HogeAI.Get().GetRoadvehSlopeSteepness() * 100 + weight * 10 + weight * 75;
 	}
-	
-	 
 	
 	static function GetForce(maxTractiveEffort, power, requestSpeed) {
 		if(requestSpeed == 0) {
@@ -1008,6 +1053,8 @@ class VehicleUtils {
 	}
 	
 	static function GetAcceleration(slopeForce, requestSpeed, tractiveEffort, power, towalWeight) {
+		// (km/h per 0.5tick) / 256 (1day=74tick)
+		// 1tickに2回1/256単位で速度更新を行う。1日経つと、a*148/256だけ速度が増加
 		local engineForce = VehicleUtils.GetForce(tractiveEffort, power, requestSpeed);
 		return (engineForce - slopeForce) / (towalWeight * 4);
 	}
@@ -1035,11 +1082,24 @@ class VehicleUtils {
 		return VehicleUtils.GetSlopeForce(maxSlopedWeight, towalWeight);
 	}
 
-	static function AdjustTrainScoreBySlope(score, engine, start, end) {
-		local considerSlope = AIEngine.GetMaxTractiveEffort(engine) < HogeAI.Get().GetTrainSlopeSteepness() * 50;
-		if(considerSlope) {
-			local slopeLevel = HgTile(start).GetSlopeLevel(HgTile(end));
+	static function AdjustTrainScoreBySlope(score, engine, start, end, isBiDirectional = false) {
+		local considerSlopeLevel = 0;
+		local slopeSteepness = HogeAI.Get().GetTrainSlopeSteepness();
+		if(AIEngine.GetMaxTractiveEffort(engine) < slopeSteepness * 50) {
+			considerSlopeLevel = 2;
+		} else if(HogeAI.Get().mountain && AIEngine.GetPower(engine) < slopeSteepness * 600) {
+			considerSlopeLevel = 1;
+		} else {
+			return score;
+		}
+		local slopeLevel = HgTile(start).GetSlopeLevel(HgTile(end));
+		if(considerSlopeLevel == 2) {
 			score = score * 8 / (8 + slopeLevel-4);
+		} else {
+			score = score * 16 / (16 + max(0,slopeLevel-4));
+		}
+		if(isBiDirectional) {
+			return VehicleUtils.AdjustTrainScoreBySlope(score, engine, end, start, false);
 		}
 		return score;
 	}
@@ -1072,6 +1132,7 @@ class VehicleUtils {
 
 class CargoUtils {
 	static isDelivableCache = ExpirationTable(365);
+	static supplyCargos = {};
 
 	/*TODO: rateでの補正は呼び出し元でやる
 	static function GetStationRate(cargo, maxSpeed) { // 255 == 100%
@@ -1109,34 +1170,36 @@ class CargoUtils {
 	
 	static function GetStationRateWaitTimeFullLoad(prodictionPerMonth, initialRate, capacity, maxSpeed) {
 		local prodPerDay = prodictionPerMonth.tofloat() / 30;
-		local capacityTime = capacity / prodPerDay;
 		local iniRate = initialRate / 255.0;
 		local endRate = (CargoUtils.GetStationRate(maxSpeed) + 170) / 255.0;
 		local a = 0.0078; // 0.78%/day //0.003137; //0.8 / 255;
 		local t0 = abs(endRate - iniRate) / a; // rateが上がりきるまでの日数
 		local c0 = (iniRate + endRate) / 2 * t0 * prodPerDay ; // t0の間に増えるproduction
-		if(capacityTime < t0) {
+		if(capacity < c0) {
 			local iniProd = iniRate * prodPerDay;
-			local aProd = a * prodPerDay;
-			local t = (-iniProd+pow(iniProd * iniProd + 2 * aProd * capacity, 0.5)) / aProd;
+			//local aProd = a * prodPerDay;
+			//local t = (-iniProd+pow(iniProd * iniProd + 2 * aProd * capacity, 0.5)) / aProd;
+			local t = capacity / (prodPerDay * iniRate); // 軽量化のための近似
 			local rate = (iniRate + t * a) * 255;
-			//HgLog.Info("FullLoad 1 prod:"+prodPerDay+" capa:"+capacity+" iniRate:"+iniRate+" rate:"+(rate/255)+" t:"+t);
+			if(rate > endRate) rate = endRate;
+			//HgLog.Info("FullLoad 1 prod:"+prodPerDay+" capa:"+capacity+" iniProd:"+iniProd+" rate:"+(rate/255)+" t:"+t);
 			return [rate.tointeger(), t.tointeger()];
 		} else {
-			local t = t0 + (capacity - c0) / endRate; // rateが上がりきる日数 + 上がりきってから溜まるまでの日数
+			local t = t0 + (capacity - c0) / (endRate * prodPerDay); // rateが上がりきる日数 + 上がりきってから溜まるまでの日数
 			local rate = endRate * 255;
 			//HgLog.Info("FullLoad 2 prod:"+prodPerDay+" capa:"+capacity+" iniRate:"+iniRate+" rate:"+(rate/255)+" t:"+t);
 			return [rate.tointeger(), t.tointeger()];
 		}
 	}
 	
-	static function GetStationRateStock(cargo, production, initialRate, vehicleType, maxSpeed, intervalDays) {
+	static function GetStationRateStock(cargo, production, initialRate, vehicleType, maxSpeed, iniIntervalDays) {
+		local intervalDays = iniIntervalDays;
 		local productionPerDay = production.tofloat() / 30;
 		local stationRate = CargoUtils.GetStationRate(maxSpeed);
 		local result = 0;
 		local oldRate = initialRate;
 		// 評価の低下や、stockの増加による在庫廃棄は計算していない
-		foreach(d in [[7,130],[8,95],[15,50],[22,25],[IntegerUtils.IntMax,0]]) {
+		foreach(d in [[7,130],[8,95],[15,50],[22,25],[1000000,0]]) {
 			local day = d[0] * (vehicleType == AIVehicle.VT_WATER ? 4 : 1);
 			local rate = stationRate + d[1] + CargoUtils.GetStockStationRate(result); // stockの増加によって途中で下がるrate分はとりあえず無視
 			local truncate = 0;
@@ -1154,7 +1217,7 @@ class CargoUtils {
 			oldRate = rate;
 			local receiveDay = min(intervalDays,day);
 			local receive = (receiveDay * (oldRate + rate) / 2 * productionPerDay / 255).tointeger();
-			if(HogeAI.Get().ecs) {
+			if(HogeAI.Get().ecs && !CargoUtils.IsPaxOrMail(cargo)) {
 				if(rate < 179/*70%*/) {
 					receive /= 4; // ecsでは70%いかないと生産量がとても下がる
 				}
@@ -1169,7 +1232,7 @@ class CargoUtils {
 				return [rate ,result];
 			}
 		}
-		HgLog.Error("Bug");
+		assert(false);
 	}
 
 	static function GetStockStationRate(stock) {
@@ -1215,7 +1278,7 @@ class CargoUtils {
 		if(CargoUtils.isDelivableCache.rawin(cargo)) {
 			return CargoUtils.isDelivableCache.rawget(cargo);
 		}
-		foreach(vt in Route.GetAvailableVehicleTypes()) {
+		foreach(vt,_ in Route.GetAvailableVehicleTypes()) {
 			local engineList = AIEngineList(vt);
 			engineList.Valuate(AIEngine.CanRefitCargo, cargo);
 			engineList.KeepValue(1);
@@ -1228,6 +1291,20 @@ class CargoUtils {
 		}
 		CargoUtils.isDelivableCache.rawset(cargo,false);
 		return false;
+	}
+
+	static function IsSupplyCargo(cargo) {
+		if(!CargoUtils.supplyCargos.rawin("initialized")) {
+			foreach(industryType,_ in AIIndustryTypeList()) {
+				if(AIIndustryType.IsRawIndustry(industryType)) {
+					foreach(cargo,_ in AIIndustryType.GetAcceptedCargo(industryType)) {
+						CargoUtils.supplyCargos.rawset(cargo,cargo);
+					}
+				}
+			}
+			CargoUtils.supplyCargos.rawset("initialized",true);
+		}
+		return CargoUtils.supplyCargos.rawin(cargo);
 	}
 
 }
