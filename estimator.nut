@@ -1674,6 +1674,7 @@ class TrainEstimator extends Estimator {
 					// cruiseSpeedに到達するまで、平均cruiseSpeed/2の速度で走行していると仮定
 					// それまでcruiseSpeed/2の時の加速度で等加速度運動していると仮定
 					local accelerationFlat = trainPlan.GetAcceleration(cruiseSpeed/2, 0);
+					if(accelerationFlat<=1) continue;
 					local startDays = cruiseSpeed / (accelerationFlat / 2);
 //					local startDays = 8.0 / (trainPlan.GetPower().tofloat() / trainPlan.GetWeight().tofloat()) * cruiseSpeed / 100;
 					local startDistance = VehicleUtils.GetDistance(cruiseSpeed/2, startDays).tointeger();
