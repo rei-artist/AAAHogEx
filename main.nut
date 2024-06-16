@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 84;
+	static version = 85;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -3184,6 +3184,10 @@ class HogeAI extends AIController {
 			srcCruiseDays += src.days;
 		}
 		local sourcesNum = sources.len();
+		if(sourcesNum == 0) {
+			HgLog.Warning("SearchAndBuildAdditionalDest sourcesNum == 0 "+route);
+			return null;
+		}
 		x /= sourcesNum;
 		y /= sourcesNum;
 		srcCruiseDays /= sourcesNum;
