@@ -566,7 +566,6 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 			srcRoute.isBuilding = true; //ネットワークが不完全なのでこれをしないとルートがRemove()される
 			local destRoute = TrainRouteBuilder( dest, srcRoute.destHgStation.stationGroup, cargo, {
 				searchTransfer = true
-				noDoRoutePlans = true
 				canChangeDest = false
 				setRouteCandidates = GetOption("setRouteCandidates",null)
 				notUseSingle = true
@@ -584,7 +583,6 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 				searchTransfer = true
 				isWaitingProduction = true
 				production = 100
-				noDoRoutePlans = true
 				setRouteCandidates = GetOption("setRouteCandidates",null)
 				notUseCompoundRoute = true } ).Build();
 			if(destRoute == null) {
