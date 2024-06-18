@@ -159,7 +159,7 @@ class RoadRoute extends CommonRoute {
 		
 		while(true) {
 			local speed = (maxSpeed + minSpeed) / 2;
-			if(maxSpeed - minSpeed < 5) {
+			if(speed<=3 || maxSpeed - minSpeed < 5) {
 				return speed;
 			}
 			local rollingFriction = (coeff * (128 + speed) / 128) * weight;
