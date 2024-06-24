@@ -1005,6 +1005,7 @@ class TrainRoute extends Route {
 		}
 		if( AIOrder.GetOrderCount(newTrain) == 0 ) {
 			HgLog.Warning("AIOrder.GetOrderCount(newTrain) == 0(BuildNewTrain)"+this);
+			AIVehicle.SellWagonChain(newTrain, 0);
 			return false;
 		}
 		if(!AIVehicle.StartStopVehicle(newTrain)) {
@@ -1062,7 +1063,10 @@ class TrainRoute extends Route {
 		if(IsSingle()) {
 			return;
 		}
-		
+		if(!engineVehicles.rawin(latestEngineVehicle)) {
+			HgLog.Warning("CloneAndStartTrain failed. !engineVehicles.rawin(latestEngineVehicle) "+this);
+			return;
+		}
 		local oldCargoCapacity = engineVehicles[latestEngineVehicle].cargoCapacity;
 		local engineSet = ChooseEngineSet();
 		if(!HasVehicleEngineSet(latestEngineVehicle, engineSet)) {
