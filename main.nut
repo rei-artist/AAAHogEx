@@ -1312,6 +1312,7 @@ class HogeAI extends AIController {
 		foreach(route in Route.GetAllRoutes()) {
 			if(route.IsClosed() || route.IsTransfer() || route.destHgStation.place == null) continue;
 			local place = route.destHgStation.place.GetProducing();
+			if(place.IsClosed()) continue;
 			if(place instanceof HgIndustry) {
 				foreach(cargo in place.GetCargos()) {
 					if(place.GetLastMonthTransportedPercentage(cargo)>0) continue;
@@ -1382,6 +1383,7 @@ class HogeAI extends AIController {
 						HgLog.Warning("estimate too slow");
 						break;
 					}
+					if(place.IsClosed()) continue;
 /*					if(!place.CanUseNewRoute(cargo, vehicleType)) {
 						//HgLog.Warning("!CanUseNewRoute place:"+place.GetName()+" cargo:"+AICargo.GetName(cargo));
 						continue;

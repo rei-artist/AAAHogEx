@@ -1088,7 +1088,7 @@ class Route {
 		return this.cargo == cargo; // このルートが追加で運ぶ事ができるcargoか
 	}
 
-	function IsShortPath(cargo, src, dest) {
+	function IsShortCircuit(cargo, src, dest) {
 		// 短絡のチェック
 		local dist = GetDistance();
 		local srcTile = src.GetLocation();
@@ -1103,6 +1103,7 @@ class Route {
 				local cargoDist = AIMap.DistanceManhattan(sTile, dTile);
 				local pathDist = dist + AIMap.DistanceManhattan(sTile, srcTile) + AIMap.DistanceManhattan(dTile, destTile);
 				if(cargoDist < pathDist / 2) {
+					HgLog.Info("IsShortCircuit["+AICargo.GetName(cargo)+"]=true "+d+"<="+s+" "+this);
 					return true;
 				}
 			}
@@ -1166,8 +1167,7 @@ class Route {
 					HgLog.Info("CanUseNewRoute["+AICargo.GetName(subCargo)+"]=false "+this);
 					continue;
 				}
-				if(IsShortPath(subCargo, src, dest)) {
-					HgLog.Info("IsShortPath["+AICargo.GetName(subCargo)+"]=true "+this);
+				if(IsShortCircuit(subCargo, src, dest)) {
 					continue;
 				}
 				result.push(subCargo);

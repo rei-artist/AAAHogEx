@@ -2164,15 +2164,15 @@ class TrainRoute extends Route {
 		} else if(isClosed || reduceTrains) {
 			if(isRemoved || latestEngineVehicle != engineVehicle) { //reopenに備えてlatestEngineVehicleだけ残す
 				SellVehicle(engineVehicle);
-				if(GetNumVehicles()==0) {
-					HgLog.Warning("All vehicles removed."+this);
-					if(isRemoved) {
-						RemoveFinished();
-					}
-				}
 			}
 		} else {
 			SellVehicle(engineVehicle);
+		}
+		if(GetNumVehicles()==0) {
+			HgLog.Warning("All vehicles removed."+this);
+			if(isRemoved) {
+				RemoveFinished();
+			}
 		}
 	}
 
@@ -2523,7 +2523,7 @@ class TrainRoute extends Route {
 
 	function OnVehicleLost(vehicle) {
 		HgLog.Warning("RailRoute OnVehicleLost  "+this);
-		SendVehicleToDepot(vehicle);
+		// SendVehicleToDepot(vehicle); 全部いなくなる事がある
 	}
 }
 
