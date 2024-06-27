@@ -2817,8 +2817,11 @@ class CommonRoute extends Route {
 									}
 								}
 							}
+						}						
+						if(latestEngineSet.price > 0) {
+							buildNum = min(HogeAI.Get().GetUsableMoney() / latestEngineSet.price ,buildNum);
 						}
-						buildNum = max(min(HogeAI.Get().GetUsableMoney() / latestEngineSet.price ,buildNum),1);
+						buildNum = max(buildNum,1);
 
 						//HgLog.Info("CloneRoadVehicle:"+buildNum+" "+this);
 						local startDate = AIDate.GetCurrentDate();
