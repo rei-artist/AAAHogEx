@@ -36,7 +36,7 @@ Estimation <- {
 	}
 	
 	function GetInterval() {
-		return (cruiseDays + loadingTime) * 2 / maxVehicles;
+		return max(1,(cruiseDays + loadingTime) * 2 / maxVehicles);
 	}
 
 	function CalculateIncome() {
