@@ -989,7 +989,7 @@ class Route {
 
 	// return: false or route instance
 	function GetDestRoute() { 
-		if(destRoute != null && destRoute.IsRemoved()) {
+		if(destRoute != null && destRoute != false && destRoute.IsRemoved()) {
 			destRoute = null;
 		}
 		if(destRoute == null) {
