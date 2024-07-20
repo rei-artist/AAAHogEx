@@ -1121,7 +1121,7 @@ class TrainRoute extends Route {
 			HgLog.Warning("CloneVehicle failed. "+latestVehicleName+ " "+HgTile(depotTile)+" "+AIError.GetLastErrorString()+" "+this);
 			return null;
 		}
-		AIGroup.MoveVehicle(vehicleGroup, latestEngineVehicle);
+		AIGroup.MoveVehicle(vehicleGroup, engineVehicle);
 		if( AIOrder.GetOrderCount(engineVehicle) == 0 ) {
 			HgLog.Warning("AIOrder.GetOrderCount(engineVehicle) == 0 "+latestVehicleName+ " "+this);
 			return null;

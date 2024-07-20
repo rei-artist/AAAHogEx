@@ -989,6 +989,9 @@ class Route {
 
 	// return: false or route instance
 	function GetDestRoute() { 
+		if(destRoute != null && destRoute.IsRemoved()) {
+			destRoute = null;
+		}
 		if(destRoute == null) {
 			local destRoutes = GetDestRoutes();
 			if(destRoutes.len() == 0) {

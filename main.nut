@@ -2227,15 +2227,17 @@ class HogeAI extends AIController {
 								t.routeClass <- routeClass;
 								t.cargo <- cargo;
 								t.dest <- nextRoute.srcHgStation.stationGroup;
-								t.src <- srcInfo.place;
-								t.srcPlace <- srcInfo.place;
-								t.distance <- AIMap.DistanceManhattan(placeTile, t.dest.GetLocation());
-								if(t.distance <= maxDistance) {
-									t.production <- min(nextRoute.GetLeftCapacity(cargo), production);
-									t.useLastMonthProduction <- useLastMonthProduction;
-									//HgLog.Info("additionalSrcPlace:"+t.srcPlace.GetName()+" dest:"+t.dest+ " production:"+t.production+"["+AICargo.GetName(t.cargo)+"] distance:"+t.distance+" vt:"+routeClass.GetLabel()+" isDest:"+isDest+" for:"+route);
-									additionalPlaces.push(t);
-									exists = true;
+								if(t.dest != null) { //念のため
+									t.src <- srcInfo.place;
+									t.srcPlace <- srcInfo.place;
+									t.distance <- AIMap.DistanceManhattan(placeTile, t.dest.GetLocation());
+									if(t.distance <= maxDistance) {
+										t.production <- min(nextRoute.GetLeftCapacity(cargo), production);
+										t.useLastMonthProduction <- useLastMonthProduction;
+										//HgLog.Info("additionalSrcPlace:"+t.srcPlace.GetName()+" dest:"+t.dest+ " production:"+t.production+"["+AICargo.GetName(t.cargo)+"] distance:"+t.distance+" vt:"+routeClass.GetLabel()+" isDest:"+isDest+" for:"+route);
+										additionalPlaces.push(t);
+										exists = true;
+									}
 								}
 							}
 						}
