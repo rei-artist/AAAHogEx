@@ -3181,8 +3181,8 @@ class HogeAI extends AIController {
 		local sources = srcStationGroup.GetSources(route.cargo);
 		foreach(src in sources) { //TODO: 複数cargo
 			local location = src.stationGroup.GetLocation();
+			if(location == null) continue;
 			srcLocations.push(location);
-			//if(location == null) continue;
 			x += AIMap.GetTileX(location);
 			y += AIMap.GetTileY(location);
 			srcCruiseDays += src.days;
