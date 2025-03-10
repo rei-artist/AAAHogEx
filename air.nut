@@ -17,6 +17,7 @@ class Air {
 			runways = 1
 			stationDateSpan = 20
 			cost = 5500
+			maintenanceCost = 59000
 		},{
 			level = 2
 			airportType = AIAirport.AT_COMMUTER
@@ -26,6 +27,7 @@ class Air {
 			runways = 1
 			stationDateSpan = 16
 			cost = 10000
+			maintenanceCost = 169000
 		},{
 			level = 3
 			airportType = AIAirport.AT_LARGE
@@ -35,6 +37,7 @@ class Air {
 			runways = 1
 			stationDateSpan = 10
 			cost = 16000
+			maintenanceCost = 202000
 		},{
 			level = 4
 			airportType = AIAirport.AT_METROPOLITAN
@@ -44,6 +47,7 @@ class Air {
 			runways = 2
 			stationDateSpan = 8
 			cost = 17000
+			maintenanceCost = 236000
 		},{
 			level = 5
 			airportType = AIAirport.AT_INTERNATIONAL
@@ -53,6 +57,7 @@ class Air {
 			runways = 2
 			stationDateSpan = 5
 			cost = 22000
+			maintenanceCost = 354000
 		},{
 			level = 6
 			airportType = AIAirport.AT_INTERCON
@@ -62,6 +67,7 @@ class Air {
 			runways = 4
 			stationDateSpan = 4
 			cost = 46000
+			maintenanceCost = 607000
 		}
 	];
 	static allAirportTypes = [
@@ -218,7 +224,11 @@ class AirRoute extends CommonRoute {
 		if(!HogeAI.Get().IsInfrastructureMaintenance()) {
 			return 0;
 		}
-		return max(InfrastructureCost.Get().GetCostPerAirport() * 2, HogeAI.Get().GetInflatedMoney(150000));
+		local result = InfrastructureCost.Get().GetCostPerAirport();
+		if(result == 0) {
+			return HogeAI.GetInflatedMoney(Air.Get().GetAiportTraits(infrastractureType).maintenanceCost * 2);
+		}
+		return result * 2;
 	}
 
 	function GetPathDistance() {
@@ -619,7 +629,8 @@ class AirStation extends HgStation {
 	}
 
 	function Demolish() {
-		if(!AIAirport.RemoveAirport(platformTile)) {
+		local execMode = AIExecMode();
+		if(!BuildUtils.RemoveAirportSafe(platformTile)) {
 			HgLog.Warning("AIAirport.RemoveAirport failed "+this+" "+AIError.GetLastErrorString());
 		}
 		return true;

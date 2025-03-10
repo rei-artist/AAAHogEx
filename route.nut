@@ -1327,12 +1327,14 @@ class Route {
 			if(!IsClosed() && !acceptedCargo) {
 				HgLog.Warning("Route Close (dest can not accept)"+this);
 				saveData.lastDestClosedDate = lastDestClosedDate = AIDate.GetCurrentDate();
+				Close();
+				/*  転送等うまくいっていればIsValidDestStationCargoはfalseにならない
 				local destPlace = destHgStation.place.GetProducing();
 				if(destPlace instanceof HgIndustry && !destPlace.IsClosed()) {
 					Close();
 				} else if(destPlace instanceof TownCargo) { //街の受け入れ拒否は一時的なものと判断
 					Close();
-				}
+				}*/
 			} else if(IsClosed() && acceptedCargo) {
 				ReOpen();
 			}
@@ -3832,6 +3834,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			route.isSrcTransfer = IsSrcTransfer();
 			route.isBiDirectional = isBiDirectional;
 			route.isWaitingProduction = isWaitingProduction;
+			route.isBuilding = true;
 			
 			if(HogeAI.Get().openttdVersion >= 14 && route.GetVehicleType() == AIVehicle.VT_WATER && route.isTransfer) {
 				local finalDest = route.GetFinalDestStationForWater();
@@ -3846,6 +3849,7 @@ class CommonRouteBuilder extends RouteBuilder {
 					Place.AddNgPathFindPair(src, dest, vehicleType);
 					HgLog.Warning("BuildDepot failed."+this);
 					Rollback();
+					route.isBuilding = false;
 					return null;
 				}
 				if(!isNotRemoveDepot) {
@@ -3861,12 +3865,18 @@ class CommonRouteBuilder extends RouteBuilder {
 			ClearRollback();
 			route.instances.push(route); // ChooseEngine内、インフラコスト計算に必要
 			if(!isWaitingProduction) {
-				route.BuildVehicleFirst();
+				if(route.BuildVehicleFirst() == null && HogeAI.Get().IsInfrastructureMaintenance()) {
+					HgLog.Warning("route Remove.(route.BuildVehicleFirst() == null && IsInfrastructureMaintenance)"+route);
+					route.isBuilding = false;
+					route.Remove();
+					return null;
+				}
 			} else {
 				route.SetLatestEngineSet(engineSet);
 			}
 			HgLog.Info("CommonRouteBuilder.Build succeeded."+route);
 			
+			route.isBuilding = false;
 			return route;
 			
 		}
@@ -4014,7 +4024,9 @@ class InfrastructureCost {
 	}
 	
 	function GetCostPerAirport() {
-		return GetCostPerPiece(AIInfrastructure.INFRASTRUCTURE_AIRPORT);
+		local result = GetCostPerPiece(AIInfrastructure.INFRASTRUCTURE_AIRPORT);
+		//HgLog.Info("GetCostPerPiece(AIInfrastructure.INFRASTRUCTURE_AIRPORT):"+result);
+		return result;
 	}
 	
 	function GetCostPerRoad(roadType) {

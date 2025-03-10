@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 92;
+	static version = 93;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -880,7 +880,7 @@ class HogeAI extends AIController {
 		local buildingStartDate = AIDate.GetCurrentDate();
 		while(routeCandidates.Count() >= 1){
 			local t = routeCandidates.Pop();
-			if(t.vehicleType != AIVehicle.VT_AIR) { //airの場合迅速にやらないといけないので
+			if(t.vehicleType != AIVehicle.VT_AIR || IsInfrastructureMaintenance()) { //airの場合迅速にやらないといけないので
 				DoInterval(); 
 			}
 			local builder = CreateBuilder(t,pendingPlans,dirtyPlaces,limitDate);
@@ -1355,45 +1355,20 @@ class HogeAI extends AIController {
 				local cargoResult = [];
 				local maxValue = 0;
 				local vehicleType = routeClass.GetVehicleType();
-				local vtPlaceList = AIList();
-				vtPlaceList.AddList(placeList);
-				vtPlaceList.Valuate(function(placeIndex):(places,cargo,vehicleType) {
-					local place = places[placeIndex];
-					return place.CanUseNewRoute(cargo, vehicleType) && !Place.IsNgPlace(place, cargo, vehicleType);
-				});
-				vtPlaceList.KeepValue(1);
-				if(vehicleType == AIVehicle.VT_AIR) {
-					vtPlaceList.Valuate(function(placeIndex):(places,cargo,minimumAiportType) {
-						local place = places[placeIndex];
-						return place.CanBuildAirport(minimumAiportType, cargo);
-					});
-					vtPlaceList.KeepValue(1);
-				}
-				/* 重い
-				vtPlaceList.Valuate(function(placeIndex):(places,cargo,vehicleType) {
-					local place = places[placeIndex];
-					return place.GetFutureExpectedProduction(cargo,vehicleType);
-				});
-				vtPlaceList.RemoveValue(0);*/
 				if(roiBase) stdProduction = 0;
-				local startDate = AIDate.GetCurrentDate();
-				foreach(placeIndex,_ in vtPlaceList) {
-					local place = places[placeIndex];
-					if(startDate + 2 < AIDate.GetCurrentDate()) {
+				local endDate = AIDate.GetCurrentDate() + 2;
+				foreach(place in places) {
+					if(endDate < AIDate.GetCurrentDate()) {
 						HgLog.Warning("estimate too slow");
 						break;
 					}
+					if(!place.CanUseNewRoute(cargo, vehicleType) || Place.IsNgPlace(place, cargo, vehicleType)) {
+						continue;
+					}
+					if(vehicleType == AIVehicle.VT_AIR) {
+						if(!place.CanBuildAirport(minimumAiportType, cargo)) continue;
+					}
 					if(place.IsClosed()) continue;
-/*					if(!place.CanUseNewRoute(cargo, vehicleType)) {
-						//HgLog.Warning("!CanUseNewRoute place:"+place.GetName()+" cargo:"+AICargo.GetName(cargo));
-						continue;
-					}
-					if(Place.IsNgPlace(place, cargo, vehicleType)) {
-						continue;
-					}
-					if(vehicleType == AIVehicle.VT_AIR && !place.CanBuildAirport(minimumAiportType, cargo)) {
-						continue;
-					}*/
 					
 					local production = place.GetExpectedProduction( cargo, vehicleType, false );
 					if(production == 0) {
@@ -3927,6 +3902,7 @@ class HogeAI extends AIController {
 					foreach(pathfinding,_ in pathfindings) {
 						pathfinding.OnIndustoryClose(event.GetIndustryID());
 					}
+					Place.DeletePlaceChaceIndustry(event.GetIndustryID());
 					break;
 				case AIEvent.ET_INDUSTRY_OPEN:
 					event = AIEventIndustryOpen.Convert(event);
@@ -4166,6 +4142,7 @@ class HogeAI extends AIController {
 				HgLog.Info("wait for money:"+needMoney+" "+reason);
 				local emergency = HogeAI.GetUsableMoney() < 0;
 				foreach(route in Route.GetAllRoutes()) {
+					if(route.isBuilding) continue; // first buildの最中に呼ばれて、first vehicleがsellされる事がある
 					if(route instanceof CommonRoute) {
 						route.SellVehiclesStoppedInDepots();
 						route.CheckNotProfitableOrStopVehicle(emergency);

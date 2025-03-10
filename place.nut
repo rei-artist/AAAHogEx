@@ -1212,6 +1212,12 @@ class Place {
 		return result;
 	}
 	
+	// TODO: industry以外のplaceが無効化した時にもcacheを消さないと誤動作するかも？idが再利用されるなら。
+	static function DeletePlaceChaceIndustry(industryId) {
+		Place.placeCache.rawdelete("Industry:" + industryId + ":true");
+		Place.placeCache.rawdelete("Industry:" + industryId + ":false");
+	}
+	
 	cache = null;
 	
 	function GetGId() {

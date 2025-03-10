@@ -856,6 +856,11 @@ class BuildUtils {
 	}
 
 
+	static function RemoveAirportSafe(tile) {
+		return BuildUtils.BuildSafe( function():(tile) {
+			return AIAirport.RemoveAirport(tile);
+		});
+	}
 	
 	static function GetClearWaterCost() {
 		local testMode = AITestMode();
