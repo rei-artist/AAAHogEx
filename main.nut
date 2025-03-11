@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 93;
+	static version = 94;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -1910,8 +1910,9 @@ class HogeAI extends AIController {
 			}
 			foreach(t in transferPlans) {
 				DoInterval();
-				//HgLog.Info("place:"+t.place.GetName()+" cost:"+t.cost+" dist:"+t.distance+" score:"+t.score);
+				//HgLog.Info("transferPlans t.src:"+t.src+" dist:"+t.distance+" prod:"+t.production+" cargo:"+AICargo.GetName(t.cargo)+" "+t.routeClass.GetVehicleType());
 				if(t.src instanceof Place && !t.src.CanUseNewRoute(t.cargo, t.vehicleType)) {
+					//HgLog.Info("!t.src.CanUseNewRoute");
 					continue;
 				}
 				
@@ -1919,6 +1920,7 @@ class HogeAI extends AIController {
 				local infrastractureTypes = t.routeClass.GetSuitableInfrastractureTypes(t.src, t.dest, t.cargo);
 				local estimate = Route.Estimate( t.routeClass.GetVehicleType(), t.cargo, t.distance, t.production, false, infrastractureTypes );
 				//c1.Stop();
+				//HgLog.Info("estimate:"+estimate);
 				if(estimate != null) { // TODO: Estimate()はマイナスの場合も結果を返すべき
 					//local c2 = PerformanceCounter.Start("estimate2"+t.routeClass.GetLabel());
 					estimate = clone estimate;
@@ -2095,7 +2097,7 @@ class HogeAI extends AIController {
 			minProduction = 1;
 		}
 		if(roiBase) {
-			maxDistance = max(50,min(maxDistance, route.GetDistance() / 2));
+			maxDistance = max(100,min(maxDistance, route.GetDistance() / 2));
 		}
 		if(route.IsTransfer()) {
 			local finalRoute = route.GetFinalDestRoute();
@@ -2152,8 +2154,9 @@ class HogeAI extends AIController {
 				+" "+hgStation.GetName()+"["+AICargo.GetName(cargo)+"] maxDistance:"+maxDistance+" final:"+dests[0]);
 			foreach(srcInfo in srcPlaceInfos) {
 				local place = srcInfo.place;
+				//HgLog.Info("place:"+place+" dist:"+srcInfo.distance);
 				if(!place.CanUseNewRoute(cargo, vehicleType)) {
-					HgLog.Info("!CanUseTransferRoute ["+AICargo.GetName(cargo)+"] "+route);
+					HgLog.Info("!CanUseTransferRoute ["+AICargo.GetName(cargo)+"] "+place);
 					continue;
 				}
 				
@@ -4207,7 +4210,7 @@ class HogeAI extends AIController {
 	}
 
 	function IsTooExpensive(cost) {
-		return HogeAI.GetQuarterlyIncome() < cost && HogeAI.GetUsableMoney() < cost;
+		return HogeAI.GetQuarterlyIncome(4) < cost && HogeAI.GetUsableMoney() < cost;
 	}
 	
 	function HasIncome(money) {
@@ -4301,6 +4304,11 @@ class HogeAI extends AIController {
 	function IsEnableVehicleBreakdowns() {
 		return AIGameSettings.GetValue("difficulty.vehicle_breakdowns") >= 1;
 	}
+	
+	function GetVehicleBreakdownDifficulty() {
+		return AIGameSettings.GetValue("difficulty.vehicle_breakdowns");
+	}
+	
 
 	function IsDistantJoinStations() {
 		return isDistantJoinStations;

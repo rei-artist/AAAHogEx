@@ -1284,6 +1284,7 @@ class Place {
 		/*if(this instanceof TownCargo) {
 			return true;
 		}*/
+		//HgLog.Warning( "canUsePlaceOnWater:"+HogeAI.Get().canUsePlaceOnWater+" "+this.IsBuiltOnWater()+" "+this.IsNearLand(cargo) );
 		if(!HogeAI.Get().canUsePlaceOnWater && this.IsBuiltOnWater() && !this.IsNearLand(cargo)) {
 			return false;
 		}
@@ -1311,9 +1312,11 @@ class Place {
 			if(route.IsOverflowPlace(this,cargo)) {
 				continue;
 			}
+			//HgLog.Warning("GetRoutesUsingSource "+route);
 			return false;
 		}
 		if(Place.IsRemovedDestPlace(this)) {
+			//HgLog.Warning("IsRemovedDestPlace");
 			return false;
 		}
 		return true;

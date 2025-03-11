@@ -896,8 +896,11 @@ class Route {
 			}
 			searchedRoute.rawset(this, true);
 			local destRoute = GetDestRoute();
-			if(!destRoute || destRoute.GetVehicleType() != AIVehicle.VT_WATER) {
+			if(!destRoute) {
 				return {station = destHgStation, isTransfer = false};
+			}
+			if(destRoute.GetVehicleType() != AIVehicle.VT_WATER) {
+				return {station = destHgStation, isTransfer = true};
 			}
 			return destRoute.GetFinalDestStationForWater(searchedRoute, destHgStation.stationGroup);
 		} else if(IsBiDirectional()) {
