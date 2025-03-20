@@ -1509,7 +1509,7 @@ class SrcRailStationFactory extends RailStationFactory {
 	function Create(platformTile,stationDirection) {
 		if(useSimple || useSingle) {
 			local result = SimpleRailStation(platformTile, GetPlatformNum(), GetPlatformLength(), stationDirection);
-			result.useDepot = !useSimple && HogeAI.Get().IsEnableVehicleBreakdowns();
+			result.useDepot = !useSingle && HogeAI.Get().IsEnableVehicleBreakdowns();
 			return result;
 		} /*else if(HogeAI.Get().IsInfrastructureMaintenance()) {
 			return SrcRailStation(platformTile, GetPlatformLength(), stationDirection);
@@ -2201,6 +2201,7 @@ class HgStation {
 		if(!builded) {
 			HogeAI.WaitForMoney(GetNeedMoney());
 			if(!Build(levelTiles,false)) {
+				Demolish();
 				return false;
 			}
 		}
@@ -3912,7 +3913,7 @@ class SmartStation extends RailStation {
 		foreach(t,_ in result) {
 			tiles.push(t);
 		}
-		return tiles;
+		return tiles; // RemoveDepotsされていてもdepotのtileが入っている事に注意
 	}
 	
 	function GetBuildableScore() {

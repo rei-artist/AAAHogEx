@@ -1303,18 +1303,25 @@ class Route {
 				return;
 			}
 			local closedAllDest = true;
+			local isRemove = HogeAI.Get().IsInfrastructureMaintenance();
 			foreach(destRoute in destRoutes) {
 				if(srcSharing && destRoute.IsOverflow(cargo, IsDestDest(destRoute))) {
 					continue;
 				}
+				isRemove = false;
 				if(!destRoute.IsClosed()) {
 					closedAllDest = false;
 					break;
 				}
 			}
 			if(!IsClosed() && closedAllDest) {
-				HgLog.Warning("Route Close (All destRoute closed)"+this+" srcSharing:"+srcSharing);
-				Close();
+				if(isRemove) {
+					HgLog.Warning("Route Remove (dest overflow and src share)"+this);
+					Remove();
+				} else {
+					HgLog.Warning("Route Close (All destRoute overflow or closed)"+this+" srcSharing:"+srcSharing);
+					Close();
+				}
 			} else if(IsClosed() && !closedAllDest) {
 				ReOpen();
 			}
@@ -1489,19 +1496,21 @@ class CommonRoute extends Route {
 				}
 			}
 		} else {
+			/* 
 			if(self.GetVehicleType() == AIVehicle.VT_WATER) {
 				local depotTile;
 				if(!WaterRoute.rawin("defaultDepot")) {
 					local execMode = AIExecMode();
 					depotTile = HgTile.XY(3,3).tile;
 					AIMarine.BuildWaterDepot(depotTile, HgTile.XY(2,3).tile);
+					// trying to modify a class that has already been instantiatedが出る事がある
 					WaterRoute.defaultDepot <- depotTile;
 				} else {
 					depotTile = WaterRoute.defaultDepot;
 				}
 				result = AIVehicle.GetBuildWithRefitCapacity(depotTile, engine, cargo);
 				//HgLog.Info("capacity:"+result+" engine:"+AIEngine.GetName(engine)+" cargo:"+AICargo.GetName(cargo)+" depot:"+HgTile(depotTile));
-			}
+			}*/
 		}
 		result = AIEngine.GetCapacity(engine);
 		if( self.GetVehicleType() == AIVehicle.VT_AIR) {

@@ -1283,8 +1283,8 @@ class TrainRoute extends Route {
 			if(returnRoute != null) {
 				local additionalDistance = returnRoute.destDeparturePath.path.GetRailDistance();
 				maxTrains = maxTrains * (pathDistance + additionalDistance) / pathDistance;
-				HgLog.Info("maxTrains:"+maxTrains+" "+this);
 			}
+			HgLog.Info("maxTrains:"+maxTrains+" "+this);
 			local diff;
 			if(oldEngineSet == null) {
 				diff = {append = latestEngineSet.cargoCapacity, remove = {}};
@@ -1430,6 +1430,7 @@ class TrainRoute extends Route {
 		InitializeSubCargos();
 		this.destHgStation = oldDest;
 		
+		HgLog.Info("maxTrains:null "+this);
 		maxTrains = null;
 		lastDestClosedDate = null;
 		needsAdditionalCache.clear();
@@ -1605,6 +1606,55 @@ class TrainRoute extends Route {
 		return AIRail.GetRailType(srcHgStation.platformTile);
 	}
 	
+	function GetAllTiles() {
+		local queue = [];
+		local checked = {};
+		queue.push(srcHgStation.platformTile);
+		while(queue.len() >= 1) {
+			local cur  = queue.pop();
+			if(checked.rawin(cur)) continue;
+			if(!AITile.HasTransportType(cur,AITile.TRANSPORT_RAIL) || !AICompany.IsMine(AITile.GetOwner(cur))) continue;
+			checked.rawset(cur,cur);
+			local next = null;
+			if(AIBridge.IsBridgeTile(cur)) {
+				next = AIBridge.GetOtherBridgeEnd(cur);
+			} else if(AITunnel.IsTunnelTile(cur)) {
+				next = AITunnel.GetOtherTunnelEnd(cur);
+			}
+			if(next != null) {
+				local revDir = (cur - next) / AIMap.DistanceManhattan(next,cur);
+				queue.push(cur + revDir);
+			} else if(AIRail.IsRailDepotTile(cur)) {
+				next = AIRail.GetRailDepotFrontTile(cur);
+			}
+			if(next != null) {
+				queue.push(next);
+			} else {
+				foreach(d in HgTile.DIR4Index) {
+					if(HgTile.IsConnectRail(cur, cur+d)) {
+						queue.push(cur + d);
+					}
+				}
+/*				local tracks = AIRail.GetRailTracks(cur);
+				local dirFlags = [false, false, false, false];
+				foreach(e in HgTile.TrackDir4s) {
+					local trackBit = e[0];
+					if((tracks & trackBit) != 0) {
+						foreach(d in e[1]) {
+							dirFlags[d] = true;
+						}
+					}
+				}
+				foreach(index, f in dirFlags) {
+					if(!f) continue;
+					local next = cur + HgTile.DIR4Index[index];
+					queue.push(cur + d);
+				}*/
+			}
+		}
+		return checked;
+	}
+	
 	function StartUpdateRail(railType) {
 		if(!HogeAI.Get().IsRich()) {
 			return;
@@ -1621,6 +1671,8 @@ class TrainRoute extends Route {
 		
 		local execMode = AIExecMode();
 		AIRail.SetCurrentRailType(railType);
+		
+		/*
 		local facitilies = [];
 		facitilies.push(srcHgStation);
 		foreach(s in destHgStations) {
@@ -1651,10 +1703,27 @@ class TrainRoute extends Route {
 		tiles.extend(GetDepots());
 		tiles.extend(additionalTiles);
 		
+		local tiles2 = [];
+
 		foreach(t in tiles) {
-			if(t==null || AIRail.GetRailType(t)==railType) {
-				continue;
+			if(t == null) {
+				HgLog.Warning("t==null(ConvertRailType) "+this);
+			} else if(AIRail.GetRailType(t)==railType) {
+				HgLog.Warning("AIRail.GetRailType(t)==railType (ConvertRailType) "+ HgTile(t) + " " + this);
+			} else if(!AITile.HasTransportType(t,AITile.TRANSPORT_RAIL)) {
+				HgLog.Warning("!AITile.HasTransportType(t,AITile.TRANSPORT_RAIL) (ConvertRailType) "+ HgTile(t) + " " + this);
+			} else {
+				tiles2.push(t);
 			}
+		}
+		tiles = tiles2;*/
+		local tiles = [];
+		foreach(t,_ in GetAllTiles()) {
+			tiles.push(t);
+		}
+		
+		
+		foreach(t in tiles) {
 			if(AIRail.IsLevelCrossingTile(t)) { // 失敗時にRailTypeが戻せないケースがあるので、先に踏切だけ試す。
 				if(!BuildUtils.RetryUntilFree(function():(t,railType) {
 					return AIRail.ConvertRailType(t,t,railType);
@@ -1666,9 +1735,6 @@ class TrainRoute extends Route {
 		}
 		local tileTable = {};
 		foreach(tile in tiles) {
-			if(tile==null || AIRail.GetRailType(tile)==railType) {
-				continue;
-			}
 			tileTable.rawset(tile,0);
 		}
 	
@@ -2091,6 +2157,7 @@ class TrainRoute extends Route {
 		if(latestEngineSet==null) {
 			return;
 		}
+		HgLog.Info("CalculateUseDepots:"+this);
 		local execMode = AIExecMode();
 		local cur = pathDestToSrc.path;
 		local lastDepotPath = null;
@@ -2331,6 +2398,7 @@ class TrainRoute extends Route {
 			local waiting = srcHgStation.GetCargoWaiting(cargo);
 			local capacity = GetCargoCapacity(cargo);
 			local latestVehicle = GetLatestVehicle();
+			if(maxTrains != null) numClone = min(numClone, maxTrains - numVehicles);
 			numClone = max(1,min( numClone, waiting / capacity ));
 			numClone = min(numClone, GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_RAIL));
 			for(local i=0; i<numClone; i++) {
@@ -2380,12 +2448,12 @@ class TrainRoute extends Route {
 					HgLog.Warning("newEngineSet==null (ChooseEngineSetAllRailTypes)");
 					return;
 				}
-				CalculateUseDepots();
 				local oldRailType = GetRailType();
 				local newRailType = newEngineSet.railType;
 				if(!DoUpdateRailType(newRailType)) {
 					RollbackUpdateRailType(oldRailType);
 				}
+				CalculateUseDepots();
 			}
 			return;
 		}
@@ -2996,7 +3064,7 @@ class TrainRouteBuilder extends RouteBuilder {
 		} else {
 			if(hogeAI.IsEnableVehicleBreakdowns()) {
 				if(useSimpleStation) {
-					railBuilder.isBuildSingleDepotDestToSrc = true;
+					//railBuilder.isBuildSingleDepotDestToSrc = true;
 				}
 				railBuilder.isBuildDoubleDepots = true;
 			} else {
@@ -3629,6 +3697,9 @@ class MainLineRefactor extends RouteModificatin {
 					HgLog.Warning("e:"+HgTile(e[0])+" "+HgTile(e[e.len()-1]));
 				}
 				ex.rawset(t,t);
+				if(!AITile.HasTransportType(t,AITile.TRANSPORT_RAIL)) {
+					HgLog.Warning("Is not RailTile:"+HgTile(t)+" "+route);
+				}
 			}
 			
 			if(i==0) {

@@ -496,8 +496,7 @@ class RoadRoute extends CommonRoute {
 				} else if(AIRoad.IsRoadTile(tile)) {
 					HgLog.Info("Demolish Road:"+HgTile(tile));
 					RoadRoute.DemolishArroundDepot(tile);
-					if(!BuildUtils.DemolishTileSafe(tile)) { // TODO:RemoveRoadにしない？
-						HgLog.Warning("DemolishTile failed:"+HgTile(tile)+AIError.GetLastErrorString());
+					if(!RoadRoute.DemolishRoadTileSafe(tile)) { 
 						RoadRoute.pendingDemolishLines.push([tile]);
 					}
 					//AITile.DemolishTile(pre); 重なっている線路や軌道も破壊してしまう
@@ -505,6 +504,25 @@ class RoadRoute extends CommonRoute {
 				}
 			}
 		}	
+	}
+	
+	static function DemolishRoadTileSafe(tile) {
+		local res = true;
+		foreach(d in HgTile.DIR4Index) {
+			if(!BuildUtils.RemoveRoadSafe(tile,tile+d)) {
+				if(AIRoad.AreRoadTilesConnected(tile,tile + d)) {
+					res = false;
+				}
+			}
+		}
+		// RemoveRoadは坂道で残る事があるので
+		if(AIRoad.IsRoadTile(tile) && !AIRail.IsRailTile(tile)) {
+			if(!BuildUtils.DemolishTileSafe(tile)) {
+				HgLog.Warning("DemolishTileSafe failed:"+HgTile(tile)+" "+AIError.GetLastErrorString());
+				res = false;
+			}
+		}
+		return res;
 	}
 	
 	static function SellVehiclesInDepot(tile) {

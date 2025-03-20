@@ -820,6 +820,12 @@ class BuildUtils {
 		});
 	}
 	
+	static function RemoveRoadSafe(a,b) {
+		return BuildUtils.WaitForMoney( function():(a,b) {
+			return AIRoad.RemoveRoad(a, b);
+		});
+	}
+	
 	static function DemolishTileSafe(a) {
 		return BuildUtils.WaitForMoney( function():(a) {
 			return AITile.DemolishTile(a);

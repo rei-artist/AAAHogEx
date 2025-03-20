@@ -25,22 +25,14 @@ class HgTile {
 	    AIMap.GetTileIndex(1, 0),
 		AIMap.GetTileIndex(1, 1)];
 
-	static TrackDirs = [
-		[AIRail.RAILTRACK_NE_SW,[0,3]],
-		[AIRail.RAILTRACK_NW_SE,[1,2]],
-		[AIRail.RAILTRACK_NW_NE,[1,0]],
-		[AIRail.RAILTRACK_SW_SE,[3,2]],
-		[AIRail.RAILTRACK_NW_SW,[1,3]],
-		[AIRail.RAILTRACK_NE_SE,[0,2]]];
-	/*
-	static TrackDirs = [
-		[AIRail.RAILTRACK_NE_SW,[HgTile.DIR_NE,HgTile.DIR_SW]],
-		[AIRail.RAILTRACK_NW_SE,[HgTile.DIR_NW,HgTile.DIR_SE]],
-		[AIRail.RAILTRACK_NW_NE,[HgTile.DIR_NW,HgTile.DIR_NE]],
-		[AIRail.RAILTRACK_SW_SE,[HgTile.DIR_SW,HgTile.DIR_SE]],
-		[AIRail.RAILTRACK_NW_SW,[HgTile.DIR_NW,HgTile.DIR_SW]],
-		[AIRail.RAILTRACK_NE_SE,[HgTile.DIR_NE,HgTile.DIR_SE]]];
-		*/
+	static TrackDir4s = [
+		[AIRail.RAILTRACK_NE_SW ,[0,3]],
+		[AIRail.RAILTRACK_NW_SE ,[1,2]],
+		[AIRail.RAILTRACK_NW_NE ,[1,0]],
+		[AIRail.RAILTRACK_SW_SE ,[3,2]],
+		[AIRail.RAILTRACK_NW_SW ,[1,3]],
+		[AIRail.RAILTRACK_NE_SE ,[0,2]]
+	];
 	
 	static DiagonalRailTracks = [
 		AIRail.RAILTRACK_NW_NE,
@@ -55,6 +47,8 @@ class HgTile {
 		AITile.CORNER_E,
 		AITile.CORNER_N
 	];
+	
+	static tracks2DirIndexs = {}
 	
 	static MapSizeX = AIMap.GetMapSizeX();
 	
@@ -670,6 +664,33 @@ class HgTile {
 		local dx = prevDir % HgTile.MapSizeX;
 		local dy = prevDir / HgTile.MapSizeX;
 		return dy - dx * HgTile.MapSizeX;
+	}
+
+	static function IsConnectRail(a,b) {
+		local tracksA = AIRail.GetRailTracks(a);
+		local tracksB = AIRail.GetRailTracks(b);
+		return HgTile.GetDirIndexs(tracksA).rawin(b-a) && HgTile.GetDirIndexs(tracksB).rawin(a-b);
+	}
+
+	static function GetDirIndexs(tracks) {
+		if(HgTile.tracks2DirIndexs.rawin(tracks)) return HgTile.tracks2DirIndexs[tracks];
+		local dirFlags = [false, false, false, false];
+		local indexs = {};
+		foreach(e in HgTile.TrackDir4s) {
+			local trackBit = e[0];
+			if((tracks & trackBit) != 0) {
+				foreach(d in e[1]) {
+					dirFlags[d] = true;
+				}
+			}
+		}
+		foreach(index, f in dirFlags) {
+			if(!f) continue;
+			local index = HgTile.DIR4Index[index];
+			indexs.rawset(index,index);
+		}
+		HgTile.tracks2DirIndexs.rawset(tracks,indexs);
+		return indexs;
 	}
 	
 	function CanForkRail(toHgTile) {

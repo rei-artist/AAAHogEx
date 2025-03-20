@@ -230,7 +230,7 @@ Estimation <- {
 	function GetExplain() {
 		//local lostOpportunity = routeIncome * (cruiseDays + waitingInStationTime) / 365;
 		local cost = max(1,price * vehiclesPerRoute + buildingCost/* + lostOpportunity*/);
-		return  value + " roi:"+roi+"("+(price * vehiclesPerRoute)+","+buildingCost+")"
+		return  value + " roi:"+roi+"("+cost/*(price * vehiclesPerRoute)+","+buildingCost*/+")"
 //			+ " income:"+income+" rc:"+runningCost+" ic:"+infrastractureCost+" ad:"+(capacity * vehiclesPerRoute * 365 / (days + waitingInStationTime - loadingTime))
 			+ " route:"+routeIncome+"("+incomePerOneTime+(incomePerOneTimeReturn>=1?","+incomePerOneTimeReturn:"")+")"
 			+ " speed:"+cruiseSpeed + "("+ cruiseDays + (additionalCruiseDays!=0?"+" + additionalCruiseDays:"")+","+waitingInStationTime + "d)"
@@ -1694,15 +1694,17 @@ class TrainEstimator extends Estimator {
 					
 					local stationLimitTime = 0; //isRoRo ? 7 : 10;
 					local inOutDistance = usedPlatformLength + 7;
-					local stationInOutTime = (VehicleUtils.GetDays( max(0,inOutDistance-startDistance),cruiseSpeed ) 
-						+ VehicleUtils.GetDays( max(startDistance-inOutDistance,startDistance),cruiseSpeed/2 )) * (isRoRo ? 2 : 3) / 2 + 2;
+					local stationInOutTime = 
+						((VehicleUtils.GetDays( max(0,inOutDistance-startDistance),cruiseSpeed )  // 最高速度で移動する駅構内
+						+ VehicleUtils.GetDays( min(inOutDistance,startDistance),cruiseSpeed/2 )) // 半分のスピードで移動する駅構内
+						+ 2) * (isRoRo ? 7 : 10) / 7;
 					
 					local cruiseDays = 
 						(VehicleUtils.GetDays( max(0,pathDistance-startDistance),cruiseSpeed ) 
 						+ VehicleUtils.GetDays( max(startDistance-pathDistance,startDistance),cruiseSpeed/2 )) * 150 / (trainReiliability+50);
 					local days = (cruiseDays + loadingTime) * 2;
 					
-					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime) + 2); //+2は駅停車中分
+					local maxVehicles = max(1, days / max(stationLimitTime,stationInOutTime) + (isRoRo ? 2 : 0)); //+2は駅停車中分
 					maxVehicles = min( maxVehicles, vehiclesRoom );
 
 					local trainEstimation = clone infraEstimation;
@@ -1728,6 +1730,7 @@ class TrainEstimator extends Estimator {
 					
 
 					foreach(isSingle in [true,false]) {
+						//if(isSingle) continue;
 						if(isSingleOrNot != null && isSingleOrNot != isSingle) {
 							continue;
 						}

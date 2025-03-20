@@ -904,6 +904,18 @@ class BuildedPath {
 		}
 		BuildedPath.AddTiles(array_,this);
 	}
+	
+	
+	function ChangePath(newPath, newArray) {
+		path = newPath;
+		array_ = newArray;
+		if(route != null) {
+			route.Save(); // 保存するためにrouteのsavedataの更新が必要
+		} else {
+			HgLog.Info("route == null (BuildedPath.ChangePath)");
+		}
+		BuildedPath.AddTiles(array_,this);
+	}
 
 	function Remove(removeRails = true, doInterval = false) {
 		if(removeRails) {
@@ -1735,7 +1747,7 @@ class RailBuilder extends Construction {
 
 	function ChangeBridge(prevprev, prev, next) {
 		HgLog.Info("ChangeBridge: "+HgTile(prev)+"-"+HgTile(next));
-		local pathBuildedPath = SearchPathBuildedPath(prev);
+		local pathBuildedPath = RailBuilder.SearchPathBuildedPath(prev);
 		if(pathBuildedPath == null) {
 			HgLog.Warning("Demolish(ChangeBridge). No builded path:"+HgTile(prev));
 			DemolishTile(prev);
@@ -1808,10 +1820,19 @@ class RailBuilder extends Construction {
 			endTile -= direction;
 		}
 		
+		local buildSignal = orgBuildedPath.route == null || !orgBuildedPath.route.IsSingle();
+		local newPath = orgBuildedPath.path.Clone();
+		local signals = RailBuilder.ChangeBridgePath(newPath, startTile, endTile);
+		if(signals.len() == 0) {
+			HgLog.Warning("ChangeBridgePath not found path "+HgTile(startTile)+" "+HgTile(endTile));
+		}
+		local newArray = newPath.GetTiles();
+
 		HogeAI.WaitForMoney(20000,0,"ChangeBridge");
 		local currentRailType = AIRail.GetCurrentRailType();
 		AIRail.SetCurrentRailType(AIRail.GetRailType(n_node));
-		
+
+		AIController.Sleep(0); // 橋の建設からデータ更新の途中でsaveされたくない
 		for(local cur=startTile; cur<=endTile; cur+=direction) {
 			if(!RailBuilder.RemoveRailTrackUntilFree(cur, tracks)) {
 				HgLog.Warning("fail RemoveRailTrack."+HgTile(cur)+" "+AIError.GetLastErrorString());
@@ -1840,37 +1861,30 @@ class RailBuilder extends Construction {
 			return false;
 		}
 		
-		if(!ChangeBridgePath(orgBuildedPath, startTile, endTile)) {
-			HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(startTile)+" "+HgTile(endTile));
-		} else {
-			orgBuildedPath.ChangePath();
-		}
+		orgBuildedPath.ChangePath(newPath, newArray);
+		if(buildSignal) RailBuilder.BuildBridgeSignals(signals);
 		
 		AIRail.SetCurrentRailType(currentRailType);
 		return true;
 	}
 	
-	function ChangeBridgePath(buildedPath, startTile, endTile) {
-		local path = buildedPath.path;
-		local buildSignal = buildedPath.route == null || !buildedPath.route.IsSingle();
+	static function ChangeBridgePath(path, startTile, endTile) {
 		local prevprev = null;
 		local prev = null;
+		local signals = [];
 		while(path != null) {
 			if(prev != null && (path.GetTile() == startTile || path.GetTile() == endTile)) {
-				if(buildSignal) {
-					// 跳ね返った列車に対して逆向きの信号が設置され、列車が止まってしまう事があるので信号設置は10日後
-					HogeAI.Get().PostPending(10, SignalBuilder(prev, path.GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY) );
-				}
+				signals.push([prev, path.GetTile()]);
 				local startPath = path;
 				path = path.GetParent();
 				while(path != null) {
 					if(path.GetTile() == endTile || path.GetTile() == startTile) {
 						startPath.parent_ = path;
-						HgLog.Info(HgTile(startPath.GetTile())+".parent = "+HgTile(path.GetTile())+" route:"+buildedPath.route);
-						if(buildSignal && path.GetParent()!=null && path.GetParent().GetParent()!=null) {
-							HogeAI.Get().PostPending(10, SignalBuilder(path.GetParent().GetTile(), path.GetParent().GetParent().GetTile(), AIRail.SIGNALTYPE_PBS_ONEWAY) );
+						HgLog.Info(HgTile("ChangeBridgePath found:"+startPath.GetTile())+".parent = "+HgTile(path.GetTile()));
+						if(path.GetParent()!=null && path.GetParent().GetParent()!=null) {
+							signals.push([path.GetParent().GetTile(), path.GetParent().GetParent().GetTile()]);
 						}
-						return true;
+						return signals;
 					}
 					path = path.GetParent();
 				}
@@ -1880,10 +1894,18 @@ class RailBuilder extends Construction {
 				path = path.GetParent();
 			}
 		}
-		return false;
+		return signals;
 	}
 	
-	static function ChangeTunnel(start,end) {
+	static function BuildBridgeSignals(signals) {
+		foreach(signal in signals) {
+			// 跳ね返った列車に対して逆向きの信号が設置され、列車が止まってしまう事があるので信号設置は10日後
+			HogeAI.Get().PostPending(10, SignalBuilder(signal[0], signal[1], AIRail.SIGNALTYPE_PBS_ONEWAY) );
+		}
+	}
+	
+	
+	static function ChangeTunnel(start,end) { // depotをくぐる用。今のところ5tile固定
 		if(!AITile.HasTransportType(start, AITile.TRANSPORT_RAIL)) {
 			return false;
 		}
@@ -1892,6 +1914,8 @@ class RailBuilder extends Construction {
 		tileList.AddRectangle(start,end);
 		tileList.Valuate(AITile.HasTransportType, AITile.TRANSPORT_RAIL);
 		tileList.KeepValue(1);
+		tileList.Valuate(AITile.IsStationTile);
+		tileList.KeepValue(0);
 		tileList.Valuate(AIRail.GetRailTracks);
 		tileList.KeepValue(tracks);
 		tileList.Valuate(AITile.GetSlope);
@@ -1912,9 +1936,27 @@ class RailBuilder extends Construction {
 		local t2 = max(start,end);
 		local direction = (t2 - t1) / 4;
 
+
+		local pathBuildedPath = RailBuilder.SearchPathBuildedPath(t1);
+		if(pathBuildedPath == null) {
+			HgLog.Warning("Demolish(ChangeTunnel). No builded path:"+HgTile(t1));
+			RailBuilder.DemolishTile(t1);
+			return true;
+		}
+		local orgPath = pathBuildedPath[0];
+		local orgBuildedPath = pathBuildedPath[1];
+		local buildSignal = orgBuildedPath.route == null || !orgBuildedPath.route.IsSingle();
+		local newPath = orgBuildedPath.path.Clone();
+		local signals = RailBuilder.ChangeBridgePath(newPath, t1 + direction, t1 + direction * 3);
+		if(signals.len() == 0) {
+			HgLog.Warning("ChangeBridgePath(ChangeTunnel) not found path "+HgTile(t1)+" "+HgTile(t2));
+		}
+		local newArray = newPath.GetTiles();
+
 		HogeAI.WaitForMoney(20000,0,"ChangeTunnel");
 		local currentRailType = AIRail.GetCurrentRailType();
 		AIRail.SetCurrentRailType(AIRail.GetRailType(t1));
+		AIController.Sleep(0); // 橋の建設からデータ更新の途中でsaveされたくない
 
 		local cur = t1;
 		local removedRails = [];
@@ -1946,20 +1988,15 @@ class RailBuilder extends Construction {
 			AIRail.SetCurrentRailType(currentRailType);
 			return false;
 		}
-		
-		local pathBuildedPath = RailBuilder.SearchPathBuildedPath(t1);
-		if(pathBuildedPath != null) {
-			if(!RailBuilder.ChangeBridgePath(pathBuildedPath[1], t1 + direction, t1 + direction * 3)) {
-				HgLog.Warning("ChangeBridgeBuildedPath not found path "+HgTile(t1)+" "+HgTile(t2));
-			} else {
-				pathBuildedPath[1].ChangePath();
-			}
-		}
 		foreach(t in [t1,t2]) {
 			if(!BuildUtils.BuildRailTrackSafe(t, tracks)) {
 				HgLog.Warning("fail BuildRailTrackSafe "+HgTile(t)+" "+AIError.GetLastErrorString());
 			}
 		}
+		
+		orgBuildedPath.ChangePath(newPath, newArray);
+		if(buildSignal) RailBuilder.BuildBridgeSignals(signals);
+		
 		AIRail.SetCurrentRailType(currentRailType);
 		return true;
 	}
@@ -1972,7 +2009,7 @@ class RailBuilder extends Construction {
 		}
 	}
 		
-	function SearchPathBuildedPath(tile) {
+	static function SearchPathBuildedPath(tile) {
 		local buildedPath = BuildedPath.GetByTile(tile);
 		if(buildedPath == null || !(buildedPath instanceof BuildedPath)) {
 			HgLog.Warning("not found tile(SearchPathBuildedPath) "+HgTile(tile)+" buildedPath:"+buildedPath);

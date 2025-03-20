@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 94;
+	static version = 95;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -795,6 +795,7 @@ class HogeAI extends AIController {
 	function DoStep() {
 		switch(indexPointer) {
 			case 0:
+				//CheckBuildedPaths();
 				break;
 			case 1:
 				SearchAndBuildToMeetSrcDemand();
@@ -4380,6 +4381,7 @@ class HogeAI extends AIController {
 		hogeIndex = 0;
 		hogeNum = 0;
 		//HgLog.Info("firstCompanyId:"+AICompany.COMPANY_FIRST+" lastCompanyId:"+AICompany.COMPANY_LAST);
+		
 		for(local id = AICompany.COMPANY_FIRST; id<AICompany.COMPANY_LAST; id++) {
 			if(AICompany.ResolveCompanyID(id) != AICompany.COMPANY_INVALID) {
 				local name = AICompany.GetName(id);
@@ -4391,11 +4393,25 @@ class HogeAI extends AIController {
 				}
 			}
 		}
+		//hogeNum = 1;
 		/*
 		HgLog.Info("InflationRate:"+HogeAI.GetInflationRate());
 		HgLog.Info("hogeIndex:"+hogeIndex+" hogeNum:"+hogeNum);*/
 	}
 
+	function CheckBuildedPaths() {
+		HgLog.Info("CheckBuildedPaths {");
+		local s = AIMap.GetMapSizeX() * AIMap.GetMapSizeY();
+	
+		for(local index=0; index<s; index++) {
+			if(AIRail.IsRailTile(index) && AICompany.IsMine(AITile.GetOwner(index))) {
+				if(!BuildedPath.Contains(index)) {
+					HgLog.Warning("Unmanaged rail tile found:"+HgTile(index));
+				}
+			}
+		}
+		HgLog.Info("}");
+	}
 }
 
 class RouteCandidates {

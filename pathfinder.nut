@@ -1058,14 +1058,16 @@ class RailPathFinder
 				}
 			}
 		}
+		local parDistance = par_tile != null ? AIMap.DistanceManhattan(cur_node, par_tile) : 0;
 
 		/* Check if the current tile is part of a bridge or tunnel. */
 		if (AIBridge.IsBridgeTile(cur_node) || AITunnel.IsTunnelTile(cur_node)) {
 			/* We don't use existing rails, so neither existing bridges / tunnels. */
-		} else if (par != null && AIMap.DistanceManhattan(cur_node, par_tile) > 1) {
-			local other_end = par_tile;
-			local dir = (cur_node - other_end) / AIMap.DistanceManhattan(cur_node, other_end);
+		} else if (parDistance > 1) {
+			if(parDistance >= AIMap.GetMapSizeX()) return []; // 画面端をオーバーしている
+			local dir = (cur_node - par_tile) / parDistance;
 			local next_tile = cur_node + dir;
+			local other_end = par_tile;
 	//		tiles.push([next_tile, 1]);
 			//HgLog.Info("DistanceManhattan > 1 isBuildableSea:" + isBuildableSea + " "+ HgTile(cur_node) + " next_tile:"+HgTile(next_tile));
 			if(path.mode != null && path.mode instanceof RailPathFinder.Underground) {
