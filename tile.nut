@@ -783,13 +783,14 @@ class HgTile {
 //				HgLog.Info("AreTilesConnected1:"+HgTile(to)+","+HgTile(tile)+","+HgTile(depotTile)+" "+AIError.GetLastErrorString());
 				return false;
 			}
-			if(!AIRail.BuildRailDepot (depotTile, tile)) {
+			if(!AIRail.BuildRailDepot(depotTile, tile)) {
 				RailBuilder.RemoveRailUntilFree(from, tile, depotTile);
 				RailBuilder.RemoveRailUntilFree(to, tile, depotTile);
 				//TODO: Remove Rail
 //				HgLog.Info("BuildRailDepot:"+HgTile(depotTile)+","+HgTile(tile)+" "+AIError.GetLastErrorString());
 				return false;
 			}
+			//HgLog.Info("GetRailTracks(BuildDepot):"+HgTile(depotTile)+" "+AIRail.GetRailTracks(depotTile));
 			return true;
 		} else {
 //			HgLog.Info("test BuildRailDepot:"+HgTile(depotTile)+","+HgTile(tile)+" "+AIError.GetLastErrorString());

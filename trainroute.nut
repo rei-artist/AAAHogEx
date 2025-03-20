@@ -1631,8 +1631,13 @@ class TrainRoute extends Route {
 				queue.push(next);
 			} else {
 				foreach(d in HgTile.DIR4Index) {
-					if(HgTile.IsConnectRail(cur, cur+d)) {
-						queue.push(cur + d);
+					local next = cur + d;
+					if(AIRail.IsRailDepotTile(next)) {
+						if(AIRail.GetRailDepotFrontTile(next) == cur) queue.push(next);
+					} else {
+						if(HgTile.IsConnectRail(cur, next)) {
+							queue.push(next);
+						}
 					}
 				}
 /*				local tracks = AIRail.GetRailTracks(cur);
