@@ -2211,6 +2211,10 @@ class HgStation {
 		return false;
 	}
 	
+	function IsDemolishIfFailToBuild() {
+		return false;
+	}
+	
 	function BuildExec() {
 		local isTownPlace = false;
 		local isForTownPaxMail = false;
@@ -2223,7 +2227,7 @@ class HgStation {
 		if(!builded) {
 			HogeAI.WaitForMoney(GetNeedMoney());
 			if(!Build(levelTiles,false)) {
-				Demolish();
+				if(IsDemolishIfFailToBuild()) Demolish();
 				return false;
 			}
 		}
@@ -2640,6 +2644,9 @@ class HgStation {
 }
 
 class RailStation extends HgStation {
+	function IsDemolishIfFailToBuild() {
+		return true;
+	}
 
 	function IsBuildablePreCheck() {
 		local rect = GetPlatformRectangle();
