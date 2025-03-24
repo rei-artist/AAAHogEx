@@ -1101,6 +1101,7 @@ class RailBuilder extends Construction {
 		local prevprev = null;
 		local prevprevprev = null;
 		local signalCount = 7;
+		local checkTownBus = false; // ほぼ効果なし HogeAI.Get().IsRich();
 		while (path != null) {
 			if(prevprev != null) {
 				path = RaiseTileIfNeeded(prevPath,prevprev);
@@ -1165,7 +1166,7 @@ class RailBuilder extends Construction {
 				}
 			} else if(prevprev != null) {
 				if(!AIRail.AreTilesConnected(prevprev,prev,path.GetTile()) || !AICompany.IsMine(AITile.GetOwner(prev))) {
-					//TownBus.Check(prev);
+					if(checkTownBus) TownBus.Check(prev); // Refactor時のdemolish成功率を上げる
 					if(RailPathFinder.CanDemolishRail(prev)) {
 						HgLog.Info("demolish tile for buildrail:"+HgTile(prev));
 						DemolishTile(prev);

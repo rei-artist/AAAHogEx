@@ -1765,7 +1765,7 @@ class TrainEstimator extends Estimator {
 							trainPlan.CalculatePriorityWagon();
 						}*/
 						
-						if( estimation.income > 0) {
+						if(ignoreIncome || estimation.income > 0) {
 							//wagonEngineEstimations.AddItem(result.len(),estimation.value);
 							if(maxBuildingCost > 0) {
 								if( firstRoute ) {

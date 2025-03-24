@@ -1630,14 +1630,15 @@ class TrainRoute extends Route {
 			if(next != null) {
 				queue.push(next);
 			} else {
+				local isStation = AITile.IsStationTile(cur);
 				foreach(d in HgTile.DIR4Index) {
 					local next = cur + d;
-					if(AIRail.IsRailDepotTile(next)) {
-						if(AIRail.GetRailDepotFrontTile(next) == cur) queue.push(next);
-					} else {
-						if(HgTile.IsConnectRail(cur, next)) {
-							queue.push(next);
-						}
+					if(isStation) {
+						// TODO: simple stationは橋やトンネルへの直結がありうる
+						if(AIRail.IsRailDepotTile(next) || AIBridge.IsBridgeTile(next) || AITunnel.IsTunnelTile(next)) continue;
+					}
+					if(HgTile.IsConnectRail(cur, next)) {
+						queue.push(next);
 					}
 				}
 /*				local tracks = AIRail.GetRailTracks(cur);
@@ -3614,7 +3615,15 @@ class MainLineRefactor extends RouteModificatin {
 			//HgLog.Info("removedTiles:"+HgTile.GetTilesString(removedTiles));
 			removeIdx1 = max(gapLength, removeIdx1);
 			removeIdx2 = min(mainLines[i].len() - gapLength, removeIdx2);
+			if(!CheckSlice(mainLines[i],removeIdx1-gapLength, removeIdx1+2)) {
+				HgLog.Warning("!CheckSlice mainLines[i]:"+mainLines[i].len()+" removeIdx1:"+removeIdx1);
+				return false;
+			}
 			arrivals[i] = mainLines[i].slice(removeIdx1-gapLength, removeIdx1+2);
+			if(!CheckSlice(mainLines[i],removeIdx2-2, removeIdx2+gapLength)) {
+				HgLog.Warning("!CheckSlice mainLines[i]:"+mainLines[i].len()+" removeIdx2:"+removeIdx2);
+				return false;
+			}
 			departures[i] = mainLines[i].slice(removeIdx2-2, removeIdx2+gapLength);
 			while(removeIdx1-gapLength-1 >= max(0,idx-100)) {
 				local a = arrivals[i];
@@ -3713,6 +3722,14 @@ class MainLineRefactor extends RouteModificatin {
 				route.pathDestToSrc = BuildedPath(Path.Load(newPath));
 			}
 		}
+		return true;
+	}
+	
+	function CheckSlice(s,start,end) {
+		local l = s.len();
+		if(end < start) return false;
+		if(start < 0 || start >= l) return false;
+		if(end < 0 || end > l) return false;
 		return true;
 	}
 }

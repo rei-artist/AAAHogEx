@@ -1437,14 +1437,20 @@ class RoadStationFactory extends StationFactory {
 		}
 		this.ignoreDirectionScore = true;
 		this.isPieceStation = isPieceStation;
-		this.platformNum = HogeAI.Get().roiBase || CargoUtils.IsPaxOrMail(cargo) ? 1 : 2;
-		this.platformLength = 1;
-		if(engineSet != null) {
-			this.platformLength = AIEngine.IsArticulated(engineSet.engine) ?  2 : 1;
-		}
-		this.buildSupportRoad = !isPieceStation && HogeAI.Get().IsDistantJoinStations();
-		if(!this.buildSupportRoad) {
-			this.platformNum ++;
+		if(isPieceStation) {
+			this.platformNum = 1;
+			this.platformLength = 1;
+			this.buildSupportRoad = false;
+		} else {
+			this.platformNum = HogeAI.Get().roiBase || CargoUtils.IsPaxOrMail(cargo) ? 1 : 2;
+			this.platformLength = 1;
+			if(engineSet != null) {
+				this.platformLength = AIEngine.IsArticulated(engineSet.engine) ?  2 : 1;
+			}
+			this.buildSupportRoad = HogeAI.Get().IsDistantJoinStations();
+			if(!this.buildSupportRoad) {
+				this.platformNum ++;
+			}
 		}
 	}
 
@@ -1968,7 +1974,8 @@ class HgStation {
 		});
 	}
 	
-	function ExistsStationGroupsMoreThanOneAround() {
+	
+	function GetNeighborStations() {
 		local neighborStations = {};
 		foreach(tile in GetPlatformRectangle().GetAroundTiles()) {
 			local station = AIStation.GetStationID(tile);
@@ -1976,6 +1983,21 @@ class HgStation {
 				neighborStations.rawset(station,true);
 			}
 		}
+		return neighborStations;
+	}
+	
+	function GetNeighborStation() {
+		local neighborStations = GetNeighborStations();
+		if(neighborStations.len() == 1) {
+			foreach(s,_ in neighborStations) {
+				return s;
+			}
+		}
+		return null;
+	}
+	
+	function ExistsStationGroupsMoreThanOneAround() {
+		local neighborStations = GetNeighborStations();
 		if(neighborStations.len() >= 2) {
 			return true; 
 		}
@@ -3234,11 +3256,12 @@ class PieceStation extends HgStation {
 						return true;
 					}
 				} else if(AITile.GetSlope(platformTile) == AITile.SLOPE_FLAT && GetTownRating(platformTile) >= AITown.TOWN_RATING_VERY_GOOD && IsDemolishableTownBuilding(platformTile)) {
-					if(IsJoin() && !HogeAI.Get().IsDistantJoinStations() && ExistsStationGroupsMoreThanOneAround()) {
+					if(IsJoin()) {
+						if(HogeAI.Get().IsDistantJoinStations()) return true;
+						if(GetNeighborStation() == stationGroup.GetAIStation()) return true;
 						return false;
-					} else {
-						return true;
 					}
+					return true;
 				}
 /*				if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR || AIError.GetLastError() == AIError.ERR_UNKNOWN) {
 					return false;

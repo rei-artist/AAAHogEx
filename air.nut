@@ -167,7 +167,7 @@ class AirRoute extends CommonRoute {
 	}
 	
 	function GetThresholdVehicleNumRateForNewRoute() {
-		return TrainRoute.instances.len() >= 1 ? 0.8 : 0.95;
+		return TrainRoute.instances.len() >= 1 ? (HogeAI.Get().IsDebug() ? 0.95 : 0.8) : 0.95;
 	}
 
 	function GetThresholdVehicleNumRateForSupportRoute() {

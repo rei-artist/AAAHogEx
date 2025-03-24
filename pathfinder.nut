@@ -1064,8 +1064,8 @@ class RailPathFinder
 		if (AIBridge.IsBridgeTile(cur_node) || AITunnel.IsTunnelTile(cur_node)) {
 			/* We don't use existing rails, so neither existing bridges / tunnels. */
 		} else if (parDistance > 1) {
-			if(parDistance >= AIMap.GetMapSizeX()) return []; // 画面端をオーバーしている
 			local dir = (cur_node - par_tile) / parDistance;
+			if(dir == 0) return []; // 画面端をオーバーしている
 			local next_tile = cur_node + dir;
 			local other_end = par_tile;
 	//		tiles.push([next_tile, 1]);
