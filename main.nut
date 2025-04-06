@@ -879,8 +879,13 @@ class HogeAI extends AIController {
 		local totalNeeds = 0;
 		local endDate = AIDate.GetCurrentDate();
 		local buildingStartDate = AIDate.GetCurrentDate();
+		local builtAirOfInfrastructureMaintenance = false;
 		while(routeCandidates.Count() >= 1){
 			local t = routeCandidates.Pop();
+			if(builtAirOfInfrastructureMaintenance && t.vehicleType == AIVehicle.VT_AIR) {
+				HgLog.Warning("Need to estimate again for bulding two airports with InfrastructureMaintenance");
+				return;
+			}
 			if(t.vehicleType != AIVehicle.VT_AIR || IsInfrastructureMaintenance()) { //airの場合迅速にやらないといけないので
 				DoInterval(); 
 			}
@@ -901,6 +906,9 @@ class HogeAI extends AIController {
 			if(newRoutes.len() >= 1) {
 				if("srcPlace" in t) {
 					dirtyPlaces.rawset(t.srcPlace.GetGId()+":"+t.cargo, true);
+				}
+				if(t.vehicleType == AIVehicle.VT_AIR) {
+					if(IsInfrastructureMaintenance()) builtAirOfInfrastructureMaintenance = true;
 				}
 				foreach(newRoute in newRoutes) {
 					if(newRoute.srcHgStation.place != null) {
