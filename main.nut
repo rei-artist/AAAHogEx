@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 100;
+	static version = 101;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -885,6 +885,12 @@ class HogeAI extends AIController {
 			if(builtAirOfInfrastructureMaintenance && t.vehicleType == AIVehicle.VT_AIR) {
 				HgLog.Warning("Need to estimate again for bulding two airports with InfrastructureMaintenance");
 				return;
+			}
+			if(IsInfrastructureMaintenance()) {
+				while(t.estimate.buildingCost + t.estimate.price > GetUsableMoney()) {
+					HgLog.Info("Not enough money to build route(InfrastructureMaintenance)");
+					WaitDays(10);
+				}
 			}
 			if(t.vehicleType != AIVehicle.VT_AIR || IsInfrastructureMaintenance()) { //airの場合迅速にやらないといけないので
 				DoInterval(); 
