@@ -298,6 +298,14 @@ class TableUtils {
 			table1.rawset(k,v);
 		}
 	}
+	
+	static function Accumulate(table, key, n) {
+		local current = 0;
+		if(table.rawin(key)) {
+			current = table.rawget(key);
+		}
+		table.rawset(key, current + n);
+	}
 }
 
 class HgTable {

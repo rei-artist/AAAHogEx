@@ -2,8 +2,8 @@
 
    function GetAuthor()      { return "Rei Ishibashi"; }
    function GetName()        { return "AAAHogEx"; }
-   function GetDescription() { return "AAAHogEx is a highly competitive AI. This AI designs transportation routes based on the supply and demand of the map. Therefore, it works well in NewGRF such as FIRS, ECS, and YETI where complex industrial chains are required."; }
-   function GetVersion()     { return 101; } // main.nutも変更必要
+   function GetDescription() { return "AAAHogEx is a highly profitable AI that offers a fun and challenging experience even for experienced players. It supports various types of transportation, including trains, trams, cars, trucks, ships, and airplanes. It is also compatible with most major mods. For a beginner-friendly setup guide, please visit the website below."; }
+   function GetVersion()     { return 102; } // main.nutも変更必要
    function MinVersionToLoad() { return 83; }
    function GetDate()        { return "2025-04-07"; }
    function CreateInstance() { return "HogeAI"; }

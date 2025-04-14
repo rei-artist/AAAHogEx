@@ -197,18 +197,19 @@ class PlaceProduction {
 				usable = true //使ってない？
 				dirty = false
 				places = []
+				usedPlaces = []
 			};
 		}
 		foreach(place in Place.GetCargoPlaces(cargo,true)) {
-			if(place.GetLastMonthTransportedPercentage(cargo)>0) {
-				continue;
-			}
-			local prod = place.GetLastMonthProduction(cargo);
 			local pieceIndex = GetPieceIndex(place.GetLocation());
 			local pieceInfo = pieceInfos[pieceIndex];
-			pieceInfo.sum += prod;
-			pieceInfo.count ++;
-			pieceInfo.places.push(place);
+			if(place.GetLastMonthTransportedPercentage(cargo) == 0) {
+				pieceInfo.sum += place.GetLastMonthProduction(cargo);
+				pieceInfo.count ++;
+				pieceInfo.places.push(place);
+			} else {
+				pieceInfo.usedPlaces.push(place);
+			}
 		}
 		return pieceInfos;
 	}
@@ -317,6 +318,7 @@ class PlaceProduction {
 		local result = [];
 		foreach(index in indexes) {
 			result.extend(pieceInfos[index].places);
+			result.extend(pieceInfos[index].usedPlaces);
 		}
 		return result;
 	}
@@ -671,9 +673,6 @@ class PlaceDictionary {
 		return result;*/
 	}
 
-	function CanUseAsSource(place, cargo) {
-		return true;
-	}
 
 	function IsUsedAsSourceCargo(place,cargo) {
 		foreach(route in GetRoutesBySource(place)) {
@@ -807,6 +806,11 @@ class Place {
 		}
 		if(data.rawin("ngCandidatePlaces")) {
 			HgTable.Extend(Place.ngCandidatePlaces, data.ngCandidatePlaces);
+			foreach(k,v in Place.ngCandidatePlaces) {
+				/*local s = k.find(":");
+				HgLog.Warning("ngCandidatePlaces:"+HgTile(k.slice(0,s).tointeger())+" "+AICargo.GetName(k.slice(s+1).tointeger())+" "+v);*/
+			}
+			
 		}
 		if(data.rawin("maybeNotUsed")) {
 			HgTable.Extend(Place.maybeNotUsed, data.maybeNotUsed);
@@ -967,9 +971,9 @@ class Place {
 		if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
 			return;
 		}
+		HgLog.Info("AddNgPathFindPair from:"+from+" to:"+to+" "+Route.Class(vehicleType).GetLabel()+" limitDay:"+limitDay);
 		local fromTile = typeof from == "integer" ? from : from.GetLocation();
 		local toTile = typeof to == "integer" ? to : to.GetLocation();
-		
 		Place.ngPathFindPairs.rawset(fromTile+"-"+toTile+"-"+vehicleType,limitDay != null ? AIDate.GetCurrentDate() + limitDay : true);
 	}
 	
@@ -1033,6 +1037,7 @@ class Place {
 				result.push(TownCargo(town,cargo,true));
 			}
 		}
+		//HgLog.Warning("GetCargoProducing:"+AICargo.GetName(cargo)+" "+result.len());
 		return HgArray(result); //.Filter(function(p){ return p.GetName().find("Raston")!=null || p.GetName().find("Trinfingford")!=null; });
 	}
 	
@@ -1069,14 +1074,11 @@ class Place {
 		return CargoUtils.IsPaxOrMail(cargo); //TODO: 観光客とかは？
 	}
 
-	static function GetNotUsedProducingPlaces( cargo, limit = IntegerUtils.IntMax, indexes = null ) {
+	static function GetNotUsedProducingPlaces( cargo, limit, indexes ) {
+		assert(indexes != null);
+	
 		local placeDictionary = PlaceDictionary.Get();
-		local places;
-		if(indexes == null) {
-			places = Place.GetCargoPlaces( cargo, true );
-		} else {
-			places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
-		}
+		local places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
 		local result = [];
 		if(places.len() > limit) {
 			local list = AIList();
@@ -1086,9 +1088,6 @@ class Place {
 			}
 			foreach(index,_ in list) {
 				local place = places[index];
-				if(!placeDictionary.CanUseAsSource(place,cargo)) {
-					continue;
-				}
 				if(Place.IsNgCandidatePlace(place,cargo)) {
 					continue;
 				}
@@ -1099,9 +1098,6 @@ class Place {
 			}
 		} else {
 			foreach(place in places) {
-				if(!placeDictionary.CanUseAsSource(place,cargo)) {
-					continue;
-				}
 				if(Place.IsNgCandidatePlace(place,cargo)) {
 					continue;
 				}
@@ -1141,8 +1137,7 @@ class Place {
 			t.distance <- AIMap.DistanceManhattan(middleTile, t.location); // placesList[1].GetValue(index);
 			if(t.distance > minDistance 
 					&& t.location != middlePlaceLocation
-					&& !Place.IsNgPathFindPair(t.place, middleTile, vehicleType) 
-					&& PlaceDictionary.Get().CanUseAsSource(t.place, cargo)) {
+					&& !Place.IsNgPathFindPair(t.place, middleTile, vehicleType)) {
 				t.totalDistance <- destTile == null ? t.distance : AIMap.DistanceManhattan(destTile, t.location);
 				a.push(t);
 			}
@@ -1281,16 +1276,22 @@ class Place {
 	}
 	
 	function CanUseNewRoute(cargo, vehicleType) {
-		/*if(this instanceof TownCargo) {
-			return true;
-		}*/
+		if(this instanceof TownCargo) {
+			local maxStationGroups = GetPopulation() / 10000 + 1; // TODO: spreadの有無やバスの有無で変わる
+			local count = 0;
+			foreach(group in GetStationGroups()) {
+				if(group.HasCargoRating(cargo)) count++;
+			}
+			if(count < maxStationGroups) return true;
+		}
 		//HgLog.Warning( "canUsePlaceOnWater:"+HogeAI.Get().canUsePlaceOnWater+" "+this.IsBuiltOnWater()+" "+this.IsNearLand(cargo) );
 		if(!HogeAI.Get().canUsePlaceOnWater && this.IsBuiltOnWater() && !this.IsNearLand(cargo)) {
 			return false;
 		}
+		/*他空港を邪魔して、InfrastructureMaintenanceのシビアな状況で収益を落とす
 		if(vehicleType == AIVehicle.VT_AIR) {
 			return true;
-		}
+		}*/
 		if(HogeAI.Get().firs && CargoUtils.IsSupplyCargo(cargo)) { // supply cargo
 			if(vehicleType == AIVehicle.VT_WATER) {
 				local availableVts = Route.GetAvailableVehicleTypes();
@@ -1315,6 +1316,7 @@ class Place {
 			//HgLog.Warning("GetRoutesUsingSource "+route);
 			return false;
 		}
+		
 		if(Place.IsRemovedDestPlace(this)) {
 			//HgLog.Warning("IsRemovedDestPlace");
 			return false;
@@ -1947,22 +1949,15 @@ class Place {
 			}
 		}
 		local otherCompanies = !Place.maybeNotUsed.rawin(key) || Place.maybeNotUsed.rawin(key) ? 0 : 1;
-		//local usingRoutes = GetRoutesUsingSource(cargo);
-		local totalRates = 0;
-		local count = 0;
-		foreach( stationGroup in stationGroups ) {
-			local stationId = stationGroup.GetAIStation();
-			if(stationId == null) continue;
-			totalRates += AIStation.GetCargoRating( stationId, cargo);
-			count ++;
-		}
+		local usingRoutes = GetRoutesUsingSource(cargo);
+		local count = usingRoutes.len();
 		local isTownCargo = this instanceof TownCargo;
-		if(totalRates == 0 && (!isTownCargo || (isTownCargo && !TownBus.Exists(town,cargo)))) { // 他社は1社であると仮定している
+		if(count == 0 && (!isTownCargo || (isTownCargo && !TownBus.Exists(town,cargo)))) { // 他社は1社であると仮定している
 			return 70 * production / (GetLastMonthTransportedPercentage(cargo) + 70);
 		} else if(count == 1 && isMine) {
 			return production / (otherCompanies + 1);
 		} else { 
-			return 70 * (production  / (otherCompanies + 1)) / (totalRates + 70);
+			return (production  / (otherCompanies + 1)) / max(1,count + (isMine?0:1));
 		}
 	}
 	
@@ -2670,6 +2665,8 @@ class HgIndustry extends Place {
 }
 
 class TownCargo extends Place {
+	static spreadPopulation = {};
+
 	town = null;
 	cargo = null;
 	isProducing = null;
@@ -2732,6 +2729,10 @@ class TownCargo extends Place {
 		return GetRadiusPopulation(AITown.GetPopulation(town));
 	}
 	
+	function GetPopulation() {
+		return AITown.GetPopulation(town);
+	}
+	
 	static function GetRadiusPopulation(population) {
 		if(population < 700) return 3;
 		if(population < 1200) return 4;
@@ -2777,6 +2778,33 @@ class TownCargo extends Place {
 		}
 	}
 	
+	
+	function GetSpreadPopulation(spread) {
+		if(!TownCargo.spreadPopulation.rawin(spread)) {
+			TownCargo.spreadPopulation.rawset(spread,_GetSpreadPopulation(spread-5/*駅自体の大きさ TODO:Roadはもっち小さいとかある*/));
+		}
+		return TownCargo.spreadPopulation.rawget(spread);
+	}
+	
+	function _GetSpreadPopulation(spread) {
+		if(spread <= 3) return 700;
+		if(spread <= 4) return 1200;
+		if(spread <= 5) return 1800;
+		if(spread <= 6) return 2700;
+		if(spread <= 7) return 3700;
+		if(spread <= 8) return 5000;
+		if(spread <= 9) return 6500;
+		if(spread <= 10) return 8200;
+		if(spread <= 11) return 10200;
+		if(spread <= 12) return 12400;
+		if(spread <= 13) return 14900;
+		if(spread <= 14) return 17700;
+		if(spread <= 15) return 20800;
+		if(spread <= 16) return 24200;
+		if(spread <= 17) return 27900;
+		if(spread <= 18) return 32000;
+		return 36300;
+	}
 	
 	function GetTiles(coverageRadius,cargo) {
 		if(cargo != this.cargo) {
@@ -2896,7 +2924,14 @@ class TownCargo extends Place {
 		return 200 + d * d * 2;
 	}
 
+
 	function GetExpectedProductionAll(cargo, vehicleType, isMine = false, preEstimate = false) {
+		local result = _GetExpectedProductionAll(cargo, vehicleType, isMine, preEstimate);
+		if(!CanGrowth()) result = result * 2 / 3;
+		return result;
+	}
+
+	function _GetExpectedProductionAll(cargo, vehicleType, isMine = false, preEstimate = false) {
 		local production;
 		/*if(isCurrent) {
 			production = GetCurrentProduction(cargo, isMine);
@@ -2908,7 +2943,10 @@ class TownCargo extends Place {
 		if(HogeAI.Get().IsDistantJoinStations() && !HogeAI.Get().IsAvoidExtendCoverageAreaInTowns()) {
 			//production = production * 4 / 5; // スプレッドの隙間
 			local d = HogeAI.Get().maxStationSpread;
+			local population = AITown.GetPopulation(town);
+			if(!TownBus.CanUse(cargo) && population!=0) production = production * min(population, GetSpreadPopulation(d)) / population;
 			local additinalTownNum = max(0,(Place.GetTownDensity() * d * d).tointeger() - 1);
+			//HgLog.Info("TownCargo.GetExpectedProductionAll:"+production+" "+AICargo.GetName(cargo)+" "+AITown.GetName(town)+" additinalTownNum:"+additinalTownNum);
 			production += additinalTownNum * Place.GetAverageTownPopulation() / (cargo == HogeAI.Get().GetPassengerCargo() ? 7 : 20);
 			return min( production , cargo == HogeAI.Get().GetPassengerCargo()
 				? GetExpectedUsingDistantJoinStations() : GetExpectedUsingDistantJoinStations() * 2 / 5 );

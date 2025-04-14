@@ -515,7 +515,7 @@ class TrainRoute extends Route {
 //		return distance * 3 / 2 + 2100;
 		return distance + 500;
 	}
-		
+	
 	function AddDepotInfos(depotInfos) {
 		foreach(tile,info in depotInfos) {
 			this.depotInfos.rawset(tile,info);

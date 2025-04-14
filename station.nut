@@ -168,9 +168,15 @@ class StationGroup {
 	}
 	
 	function HasCargoRating(cargo) {
-		return AIStation.HasCargoRating (hgStations[0].stationId, cargo);
+		if(hgStations.len()==0) return false;
+		return AIStation.HasCargoRating(hgStations[0].stationId, cargo);
 	}
 
+	function GetCargoWaiting(cargo) {
+		if(hgStations.len()==0) return false;
+		return AIStation.GetCargoWaiting(hgStations[0].stationId, cargo);
+	}
+	
 	function GetStationCandidatesInSpread(stationFactory,checkedTile=null) {
 		/* Articulatedだと足りない
 		if( stationFactory.GetVehicleType() == AIVehicle.VT_ROAD ) {
@@ -269,7 +275,7 @@ class StationGroup {
 			} else {
 				prod = place.GetCurrentExpectedProduction(cargo, vehicleType, isMine, callers);
 			}
-			result += prod * 2 / 3;
+			result += prod; // * 2 / 3 これがあるとBuildFirstで適合車がいなくて失敗する事がある;
 			//HgLog.Info("GetExpectedProduction place:"+place+" prod:"+prod+ " result:"+result+" ["+AICargo.GetName(cargo)+"] "+isFuture+" at "+this);
 		}
 
@@ -761,7 +767,6 @@ class StationGroup {
 	function CanBuildAirport(airportType, cargo) {
 		return true; //TODO: 付近に街がある場合はノイズチェックがいる
 	}
-	
 	
 	function Remove() {
 		if(GetUsingRoutes().len() != 0) {
@@ -1733,17 +1738,19 @@ class HgStation {
 	
 	static function SearchStationByPlace(place, stationType, cargo, isAccepting) {
 		local result = [];
-		local stations = {};
-		foreach(s1 in place.GetStations()) {
-			if(s1.stationGroup == null) {
-				continue;
+		local stations = [];
+		local isRoad = stationType == AIStation.STATION_BUS_STOP || stationType == AIStation.STATION_TRUCK_STOP;
+		foreach(stationGroup in place.GetStationGroups()) {
+			local ng = false;
+			if(isRoad && isAccepting) {
+				foreach(usingRoute in stationGroup.GetUsingRoutesAsSource()) {
+					if(usingRoute.GetVehicleType() == AIVehicle.VT_ROAD) ng = true; // ROADはsrc利用されているときdest利用でシェアしない
+				}
 			}
-			foreach(s2 in s1.stationGroup.hgStations) {
-				stations.rawset(s2,0);
-			}
+			if(!ng) stations.extend(stationGroup.hgStations);
 		}
 	
-		foreach(hgStation,_ in stations) {
+		foreach(hgStation in stations) {
 			if(hgStation.GetStationType() == stationType) {
 				if(isAccepting) {
 					if(hgStation.stationGroup.IsAcceptingCargo(cargo)) {
@@ -1792,6 +1799,7 @@ class HgStation {
 	platformLength = null;
 	buildedDate = null;
 	stationGroup = null;
+	lastSpreadDate = null;
 	
 	originTile = null;
 	score = null;
@@ -2131,6 +2139,9 @@ class HgStation {
 	}
 	
 	function BuildSpreadPieceStations() {
+		if(lastSpreadDate!=null && lastSpreadDate < AIDate.GetCurrentDate() + 365 * 5) return false;
+		lastSpreadDate = AIDate.GetCurrentDate();
+	
 		local airSpread = this instanceof AirStation && !TownBus.CanUse(cargo);
 	
 		local span = airSpread ? 4 : 5;
@@ -2255,10 +2266,10 @@ class HgStation {
 		return true;
 	}
 	
-	// WaterStationでoverride
+	// WaterStation/RoadStationでoverride
 	function CheckBuildTownBus() {
 		foreach(corner in GetPlatformRectangle().GetCorners()) { 
-			TownBus.Check(corner.tile, null, HogeAI.Get().GetPassengerCargo(), false);
+			TownBus.Check(corner.tile, null, HogeAI.Get().GetPassengerCargo(), null);
 		}
 		local growthTown = place != null && place instanceof TownCargo && place.CanGrowth();
 		if(HogeAI.Get().IsDistantJoinStations() && !growthTown) {
@@ -2266,7 +2277,7 @@ class HgStation {
 		}
 		if(growthTown) {
 			foreach(cargo in HogeAI.Get().GetPaxMailCargos()) {
-				TownBus.CheckTown(place.town, null, cargo, false);
+				TownBus.CheckTown(place.town, null, cargo, null);
 			}
 		}
 	}
@@ -3148,6 +3159,18 @@ class RoadStation extends HgStation {
 		}
 		return result * 2;*/
 	}
+
+
+	function CanShareByMultiRoute(infrastractureType) {
+		return usingRoutes.len() < platformNum * 2;
+	}
+	
+	function CheckBuildTownBus() {
+		if(HogeAI.Get().CanExtendCoverageAreaInTowns()) {
+			return;
+		}
+		HgStation.CheckBuildTownBus();
+	}
 }
 
 class PlaceStation extends HgStation {
@@ -3384,6 +3407,10 @@ class PieceStation extends HgStation {
 		}
 		result += neighbor;
 		return result;
+	}
+	
+	function CanShareByMultiRoute(infrastractureType) {
+		return usingRoutes.len() < 1;
 	}
 	
 	static function GetStationTypeCargo(cargo) {

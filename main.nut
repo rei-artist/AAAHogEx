@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 101;
+	static version = 102;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -39,6 +39,7 @@ class HogeAI extends AIController {
 	isUseAirportNoise = null;
 	isDistantJoinStations = null;
 	isInfrastructureMaintenance = null;
+	futureIncomeRate = null;
 	freightTrains = null;
 	trainSlopeSteepness = null;
 	roadvehSlopeSteepness = null;
@@ -80,6 +81,7 @@ class HogeAI extends AIController {
 	isRich = null;
 	lastScanRouteDates = null;
 	mountain = null;
+	noRouteCnadidates = null;
 	
 	yeti = null;
 	ecs = null;
@@ -258,6 +260,7 @@ class HogeAI extends AIController {
 		constructions = [];
 		pendingConstructions = {};
 		lastScanRouteDates = {};
+		noRouteCnadidates = false;
 	}
 	
 	function Start() {
@@ -736,7 +739,7 @@ class HogeAI extends AIController {
 	}
 	
 	function CalculateProfitModel() {
-		if(!IsRich()/* || (maxRoi < 1000 && !HasIncome(250000))*/) {
+		if(!IsRich() || IsInflation()/* || (maxRoi < 1000 && !HasIncome(250000))*/) {
 			roiBase = true;
 			buildingTimeBase = false;
 			vehicleProfibitBase = false;
@@ -869,7 +872,8 @@ class HogeAI extends AIController {
 			local s = "ScanPlace "+t.explain;
 			HgLog.Info(s);
 		}
-		HgLog.Info("} routeCandidates.GetAll");
+		HgLog.Info("} routeCandidates.GetAll "+routeCandidates.Count());
+		noRouteCnadidates = routeCandidates.Count() == 0;
 		local searchDays = AIDate.GetCurrentDate() - startDate;
 		HgLog.Info("searchDays:"+searchDays+" minValue:"+minValue);
 		limitDate = AIDate.GetCurrentDate() + max((roiBase ? 356*2 : 365*2) / GetDayLengthFactor(), searchDays * (roiBase ? 2 : 2));
@@ -887,10 +891,21 @@ class HogeAI extends AIController {
 				return;
 			}
 			if(IsInfrastructureMaintenance()) {
-				while(t.estimate.buildingCost + t.estimate.price > GetUsableMoney()) {
-					HgLog.Info("Not enough money to build route(InfrastructureMaintenance)");
+				// AirportExchangeCandidatesにbuildingCostやpriceは無い
+				local nextFlag = false;
+				while("buildingCost" in t.estimate && t.estimate.buildingCost + t.estimate.price > GetUsableMoney()) {
+					HgLog.Warning("Not enough money to build route(InfrastructureMaintenance) building:"+t.estimate.buildingCost+" price:"+t.estimate.price+" "+t.estimate);
+					if(HogeAI.Get().GetQuarterlyIncome() <= 0) {
+						nextFlag = true;
+						break;
+					}
+					if(limitDate < AIDate.GetCurrentDate()) {
+						HgLog.Warning("ScanPlaces reached limitDate");
+						return;
+					}				
 					WaitDays(10);
 				}
+				if(nextFlag) continue;
 			}
 			if(t.vehicleType != AIVehicle.VT_AIR || IsInfrastructureMaintenance()) { //airの場合迅速にやらないといけないので
 				DoInterval(); 
@@ -981,7 +996,8 @@ class HogeAI extends AIController {
 								}
 							}
 						}
-						if(next.estimate.value < 200 && IsInfrastructureMaintenance() && next.vehicleType == AIVehicle.VT_ROAD) { 
+						if(next.estimate.value < 100 && IsInfrastructureMaintenance() && next.vehicleType == AIVehicle.VT_ROAD) { 
+							HgLog.Warning("next.estimate.value < 100");
 							WaitDays(365); // 収益性が悪すぎるのでしばらく様子を見て再検索
 							return;
 						}
@@ -1349,6 +1365,7 @@ class HogeAI extends AIController {
 			}
 			places.extend(Place.GetNotUsedProducingPlaces( cargo, 300, indexes ));
 			if(places.len() == 0) {
+				//HgLog.Warning("step0 places.len() == 0 "+AICargo.GetName(cargo));
 				continue;
 			}
 			local placeList = AIList();
@@ -1378,6 +1395,7 @@ class HogeAI extends AIController {
 						break;
 					}
 					if(!place.CanUseNewRoute(cargo, vehicleType) || Place.IsNgPlace(place, cargo, vehicleType)) {
+						//HgLog.Warning("step1 "+place+" "+place.CanUseNewRoute(cargo, vehicleType)+" "+Place.IsNgPlace(place, cargo, vehicleType));
 						continue;
 					}
 					if(vehicleType == AIVehicle.VT_AIR) {
@@ -1387,6 +1405,7 @@ class HogeAI extends AIController {
 					
 					local production = place.GetExpectedProduction( cargo, vehicleType, false );
 					if(production == 0) {
+						//HgLog.Warning("step2 "+place+" "+production);
 						continue;
 					}
 					production = min(production,1000);
@@ -1401,6 +1420,7 @@ class HogeAI extends AIController {
 					if(roiBase) stdProduction = max(stdProduction,production);
 				}
 				if(cargoResult.len() == 0) {
+					//HgLog.Warning("step3 cargoResult.len()=0 "+AICargo.GetName(cargo));
 					continue;
 				}
 				
@@ -1719,9 +1739,9 @@ class HogeAI extends AIController {
 					t.score <- estimate.value;
 					t.isBiDirectional <- isBidirectional;
 					t.estimate <- estimate;
-					if(vt == AIVehicle.VT_AIR && cargo == HogeAI.GetPassengerCargo() && orgPlace instanceof TownCargo && t.place instanceof TownCargo) {
+					/*if(vt == AIVehicle.VT_AIR && cargo == HogeAI.GetPassengerCargo() && orgPlace instanceof TownCargo && t.place instanceof TownCargo) {
 						t.score = t.score * 13 / 10; // 郵便がひっついてくる分
-					}
+					}*/
 					t.production <- production;
 					if(ecs && t.place.IsAccepting() && t.place.IsEcsHardNewRouteDest(cargo)) {
 						t.score /= 2;
@@ -1817,7 +1837,7 @@ class HogeAI extends AIController {
 				continue;
 			}
 			if(!route.NeedsAdditionalProducing()) {
-				HgLog.Info("!route.NeedsAdditionalProducing() GetMeetPlaceCandidates"+route);
+				//HgLog.Info("!route.NeedsAdditionalProducing() GetMeetPlaceCandidates"+route);
 				continue;
 			}
 			result.extend( GetMeetPlacePlans( place, route ) );
@@ -3361,7 +3381,7 @@ class HogeAI extends AIController {
 				production = place.GetExpectedProduction(cargo, AIVehicle.VT_RAIL)
 			}
 		}).Filter(function(t) :(placeDictionary,cargo) {
-			return t.production >= 50 && !Place.IsNgPlace(t.place,cargo,AIVehicle.VT_RAIL) && placeDictionary.CanUseAsSource(t.place,cargo);
+			return t.production >= 50 && !Place.IsNgPlace(t.place,cargo,AIVehicle.VT_RAIL);
 		}).Map(function(t) : (checkPointsEnd) {
 			local tiled = HogeAI.GetMinDistanceFromPoints(t.place.GetLocation(), checkPointsEnd);
 			t.pathTile <- tiled[0];
@@ -3942,12 +3962,10 @@ class HogeAI extends AIController {
 			HgLog.Warning("ET_VEHICLE_LOST: Invalid vehicle "+vehicle);
 			return;
 		}
-		local group = AIVehicle.GetGroupID(vehicle);
 		local vehicleType = AIVehicle.GetVehicleType(vehicle);
-		HgLog.Warning("ET_VEHICLE_LOST:"+VehicleUtils.GetTypeName(vehicleType)+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" group:"+AIGroup.GetName(group));
-		if(Route.groupRoute.rawin(group)) {
-			Route.groupRoute.rawget(group).OnVehicleLost(vehicle);
-		}
+		local route = Route.GetRouteByVehicle(vehicle);
+		HgLog.Warning("ET_VEHICLE_LOST:"+VehicleUtils.GetTypeName(vehicleType)+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" "+route);
+		if(route != null) route.OnVehicleLost(vehicle);
 	}
 	
 	function OnVehicleCrashed(event) {
@@ -4117,7 +4135,7 @@ class HogeAI extends AIController {
 	}
 	
 	function WaitForMoney(needMoney, maxDays = 0,reason = "") {
-		return HogeAI.WaitForPrice(HogeAI.GetInflatedMoney(needMoney),1000,maxDays,reason);
+		return HogeAI.WaitForPrice(HogeAI.GetInflatedMoney(needMoney),HogeAI.GetInflatedMoney(1000),maxDays,reason);
 	}
 	
 	function GetInflatedMoney(money) {
@@ -4332,6 +4350,10 @@ class HogeAI extends AIController {
 	function IsInfrastructureMaintenance() {
 		return isInfrastructureMaintenance;
 	}
+	
+	function IsInflation() {
+		return AIGameSettings.GetValue("economy.inflation") == 1;	
+	}
 
 	function GetFreightTrains() {
 		return freightTrains;
@@ -4345,10 +4367,6 @@ class HogeAI extends AIController {
 		return roadvehSlopeSteepness;
 	}
 	
-	function IsInfrastructureMaintenance() {
-		return isInfrastructureMaintenance;
-	}
-
 	function GetMaxLoan() {
 		return maxLoan;
 	}
@@ -4390,7 +4408,11 @@ class HogeAI extends AIController {
 		canUsePlaceOnWater = CanRemoveWater() || !WaterRoute.IsTooManyVehiclesForNewRoute(WaterRoute);
 		waterRemovable = clearWaterCost < max(GetQuarterlyIncome() / 10, GetUsableMoney() / 100);
 		isRich = null;//true;
-
+		local currentYear = AIDate.GetYear( AIDate.GetCurrentDate() );
+		futureIncomeRate = 100;
+		if(IsInflation() && currentYear < 2090) {
+			futureIncomeRate = max(80, 100 - (2090 - currentYear));
+		}
 
 		hogeIndex = 0;
 		hogeNum = 0;
@@ -4407,6 +4429,7 @@ class HogeAI extends AIController {
 				}
 			}
 		}
+		
 		//hogeNum = 1;
 		/*
 		HgLog.Info("InflationRate:"+HogeAI.GetInflationRate());

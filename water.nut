@@ -103,6 +103,15 @@ class WaterRoute extends CommonRoute {
 		return src.GetCoasts(cargo)==null || dest.GetCoasts(cargo)==null ? [WaterRoute.IF_CANAL] : [WaterRoute.IF_SEA];
 	}
 
+
+	function GetRouteInfrastractureCost() {
+		if(!HogeAI.Get().IsInfrastructureMaintenance()) {
+			return 0;
+		}
+		local totalCost = AIInfrastructure.GetMonthlyInfrastructureCosts (AICompany.COMPANY_SELF, AIInfrastructure.INFRASTRUCTURE_STATION);
+		return totalCost / AIInfrastructure.GetInfrastructurePieceCount(AICompany.COMPANY_SELF, AIInfrastructure.INFRASTRUCTURE_STATION) * 4 * 12;
+	}
+
 	function SetPath(path) {
 		local execMode = AIExecMode();
 		local count = 0;

@@ -39,12 +39,24 @@ Estimation <- {
 		return max(1,(cruiseDays + loadingTime) * 2 / maxVehicles);
 	}
 
+	function GetDepreciation() {// 減価償却
+		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
+			// inflationを考慮して都度価格を取る
+			local n = rawin("numLoco") ? numLoco : 1;
+			return AIEngine.GetPrice(engine) * n / (AIEngine.GetMaxAge(engine) / 365);
+		} else {
+			return 0;
+		}
+	}
+
 	function CalculateIncome() {
 		buildingTime = GetBuildingTime(); 
 		local totalDays = max(1,cruiseDays * 2 + waitingInStationTime + loadingTime);
 		local annualDeliver = totalCapacity * vehiclesPerRoute * 365 / totalDays;
 		runningCostPerCargo = (annualDeliver == 0 ? 0 : runningCost * vehiclesPerRoute / annualDeliver) + additionalRunningCostPerCargo;
-		income = incomePerOneTime * 365 / totalDays - runningCost;;
+		runningCost += GetDepreciation();
+		income = incomePerOneTime * 365 / totalDays;
+		income = HogeAI.Get().futureIncomeRate * income / 100 - runningCost;
 		routeIncome = income * vehiclesPerRoute - infrastractureCost - additionalRunningCostPerCargo * annualDeliver + additionalRouteIncome;
 		value = GetValue();
 		//HgLog.Warning("CalculateIncome "+GetExplain());
@@ -74,6 +86,9 @@ Estimation <- {
 		roi = routeIncome * 1000 / cost;
 		local incomePerVehicle = routeIncome / (vehiclesPerRoute + additionalVehiclesPerRoute); 
 		local incomePerBuildingTime = routeIncome / buildingTime;
+		/*if(HogeAI.Get().IsInfrastructureMaintenance()) {
+			return routeIncome * 1000 / max(1,infrastractureCost);
+		} 無いほうが収益性が高いけれど、incomePerVehicleの時に収益性が落ちる問題がある*/
 		return HogeAI.Get().GetValue(roi,incomePerBuildingTime,incomePerVehicle);
 	}
 	
@@ -277,9 +292,19 @@ CommonEstimation <- delegate Estimation : {
 		} else {
 			incomePerOneTimeReturn = 0;
 		}
+
+		if( vehicleType == AIVehicle.VT_AIR && cargo == HogeAI.GetPassengerCargo() && isBidirectional) {
+			// TODO: もっと汎用的にすべきかも
+			local mailCargoIncome = AICargo.GetCargoIncome( HogeAI.GetMailCargo(), totalDistance, cruiseDays + additionalCruiseDays);
+			local mailCapacity = Air.Get().GetMailSubcargoCapacity(engine);
+			incomePerOneTime += mailCargoIncome * mailCapacity;
+			incomePerOneTimeReturn += mailCargoIncome * mailCapacity;
+		}
+
 		incomePerOneTime += incomePerOneTimeReturn;
 		cargoIncomes = {};
 		cargoIncomes.rawset(cargo,cargoIncome);
+
 
 		CalculateIncome();
 	}
@@ -525,7 +550,7 @@ class Estimator {
 	function GetBuildingCost(infrastractureType, distance, cargo) {
 		switch(GetVehicleType()) {
 			case AIVehicle.VT_RAIL:
-				local cost = (AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) * 2/*40%全部畑の場合*/) * 2 * distance;
+				local cost = (AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) * 3/*40%全部畑の場合*/) * 2 * distance;
 				cost += AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) * 220 + Route.GetPaxMailTransferBuildingCost(cargo);
 				return cost;
 		//		return distance * railCost/*HogeAI.Get().GetInflatedMoney(720)*/ +HogeAI.Get().GetInflatedMoney( CargoUtils.IsPaxOrMail(cargo) ? 30000 : 20000);
@@ -649,8 +674,8 @@ class CommonEstimator extends Estimator {
 		
 		if(vehicleType == AIVehicle.VT_AIR) {
 			if(isRouteInstance && self instanceof AirRoute) {
-				local usableBigPlane = Air.GetAiportTraits(self.srcHgStation.airportType).supportBigPlane 
-								&& Air.GetAiportTraits(self.destHgStation.airportType).supportBigPlane;	
+				local usableBigPlane = Air.Get().GetAiportTraits(self.srcHgStation.airportType).supportBigPlane 
+								&& Air.Get().GetAiportTraits(self.destHgStation.airportType).supportBigPlane;	
 				
 				if(!usableBigPlane) {
 					engineList.Valuate( AIEngine.GetPlaneType );
@@ -835,7 +860,8 @@ class CommonEstimator extends Estimator {
 				local buildingCost = infrastracture.buildingCost;
 				local maxRouteCapacity = self.EstimateMaxRouteCapacity( engineInfrastractureType, capacity );
 
-				local price = AIEngine.GetPrice(e);		
+				local price = AIEngine.GetPrice(e);	
+				//HgLog.Warning("AIEngine.GetPrice:"+price + " "+AIEngine.GetName(e));
 				if(maxBuildingCost > 0 && price > 0) {
 					if(isBuildingEstimate) {
 						local maxBuildingCostInfra = maxBuildingCost - infrastracture.maintenanceCost > 0 ? GetMaxBuildingCost(infrastracture.maintenanceCost) : 0;
@@ -901,9 +927,9 @@ class CommonEstimator extends Estimator {
 				estimation.Estimate();
 				if(ignoreIncome || estimation.routeIncome >= 0) {
 					result.push(estimation);
-					//HgLog.Info(estimation);
+					//HgLog.Info("estimation:"+estimation+" "+self);
 				} else {
-					//HgLog.Warning("routeIncome<0:"+estimation);
+					//HgLog.Info("routeIncome<0:"+estimation+" "+self);
 					//HgLog.Warning("estimation:"+HgTable(estimation));
 				}
 				/*
@@ -1364,7 +1390,7 @@ class TrainEstimator extends Estimator {
 		local usableMoney = HogeAI.Get().GetUsableMoney();
 		local useReliability = HogeAI.Get().IsEnableVehicleBreakdowns();
 		local breakdownDifficulty = HogeAI.Get().GetVehicleBreakdownDifficulty();
-		local firstRoute = yearlyIncome == 0; // TrainRoute.instances.len()==0 && RoadRoute.instances.len()==0;
+		local firstRoute = yearlyIncome <= 0; // TrainRoute.instances.len()==0 && RoadRoute.instances.len()==0;
 		
 		/*
 		if(CargoUtils.IsPaxOrMail(cargo) && isBidirectional && RoadRoute.GetMaxTotalVehicles() <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD)) {
@@ -1379,6 +1405,7 @@ class TrainEstimator extends Estimator {
 			}
 		}
 		local maxBuildingCost = !isLimitIncome || !checkRailType ? 0 : GetMaxBuildingCost(0);
+		if(maxBuildingCost>0 && firstRoute) usableMoney -= HogeAI.GetInflatedMoney(20000); // レールの建設は不確実性が大きい
 		local vehiclesRoom = TrainRoute.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, TrainRoute.GetVehicleType());
 		
 		local countWagonEngines = 0;
@@ -1642,14 +1669,14 @@ class TrainEstimator extends Estimator {
 					
 					local price = trainPlan.GetPrice();
 					
-					if(firstRoute && price * 3 / 2 > HogeAI.GetUsableMoney()) {
+					if(firstRoute && price * 3 / 2 > usableMoney) {
 						//HgLog.Warning("firstRoute && price * 3 / 2 > HogeAI.GetUsableMoney()");
 						if(tooShortMoney == null) {
 							tooShortMoney = true;
 						}
 						continue;
 					}
-					if(maxBuildingCost != 0 && price > (infrastractureCost>0 ? GetMaxBuildingCost(infrastractureCost) : maxBuildingCost)) {
+					if(maxBuildingCost != 0 && price > maxBuildingCost) {
 						if(tooShortMoney == null) {
 							tooShortMoney = true;
 						}
@@ -1769,9 +1796,9 @@ class TrainEstimator extends Estimator {
 							//wagonEngineEstimations.AddItem(result.len(),estimation.value);
 							if(maxBuildingCost > 0) {
 								if( firstRoute ) {
-									if(estimation.price * estimation.vehiclesPerRoute + estimation.buildingCost > HogeAI.Get().GetUsableMoney() * 9 / 10 ) continue;
+									if(estimation.price * estimation.vehiclesPerRoute + estimation.buildingCost > usableMoney ) continue;
 								} else {
-									if(estimation.price + estimation.buildingCost > HogeAI.Get().GetUsableMoney() + yearlyIncome) continue;
+									if(estimation.price + estimation.buildingCost > usableMoney + yearlyIncome) continue;
 								}
 							}
 							if(forRawPlace!=null && forRawPlace && route == null) {

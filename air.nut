@@ -73,6 +73,16 @@ class Air {
 	static allAirportTypes = [
 		AIAirport.AT_SMALL, AIAirport.AT_COMMUTER, AIAirport.AT_LARGE, AIAirport.AT_METROPOLITAN, AIAirport.AT_INTERNATIONAL, AIAirport.AT_INTERCON
 	];
+	
+	type2Traits = null;
+	totalMaintenanceCosts = null;
+	engineMailCapacity = null;
+	
+	constructor() {
+		totalMaintenanceCosts = 0;
+		engineMailCapacity = {};
+	}
+	
 
 	function GetAvailableAiportTraits() {
 		local result = [];
@@ -102,16 +112,57 @@ class Air {
 	}
 	
 	function GetAiportTraits(airportType) {
-		foreach(t in Air.airportTraits) {
-			if(t.airportType == airportType) {
-				return t;
+		if(type2Traits == null) {
+			type2Traits = {};
+			foreach(t in Air.airportTraits) {
+				type2Traits.rawset(t.airportType, t);
 			}
 		}
-		HgLog.Error("Unknown aiportType(GetAiportTraits):"+airportType);
+		return type2Traits.rawget(airportType);
 	}
 	
 	function IsCoverAiportType(airportType1,airportType2) {
 		return GetAiportTraits(airportType1).level >= GetAiportTraits(airportType2).level;
+	}
+	
+	function AddAirStation(airStation) {
+		totalMaintenanceCosts += GetAiportTraits(airStation.airportType).maintenanceCost;
+	}
+	
+	function RemoveAirStation(airStation) {
+		totalMaintenanceCosts -= GetAiportTraits(airStation.airportType).maintenanceCost;
+	}
+	
+	function GetMailSubcargoCapacity(engine) {
+		if(engineMailCapacity.rawin(engine)) {
+			return engineMailCapacity.rawget(engine);
+		}
+		local real = GetMailSubcargoCapacityReal(engine);
+		if(real == -1) {
+			return AIEngine.GetCapacity(engine) / 8; //不明なので適当
+		}
+		engineMailCapacity.rawset(engine,real);
+		return real;
+	}
+	
+	function GetMailSubcargoCapacityReal(engine) {
+		if(AirRoute.instances.len() == 0) return -1;
+		local execMode = AIExecMode();
+		local sampleDepot = AirRoute.instances[0].depot; // TODO:ヘリパッドだとバグるけど今のところ無い
+		local price = AIEngine.GetPrice(engine);
+		if(price > HogeAI.GetUsableMoney()) {
+			HgLog.Warning("Not enough money (Air.GetMailSubcargoCapacity) "+AIEngine.GetName(engine)+" price:"+price);
+			return -1;
+		}
+		HogeAI.WaitForPrice(price,0);
+		local vehicle = AIVehicle.BuildVehicle(sampleDepot,engine);
+		if(!AIVehicle.IsValidVehicle(vehicle)) {
+			HgLog.Warning("Failed to BuildVehicle (Air.GetMailSubcargoCapacity) "+AIEngine.GetName(engine)+" "+AIError.GetLastErrorString());
+			return -1;
+		}
+		local result = AIVehicle.GetCapacity(vehicle, HogeAI.GetMailCargo())
+		AIVehicle.SellVehicle(vehicle);
+		return result;
 	}
 }
 
@@ -126,6 +177,7 @@ class AirRoute extends CommonRoute {
 			a.push(route.Save());
 		}
 		data.airRoutes <- a;
+		data.airTotalMaintenanceCosts <- Air.Get().totalMaintenanceCosts;
 	}
 	
 	static function LoadStatics(data) {
@@ -139,8 +191,8 @@ class AirRoute extends CommonRoute {
 			AirRoute.instances.push(route);	
 			PlaceDictionary.Get().AddRoute(route);
 		}
+		if("airTotalMaintenanceCosts" in data) Air.Get().totalMaintenanceCosts = data.airTotalMaintenanceCosts;
 	}
-	
 	
 	constructor() {
 		CommonRoute.constructor();
@@ -224,13 +276,17 @@ class AirRoute extends CommonRoute {
 		if(!HogeAI.Get().IsInfrastructureMaintenance()) {
 			return 0;
 		}
-		local result = InfrastructureCost.Get().GetCostPerAirport();
-		if(result == 0) {
-			return HogeAI.GetInflatedMoney(Air.Get().GetAiportTraits(infrastractureType).maintenanceCost * 2);
-		}
-		return result * 2;
+		return InfrastructureCost.Get().GetCostPerAirport(infrastractureType) * 2;
 	}
 
+	function GetRouteInfrastractureCost() {
+		if(!HogeAI.Get().IsInfrastructureMaintenance()) {
+			return 0;
+		}
+		return InfrastructureCost.Get().GetCostPerAirport(srcHgStation.airportType) 
+			+ InfrastructureCost.Get().GetCostPerAirport(destHgStation.airportType);
+	}
+	
 	function GetPathDistance() {
 		local p1 = srcHgStation.platformTile;
 		local p2 = destHgStation.platformTile;
@@ -585,7 +641,7 @@ class AirStation extends HgStation {
 	
 	function BuildStation(joinStation,isTestMode) {
 		HogeAI.WaitForPrice(AIAirport.GetPrice(airportType));
-		return AIAirport.BuildAirport (platformTile, airportType, joinStation);
+		return AIAirport.BuildAirport(platformTile, airportType, joinStation);
 	}
 	
 	function Build(levelTiles=true,isTestMode=true) {
@@ -625,6 +681,7 @@ class AirStation extends HgStation {
 			}
 			return false;
 		}
+		if(!isTestMode) Air.Get().AddAirStation(this);
 		return true;
 	}
 
@@ -633,6 +690,7 @@ class AirStation extends HgStation {
 		if(!BuildUtils.RemoveAirportSafe(platformTile)) {
 			HgLog.Warning("AIAirport.RemoveAirport failed "+this+" "+AIError.GetLastErrorString());
 		}
+		Air.Get().RemoveAirStation(this);
 		return true;
 	}
 	
