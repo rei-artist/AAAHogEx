@@ -2728,6 +2728,16 @@ class RailStation extends HgStation {
 		}
 		return result;
 	}
+
+	function BuildRailDepot(isTestMode,tile,front) {
+		if(!BuildUtils.BuildRailDepotSafe(tile,front)) {
+			if(!isTestMode) {
+				HgLog.Warning("AIRail.BuildRailDepot Failed "+HgTile(tile)+" front:"+HgTile(front)+" "+AIError.GetLastErrorString());
+			}
+			return false;
+		}
+		return true;
+	}
 	
 	//TrainRoute.ChangeDestinationから使用される
 	function RemoveOnlyPlatform() {
@@ -3562,9 +3572,8 @@ r: Rail
 			}
 		}
 		foreach(depot in GetDepots() ) {
-			if(!AIRail.BuildRailDepot(depot[0], depot[1])) {
+			if(!BuildRailDepot(isTestMode, depot[0], depot[1])) {
 				if(!isTestMode) {
-					HgLog.Warning("BuildRailDepot failed."+AIError.GetLastErrorString());
 					return false;
 				} else if(AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
 					return false;
@@ -3811,6 +3820,10 @@ class SmartStation extends RailStation {
 		return [list1,list2];
 	}
 	
+	function IsValidRectangle() {
+		return AIMap.DistanceManhattan(At(0,0),At(2,platformLength+6)) == 2 + platformLength + 6;
+	}
+	
 	function GetHopeFlatTileList() {
 		local list = AITileList();
 		list.AddRectangle(At(0,platformLength+5),At(1,platformLength+6));
@@ -3818,6 +3831,7 @@ class SmartStation extends RailStation {
 	}
 	
 	function Build(levelTiles=true, isTestMode=true) {
+		if(!IsValidRectangle()) return false;
 		foreach(tile,_ in GetMustBuildableTileList()) {
 			if(!HogeAI.IsBuildable(tile)) {
 				if(!isTestMode) {
@@ -3895,8 +3909,7 @@ class SmartStation extends RailStation {
 		}
 		
 		if(platformNum==3) {
-			if(!BuildUtils.BuildRailDepotSafe(At(2,platformLength+4),At(2,platformLength+3))) {
-				HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
+			if(!BuildRailDepot(isTestMode,At(2,platformLength+4),At(2,platformLength+3))) {
 				return false;
 			}
 		}
@@ -4609,10 +4622,7 @@ class SrcRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
-				if(!isTestMode) {
-					HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
-				}
+			if(!BuildRailDepot(isTestMode,At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				return false;
 			}
 		}
@@ -4850,6 +4860,10 @@ class RealSrcRailStation extends RailStation {
 		return result;
 	}
 	
+	function IsValidRectangle() {
+		return AIMap.DistanceManhattan(At(0,0),At(2,platformLength+7)) == 2 + platformLength + 7;
+	}
+	
 	function GetMustFlatTileLists() {
 		local list1 = AITileList();
 		list1.AddRectangle(At(0,platformLength+1),At(2,platformLength+6));
@@ -4866,6 +4880,7 @@ class RealSrcRailStation extends RailStation {
 	}
 	
 	function Build(levelTiles=true, isTestMode=true) {
+		if(!IsValidRectangle()) return false;
 		foreach(tile,_ in GetMustBuildableTileList()) {
 			if(!HogeAI.IsBuildable(tile)) {
 				if(!isTestMode) {
@@ -4912,11 +4927,8 @@ class RealSrcRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
+			if(!BuildRailDepot(isTestMode, At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				if(!isTestMode || AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
-					if(!isTestMode) {
-						HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
-					}
 					return false;
 				}
 			}
@@ -5196,7 +5208,9 @@ class SimpleRailStation extends RailStation {
 		return 15000;
 	}
 	
+	
 	function Build(levelTiles=false, isTestMode=true) {
+		if(!IsValidRectangle()) return false;
 		local tiles = [];
 		local tilesGen = GetMustBuildableTiles();
 		local xy;
@@ -5227,11 +5241,8 @@ class SimpleRailStation extends RailStation {
 			return false;
 		}
 		foreach(depot in GetDepots()) {
-			if(!BuildUtils.BuildRailDepotSafe(At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
+			if(!BuildRailDepot(isTestMode, At(depot[0][0],depot[0][1]),At(depot[1][0],depot[1][1]))) {
 				if(!isTestMode || AIError.GetLastError() == AIError.ERR_AREA_NOT_CLEAR) {
-					if(!isTestMode) {
-						HgLog.Warning("AIRail.BuildRailDepot Failed "+AIError.GetLastErrorString());
-					}
 					return false;
 				}
 			}
@@ -5335,6 +5346,9 @@ class SimpleRailStation extends RailStation {
 		return null;
 	}
 	
+	function IsValidRectangle() {
+		return AIMap.DistanceManhattan(At(-1,0),At(platformNum,platformLength+3)) == platformNum + 1 + platformLength + 3;
+	}
 	
 	
 	function GetArrivalsTiles() {

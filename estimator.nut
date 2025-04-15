@@ -43,7 +43,9 @@ Estimation <- {
 		if(HogeAI.Get().IsEnableVehicleBreakdowns()) {
 			// inflationを考慮して都度価格を取る
 			local n = rawin("numLoco") ? numLoco : 1;
-			return AIEngine.GetPrice(engine) * n / (AIEngine.GetMaxAge(engine) / 365);
+			local age = AIEngine.GetMaxAge(engine) / 365;
+			if(age == 0) return 0; //たぶんengineの生産ができないと0になる
+			return AIEngine.GetPrice(engine) * n / age;
 		} else {
 			return 0;
 		}
