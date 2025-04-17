@@ -3,9 +3,9 @@
    function GetAuthor()      { return "Rei Ishibashi"; }
    function GetName()        { return "AAAHogEx"; }
    function GetDescription() { return "AAAHogEx is a highly profitable AI that offers a fun and challenging experience even for experienced players. It supports various types of transportation, including trains, trams, cars, trucks, ships, and airplanes. It is also compatible with most major mods. For a beginner-friendly setup guide, please visit the website below."; }
-   function GetVersion()     { return 103; } // main.nutも変更必要
+   function GetVersion()     { return 104; } // main.nutも変更必要
    function MinVersionToLoad() { return 83; }
-   function GetDate()        { return "2025-04-15"; }
+   function GetDate()        { return "2025-04-17"; }
    function CreateInstance() { return "HogeAI"; }
    function GetShortName()   { return "HOGE"; }
    function GetAPIVersion()    { return "1.3"; }

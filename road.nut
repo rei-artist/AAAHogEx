@@ -727,6 +727,7 @@ class RoadBuilder {
 	costDrivethroughstation = null;
 	retryCount = null;
 	pathFindLimit = null;
+	retry = null;
 	
 	debug = null;
 	
@@ -736,12 +737,12 @@ class RoadBuilder {
 		this.retryCount = 0;
 		this.ignoreTiles = [];
 		this.pathFindLimit = HogeAI.Get().IsInfrastructureMaintenance() ? 300 : (HogeAI.Get().roiBase ? 100 : 50);
+		this.retry = false;
 		this.debug = false;
 	}
 
-	function BuildPath(starts ,goals, suppressInterval=false) {
+	function FindPath(starts, goals, suppressInterval, isRetry=false) {
 		local pathfinder = RoadPathFinder();
-		
 		pathfinder.debug = debug;
 		pathfinder.engine = engine;
 		pathfinder._cost_level_crossing = 1000;
@@ -778,7 +779,8 @@ class RoadBuilder {
 //			pathfinder._cost_no_existing_road = 40; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
 			pathfinder._cost_tile = 50;
 			pathfinder._cost_no_existing_road = 140;
-			if(HogeAI.Get().IsInflation()) {
+			if(HogeAI.Get().IsInflation() && !isRetry) {
+				retry = true;
 				pathfinder._estimate_rate = 1; //距離が長いと成功しなくなる
 				pathFindLimit = 300; // 既存路が利用できるときのみ成功するのはむしろ合理的。max(300, distance * distance / 30);
 			}
@@ -811,8 +813,19 @@ class RoadBuilder {
 		} else {
 			path = null;
 			HgLog.Warning("RoadRoute Pathfinding failed.");
-			return false;
 		}
+		return path;
+	}
+
+
+	function BuildPath(starts ,goals, suppressInterval=false) {
+		retry = false;
+		local path = FindPath(starts ,goals, suppressInterval);
+		if(path == null && retry) {
+			path = FindPath(starts ,goals, suppressInterval, true);
+		}
+		if(path == null) return false;
+		
 		this.path = path = Path.FromPath(path);
 		local execMode = AIExecMode();
 		
