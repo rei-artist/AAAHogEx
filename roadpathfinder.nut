@@ -234,7 +234,8 @@ function RoadPathFinder::_Cost(self, path, new_tile, new_direction, mode)
 		}
 	}
 	
-	if (AIRoad.IsDriveThroughRoadStationTile(new_tile)) {
+	if (AITile.IsStationTile(new_tile)) {
+//	if (AIRoad.IsDriveThroughRoadStationTile(new_tile)) { //CurrentRoadTypeが異なると検知できない
 		cost += self._cost_drivethroughstation;
 	}
 
@@ -355,17 +356,9 @@ function RoadPathFinder::_AreRoadTilesConnected(cur, next) {
 		return false;
 	}
 	foreach(roadType in runnableRoadTypes) {
-		local r = AIRoad.ConvertRoadType(next,next,roadType);
-		//HgLog.Info("ConvertRoadType("+HgTile(next)+","+AIRoad.GetName(roadType)+")="+r+" "+AIError.GetLastErrorString());
-		if(r || AIError.GetLastError() == AIRoad.ERR_UNSUITABLE_ROAD/* || AIError.GetLastError() == AIError.ERR_ALREADY_BUILT*/) {
+		if(AIRoad.HasRoadType(next,roadType)) {
 			return true;
 		}
-		
-/*	通れなくてもtrueが返る
-		if(AIRoad.HasRoadType(next, roadType)) { // TODO: 速度低下を起こす場合のコスト
-			HgLog.Info("HasRoadType("+HgTile(next)+","+AIRoad.GetName(roadType)+")=true");
-			return true;
-		}*/
 	}
 	return false;
 }

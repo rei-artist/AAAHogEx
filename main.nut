@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 104;
+	static version = 105;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -350,9 +350,8 @@ class HogeAI extends AIController {
 		local i=0;
 		foreach(roadType,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD )) {
 			local execMode = AIExecMode();
-			local t1 = HgTile.XY(187,221+i);
-			local t2 = HgTile.XY(188,221+i);
-			tiles.push(t1);
+			local t1 = HgTile.XY(49,126+i);
+			local t2 = HgTile.XY(50,126+i);
 			AIRoad.SetCurrentRoadType(roadType);
 			AIRoad.BuildRoad(t1.tile,t2.tile);
 			HgLog.Info("GetBuildCost("+AIRoad.GetName(roadType)+")="+AIRoad.GetBuildCost(roadType,  AIRoad.BT_ROAD));
@@ -360,16 +359,47 @@ class HogeAI extends AIController {
 
 			i++;
 		}
+		i=0;
+		foreach(roadType,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_TRAM )) {
+			local execMode = AIExecMode();
+			local t1 = HgTile.XY(49,126+i);
+			local t2 = HgTile.XY(50,126+i);
+			tiles.push(t1);
+			AIRoad.SetCurrentRoadType(roadType);
+			AIRoad.BuildRoad(t1.tile,t2.tile);
+			HgLog.Info("GetBuildCost("+AIRoad.GetName(roadType)+")="+AIRoad.GetBuildCost(roadType,  AIRoad.BT_ROAD));
+			HgLog.Info("GetMaintenanceCostFactor("+AIRoad.GetName(roadType)+")="+AIRoad.GetMaintenanceCostFactor(roadType));
+
+			i++;
+		}*/
+		/*
+		i = 0;
+		local firstRoadType = AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD ).Begin();
 		foreach(roadType,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD )) {
+			local execMode = AIExecMode();
+			local t1 = HgTile.XY(49,126+i);
+			local t2 = HgTile.XY(50,126+i);
+			AIRoad.SetCurrentRoadType(firstRoadType);
+			AIRoad.RemoveRoad(t1.tile,t2.tile);
+			i++;
+		}*/
+		
+		/*
+		foreach(roadType,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_TRAM )) {
+			local execMode = AIExecMode();
 			foreach(tile in tiles) {
 				HgLog.Info("HasRoadType("+tile+","+AIRoad.GetName(roadType)+")="+AIRoad.HasRoadType(tile.tile, roadType));
+			}
+			foreach(tile in tiles) {
+				AIRoad.SetCurrentRoadType(roadType);
+				HgLog.Info("IsRoadTile("+tile+","+AIRoad.GetName(roadType)+")="+AIRoad.IsRoadTile(tile.tile));
 			}
 			foreach(tile in tiles) {
 				local testMode = AITestMode();
 				HgLog.Info("ConvertRoadType("+tile+","+AIRoad.GetName(roadType)+")="+AIRoad.ConvertRoadType(tile.tile,tile.tile,roadType)+" "+AIError.GetLastErrorString());
 			}
 			
-			foreach(r,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD )) {
+			foreach(r,_ in AIRoadTypeList(AIRoad.ROADTRAMTYPES_TRAM )) {
 				HgLog.Info("RoadVehHasPowerOnRoad("+AIRoad.GetName(roadType)+","+AIRoad.GetName(r)+")="+AIRoad.RoadVehHasPowerOnRoad(roadType, r));
 			}
 		}*/
@@ -651,6 +681,16 @@ class HogeAI extends AIController {
 				}
 			}
 		}*/
+
+		local loadTypes = AIList();
+		loadTypes.AddList(AIRoadTypeList(AIRoad.ROADTRAMTYPES_ROAD));
+		loadTypes.AddList(AIRoadTypeList(AIRoad.ROADTRAMTYPES_TRAM));
+		loadTypes.Valuate(AIRoad.GetRoadTramType);
+		HgLog.Info("ROADTYPE_ROAD:"+AIRoad.ROADTYPE_ROAD);
+		HgLog.Info("ROADTYPE_TRAM:"+AIRoad.ROADTYPE_TRAM);
+		foreach(roadType,roadTramType in loadTypes) {
+			HgLog.Info("RoadType:"+roadType+" "+AIRoad.GetName(roadType)+" isTram:"+(roadTramType==AIRoad.ROADTRAMTYPES_TRAM));
+		}
 		
 		UpdateSettings();
 		
@@ -1271,7 +1311,7 @@ class HogeAI extends AIController {
 					yield route;
 					count ++;
 					if(count >= 25) { // 一か所のソースにつき最大
-						break;
+						break;z
 					}
 				}
 				HgLog.Info("}");
@@ -1435,7 +1475,7 @@ class HogeAI extends AIController {
 					if(estimate == null || estimate.value <= 0) {
 						continue;
 					}
-					vtDistanceValues.push([routeClass.GetVehicleType(), distanceIndex, estimate.value]);
+					vtDistanceValues.push([routeClass.GetVehicleType(), distanceIndex, estimate.value, estimate]);
 					
 					maxRoi = max(estimate.roi,maxRoi);
 					HgLog.Info("Estimate d:"+distance+" "+estimate);
@@ -1591,6 +1631,7 @@ class HogeAI extends AIController {
 			local vt = vtDistanceValue[0];
 			local routeClass = Route.Class(vt);
 			local distanceIndex = vtDistanceValue[1];
+			local sampleEstimate = vtDistanceValue[3];
 			local routeClass = Route.Class(vt);
 			if(AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, routeClass.GetVehicleType()) >= routeClass.GetMaxTotalVehicles()) {
 				continue;
@@ -1693,7 +1734,7 @@ class HogeAI extends AIController {
 				local production;
 				if(isBidirectional) {
 					if( vt == AIVehicle.VT_RAIL ) {
-						if(false/*roiBase*/) { // これを入れるとpaxの路線が少なくなるので、パフォーマンスが低下
+						if(sampleEstimate.isSingle) {
 							//production = (orgPlaceProduction + min(orgPlaceProduction,placeProduction)) / 2;
 							production = min(orgPlaceProduction,placeProduction);
 						} else {
@@ -3965,7 +4006,14 @@ class HogeAI extends AIController {
 		local vehicleType = AIVehicle.GetVehicleType(vehicle);
 		local route = Route.GetRouteByVehicle(vehicle);
 		HgLog.Warning("ET_VEHICLE_LOST:"+VehicleUtils.GetTypeName(vehicleType)+" "+ vehicle+" "+AIVehicle.GetName(vehicle)+" "+route);
-		if(route != null) route.OnVehicleLost(vehicle);
+		if(route != null) {
+			route.OnVehicleLost(vehicle);
+		} else {
+			local execMode = AIExecMode();
+			if((AIOrder.OF_STOP_IN_DEPOT & AIOrder.GetOrderFlags(vehicle, AIOrder.ORDER_CURRENT)) == 0) {
+				AIVehicle.SendVehicleToDepot(vehicle);
+			}
+		}
 	}
 	
 	function OnVehicleCrashed(event) {

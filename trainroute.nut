@@ -367,7 +367,7 @@ class TrainRoute extends Route {
 
 	function Initialize() {
 		if(vehicleGroup == null) {
-			vehicleGroup = AIGroup.CreateGroup( GetVehicleType() );
+			vehicleGroup = AIGroup.CreateGroup( GetVehicleType(), AIGroup.GROUP_INVALID );
 			AIGroup.SetName(vehicleGroup, CreateGroupName());
 			Route.groupRoute.rawset(vehicleGroup,this);
 		}

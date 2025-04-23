@@ -552,7 +552,8 @@ class Estimator {
 	function GetBuildingCost(infrastractureType, distance, cargo) {
 		switch(GetVehicleType()) {
 			case AIVehicle.VT_RAIL:
-				local cost = (AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) * 3/*40%全部畑の場合*/) * 2 * distance;
+				local demolishFarm = HogeAI.GetInflatedMoney(540) * 40 / 100;
+				local cost = (AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK)*2 + demolishFarm) * 2 * distance;
 				cost += AIRail.GetBuildCost(infrastractureType, AIRail.BT_TRACK) * 220 + Route.GetPaxMailTransferBuildingCost(cargo);
 				return cost;
 		//		return distance * railCost/*HogeAI.Get().GetInflatedMoney(720)*/ +HogeAI.Get().GetInflatedMoney( CargoUtils.IsPaxOrMail(cargo) ? 30000 : 20000);
@@ -573,9 +574,10 @@ class Estimator {
 				return cost;
 				
 			case AIVehicle.VT_ROAD:
+				local demolishFarm = HogeAI.GetInflatedMoney(540) * 40 / 100;
 				local cost = AIRoad.GetBuildCost(infrastractureType, AIRoad.BT_ROAD);
-				cost = (cost * 2) * distance;
-				cost += 4000 + Route.GetPaxMailTransferBuildingCost(cargo);
+				cost = ((cost * 2) + demolishFarm) * distance;
+				cost += HogeAI.GetInflatedMoney(4000) + Route.GetPaxMailTransferBuildingCost(cargo);
 		//		cost += HogeAI.GetInflatedMoney(CargoUtils.IsPaxOrMail(cargo) ? (!HogeAI.Get().IsDistantJoinStations() ? 25000 : 3500) : 2000);
 				 return cost;
 				 

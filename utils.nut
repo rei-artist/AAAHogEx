@@ -630,13 +630,10 @@ class BuildUtils {
 		if(AITile.IsBuildable(tile)) {
 			return false;
 		}
-		if(!AICompany.IsMine(AITile.GetOwner(tile))) {
-			return true;
+		if(AICompany.IsMine(AITile.GetOwner(tile))) {
+			return false;
 		}
-		if(AIRail.IsRailTile(tile) || AIBridge.IsBridgeTile(tile) || AITunnel.IsTunnelTile(tile)) {
-			return !BuildedPath.Contains(tile);
-		}
-		if(AITile.IsStationTile(tile)) {
+		if(RoadRoute.IsUsedTile(tile,false) || RoadRoute.IsUsedTile(tile,true)) {
 			return false;
 		}
 		return true;
@@ -851,6 +848,7 @@ class BuildUtils {
 			return AIMarine.BuildDock(a,b);
 		});
 	}
+
 	static function BuildCanalSafe(a) {
 		return BuildUtils.BuildSafe( function():(a) {
 			return AIMarine.BuildCanal(a);
@@ -870,6 +868,17 @@ class BuildUtils {
 	}
 
 
+	static function RemoveBridgeSafe(p1) {
+		return BuildUtils.BuildSafe( function():(p1) {
+			return AIBridge.RemoveBridge(p1);
+		});
+	}
+	static function RemoveTunnelSafe(p1) {
+		return BuildUtils.BuildSafe( function():(p1) {
+			return AITunnel.RemoveTunnel(p1);
+		});
+	}
+
 	static function RemoveAirportSafe(tile) {
 		return BuildUtils.BuildSafe( function():(tile) {
 			return AIAirport.RemoveAirport(tile);
@@ -887,7 +896,7 @@ class BuildUtils {
 		return 0; //TODO 他のタイルも調べる
 	}
 	
-
+	
 }
 
 

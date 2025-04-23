@@ -659,7 +659,8 @@ class Route {
 			return max(0, totalCapacity - totalLoad);*/
 		} else {
 			maxCapacity = GetMaxRouteCapacity(cargo, callRoutes);
-			maxCapacity /= 3;
+			// TownTransferをなかなかしてくれない maxCapacity /= 3;
+			if(HogeAI.Get().IsDebug()) maxCapacity /= 3;
 		}
 		if(maxCapacity == 0) {
 			return 0;
@@ -1816,7 +1817,7 @@ class CommonRoute extends Route {
 	
 	function Initialize() {
 		if(vehicleGroup == null) {
-			vehicleGroup = AIGroup.CreateGroup( GetVehicleType() );
+			vehicleGroup = AIGroup.CreateGroup( GetVehicleType(), AIGroup.GROUP_INVALID );
 			AIGroup.SetName(vehicleGroup, CreateGroupName());
 			Route.groupRoute.rawset(vehicleGroup,this);
 		}
@@ -3683,8 +3684,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			destStationFactory.isBiDirectional = isBiDirectional
 		}
 		if(destHgStation == null && checkSharableStationFirst) {
-			destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, true, 
-				vehicleType == AIVehicle.VT_AIR ? infrastractureType : null);
+			destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, true, engineSet.infrastractureType);
 			if(destHgStation != null) {
 				isShareDestStation = true;
 			}
@@ -3704,7 +3704,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			destHgStation = destStationFactory.CreateBest( dest, cargo, src.GetLocation() );
 		}
 		if(destHgStation == null) {
-			destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, true);
+			destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, true, engineSet.infrastractureType);
 			if(destHgStation != null) {
 				isShareDestStation = true;
 			}
@@ -3732,8 +3732,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				srcStationFactory.prohibitAcceptCargos.push(cargo);
 			}
 			if(checkSharableStationFirst) {
-				srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false,
-					vehicleType == AIVehicle.VT_AIR ? infrastractureType : null);
+				srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false, engineSet.infrastractureType);
 				if(srcHgStation != null) {
 					isShareSrcStation = true;
 				} 
@@ -3744,7 +3743,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		}
 		HogeAI.notBuildableList.RemoveList(list);
 		if(srcHgStation == null) {
-			srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false);
+			srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false, engineSet.infrastractureType);
 			if(srcHgStation != null) {
 				isShareSrcStation = true;
 			}
@@ -3787,7 +3786,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				}
 			} else if(!buildPathBeforeStation && !destHgStation.BuildExec()) {
 				HgLog.Warning("destHgStation.BuildExec failed."+HgTile(destHgStation.platformTile)+" "+this);
-				destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, isBiDirectional?false:true);
+				destHgStation = SearchSharableStation(dest, destStationFactory.GetStationType(), cargo, isBiDirectional?false:true, engineSet.infrastractureType);
 				if(destHgStation == null || !destHgStation.Share()) {
 					Place.AddNgPathFindPair(src, dest, vehicleType);
 					return null;
@@ -3808,7 +3807,7 @@ class CommonRouteBuilder extends RouteBuilder {
 				}
 			} else if(!buildPathBeforeStation && !srcHgStation.BuildExec()) {
 				HgLog.Warning("srcHgStation.BuildExec failed."+HgTile(srcHgStation.platformTile)+" "+this);
-				srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false);
+				srcHgStation = SearchSharableStation(src, srcStationFactory.GetStationType(), cargo, false, engineSet.infrastractureType);
 				if(srcHgStation == null || !srcHgStation.Share()) {
 					Place.AddNgPathFindPair(src, dest, vehicleType);
 					Rollback();
@@ -3967,8 +3966,9 @@ class CommonRouteBuilder extends RouteBuilder {
 		if(station.place == null || !(station.place instanceof TownCargo) || route.IsTownTransferRoute() || !route.HasCargo(cargo)) {
 			return;
 		}
+		HgLog.Info("CheckTownTransferCargo:"+station.GetName()+" "+AICargo.GetName(cargo)+" "+route);
 		if(station.place instanceof TownCargo && HogeAI.Get().CanExtendCoverageAreaInTowns()) {
-			if(station.BuildSpreadPieceStations()) return;
+			if(station.BuildSpreadPieceStations() && route.GetVehicleType() == AIVehicle.VT_ROAD) return;
 			if(!station.place.CanGrowth()) return;
 		}
 

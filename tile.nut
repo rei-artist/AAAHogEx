@@ -844,24 +844,27 @@ class HgTile {
 	function BuildCommonDepot(depotTile,front,vehicleType) {
 		switch(vehicleType) {
 		case AIVehicle.VT_ROAD:
-			return BuildRoadDepot(depotTile, front);
+			return HgTile.BuildRoadDepot(depotTile, front);
 		case AIVehicle.VT_WATER:
-			return BuildWaterDepot(depotTile, front);
+			return HgTile.BuildWaterDepot(depotTile, front);
 		default:
 			HgLog.Error("BuildCommonDepot failed.vehicleType="+vehicleType);
 			return false;
 		}
 	}
 	
-	function BuildRoadDepot(depotTile,front) {
+	function BuildRoadDepot(depotTile,front,demolished=false) {
 		local aiTest = AITestMode();
 		if(AIRoad.IsRoadDepotTile(depotTile) 
 				&& AIRoad.HasRoadType(depotTile, AIRoad.GetCurrentRoadType())
-				&& AICompany.IsMine(AITile.GetOwner(depotTile))
-				&& AIRoad.AreRoadTilesConnected(front, depotTile)) {
-			return true; // 再利用
+				&& AIRoad.AreRoadTilesConnected(front, depotTile)
+				&& AICompany.IsMine(AITile.GetOwner(depotTile)) ) {
+			local roadType = RoadRoute.GetTileRoadType(depotTile, RoadRoute.IsTramCurrent());
+			if(roadType != null && AIRoad.RoadVehHasPowerOnRoad(AIRoad.GetCurrentRoadType(), roadType)) {
+				return true; // 再利用
+			}
 		}
-		if(AIRoad.BuildRoadDepot (depotTile, front)) {
+		if(AIRoad.BuildRoadDepot(depotTile, front)) {
 			local aiExec = AIExecMode();
 			HogeAI.WaitForMoney(10000);
 			/*
@@ -873,13 +876,21 @@ class HgTile {
 			if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(front, depotTile)) {
 				return false;
 			}
-			if( AIRoad.GetRoadTramType( AIRoad.GetCurrentRoadType() ) ==  AIRoad.ROADTRAMTYPES_TRAM ) {
+			if( RoadRoute.IsTramCurrent() ) {
 				AITile.DemolishTile(depotTile);
 			}
 			if(!AIRoad.BuildRoadDepot( depotTile, front )) {
 				return false;
 			}
 			return true;
+		} else if(!demolished && BuildUtils.CanTryToDemolish(depotTile)) {
+			if(AITile.GetSlope(depotTile) == AITile.SLOPE_FLAT && AITile.GetSlope(front) == AITile.SLOPE_FLAT) {
+				local aiExec = AIExecMode();
+				if(BuildUtils.DemolishTileSafe(depotTile)) {
+					HgLog.Warning("Demolish "+HgTile(depotTile)+" for BuildRoadDepot");
+					return HgTile.BuildRoadDepot(depotTile,front,true);
+				}
+			}
 		}
 		return false;
 	}

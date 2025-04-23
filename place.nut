@@ -441,8 +441,11 @@ class PlaceProduction {
 	}
 
 	function GetIndexesInSegment(segmentIndex, segmentNum) {
+		local all = [];
+		for(local i=0; i<pieceNumX * pieceNumY; i++) all.push(i);
+	
 		if(pieceNumX * pieceNumY < segmentNum) {
-			return null;
+			return all;
 		}
 		local samples = {};
 		for(local i=1; i<=4; i++) {
@@ -470,7 +473,7 @@ class PlaceProduction {
 			}
 		}
 		if(best==null) {
-			return null;
+			return all;
 		}
 		local pieceNum = pieceNumX * pieceNumY;
 		local minSeg = best[0];
@@ -3120,7 +3123,11 @@ class TownCargo extends Place {
 	}
 
 	function CanGrowth() {
-		return TownBus.CanUse() && AITown.GetCargoGoal(town, AICargo.TE_WATER) == 0 && AITown.GetCargoGoal(town, AICargo.TE_FOOD) == 0;
+		return TownBus.CanUse() && TownCargo.CanGrowthTown(town);
+	}
+	
+	static function CanGrowthTown(town) {
+		return AITown.GetCargoGoal(town, AICargo.TE_WATER) == 0 && AITown.GetCargoGoal(town, AICargo.TE_FOOD) == 0;
 	}
 	
 	function _tostring() {
