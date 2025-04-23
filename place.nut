@@ -208,7 +208,9 @@ class PlaceProduction {
 				pieceInfo.count ++;
 				pieceInfo.places.push(place);
 			} else {
-				pieceInfo.usedPlaces.push(place);
+				if(place instanceof TownCargo) {
+					pieceInfo.usedPlaces.push(place);
+				}
 			}
 		}
 		return pieceInfos;

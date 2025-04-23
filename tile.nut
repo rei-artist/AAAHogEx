@@ -884,7 +884,8 @@ class HgTile {
 			}
 			return true;
 		} else if(!demolished && BuildUtils.CanTryToDemolish(depotTile)) {
-			if(AITile.GetSlope(depotTile) == AITile.SLOPE_FLAT && AITile.GetSlope(front) == AITile.SLOPE_FLAT) {
+			if(AITile.GetSlope(depotTile) == AITile.SLOPE_FLAT && AITile.GetSlope(front) == AITile.SLOPE_FLAT 
+					&& !AITile.HasTransportType(depotTile, AITile.TRANSPORT_ROAD )) {
 				local aiExec = AIExecMode();
 				if(BuildUtils.DemolishTileSafe(depotTile)) {
 					HgLog.Warning("Demolish "+HgTile(depotTile)+" for BuildRoadDepot");

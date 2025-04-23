@@ -1394,7 +1394,7 @@ class TrainEstimator extends Estimator {
 		local usableMoney = HogeAI.Get().GetUsableMoney();
 		local useReliability = HogeAI.Get().IsEnableVehicleBreakdowns();
 		local breakdownDifficulty = HogeAI.Get().GetVehicleBreakdownDifficulty();
-		local firstRoute = yearlyIncome <= 0; // TrainRoute.instances.len()==0 && RoadRoute.instances.len()==0;
+		local firstRoute = Route.allRoutes.len() == 0; // TrainRoute.instances.len()==0 && RoadRoute.instances.len()==0;
 		
 		/*
 		if(CargoUtils.IsPaxOrMail(cargo) && isBidirectional && RoadRoute.GetMaxTotalVehicles() <= AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, AIVehicle.VT_ROAD)) {
@@ -1410,6 +1410,7 @@ class TrainEstimator extends Estimator {
 		}
 		local maxBuildingCost = !isLimitIncome || !checkRailType ? 0 : GetMaxBuildingCost(0);
 		if(maxBuildingCost>0 && firstRoute) usableMoney -= HogeAI.GetInflatedMoney(20000); // レールの建設は不確実性が大きい
+		//HgLog.Info("maxBuildingCost:"+maxBuildingCost+" yearlyIncome:"+yearlyIncome+" usableMoney:"+usableMoney);
 		local vehiclesRoom = TrainRoute.GetMaxTotalVehicles() - AIGroup.GetNumVehicles( AIGroup.GROUP_ALL, TrainRoute.GetVehicleType());
 		
 		local countWagonEngines = 0;
