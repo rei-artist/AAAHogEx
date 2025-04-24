@@ -1718,6 +1718,13 @@ class TownBus {
 			HgLog.Warning("Cannot detect road type(Not found bus engine)"+this);
 			return;
 		}
+		if(HogeAI.Get().CanExtendCoverageAreaInTowns()) {
+			for(local i=0; i<stations.len(); i++) {
+				local hgStation = GetHgStation(stations[i]);
+				if(hgStation == null) continue;
+				hgStation.BuildSpreadPieceStations();
+			}
+		}
 		if(CanBuildNewBusStop()) { // 探索に時間がかかるので5つまでにする。沢山あっても渋滞しだす
 			// TODO: joinできるのならjoinした方が有利
 			local busStop = FindNewBusStop(HogeAI.GetPassengerCargo() == cargo ? 60 : 30, placeStation);
@@ -1783,7 +1790,12 @@ class TownBus {
 	}
 	
 	function CanBuildNewBusStop() {
-		local population = AITown.GetPopulation(town);
+		local poplulationMultiplier = 1.0;
+		if(HogeAI.Get().CanExtendCoverageAreaInTowns()) {
+			poplulationMultiplier = HogeAI.Get().maxStationSpread.tofloat() / 6;
+			if(poplulationMultiplier < 1.0) poplulationMultiplier = 1.0;
+		}
+		local population = (AITown.GetPopulation(town) / poplulationMultiplier).tointeger();
 		local numStation = stations.len();
 		if(population < 6000) {
 			return false;

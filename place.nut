@@ -1281,6 +1281,10 @@ class Place {
 	}
 	
 	function CanUseNewRoute(cargo, vehicleType) {
+		if(vehicleType == AIVehicle.VT_AIR && !HogeAI.Get().IsInfrastructureMaintenance()) {
+			// インフラメンテ以外は占有する事に意味が出る
+			return true;
+		}
 		if(this instanceof TownCargo) {
 			local maxStationGroups = GetPopulation() / 10000 + 1; // TODO: spreadの有無やバスの有無で変わる
 			local count = 0;
@@ -1293,10 +1297,6 @@ class Place {
 		if(!HogeAI.Get().canUsePlaceOnWater && this.IsBuiltOnWater() && !this.IsNearLand(cargo)) {
 			return false;
 		}
-		/*他空港を邪魔して、InfrastructureMaintenanceのシビアな状況で収益を落とす
-		if(vehicleType == AIVehicle.VT_AIR) {
-			return true;
-		}*/
 		if(HogeAI.Get().firs && CargoUtils.IsSupplyCargo(cargo)) { // supply cargo
 			if(vehicleType == AIVehicle.VT_WATER) {
 				local availableVts = Route.GetAvailableVehicleTypes();

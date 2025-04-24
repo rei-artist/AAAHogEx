@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 106;
+	static version = 107;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -2166,7 +2166,7 @@ class HogeAI extends AIController {
 		if(vehicleType == AIVehicle.VT_RAIL || vehicleType == AIVehicle.VT_WATER) {
 			minDistance = 0;
 			maxDistance = 500;
-			minProduction = vehicleType == AIVehicle.VT_RAIL ? 50 : 1;
+			minProduction = vehicleType == AIVehicle.VT_RAIL ? 1 : 1;
 		} else {
 			minDistance = 0;
 			maxDistance = 200;
@@ -2174,6 +2174,8 @@ class HogeAI extends AIController {
 		}
 		if(roiBase) {
 			maxDistance = max(100,min(maxDistance, route.GetDistance() / 2));
+		} else {
+			// やらない方がパフォーマンスが良い minProduction = 0; // まだ生産されていない施設を起こして転送する事を検討
 		}
 		if(route.IsTransfer()) {
 			local finalRoute = route.GetFinalDestRoute();

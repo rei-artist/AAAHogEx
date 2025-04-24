@@ -2177,7 +2177,7 @@ class HgStation {
 		local pieceRadius = AIStation.GetCoverageRadius(PieceStation.GetStationTypeCargo(cargo));
 		area.Sort(AIList.SORT_BY_VALUE, false);
 		area.Valuate(AITile.GetCargoAcceptance, cargo,  1, 1, pieceRadius);
-		area.KeepAboveValue(8);
+		area.KeepAboveValue(1);
 		local ngTileList = AITileList();
 		foreach(tile,_ in area) {
 			if(ngTileList.HasItem(tile)) {
