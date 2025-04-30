@@ -1355,7 +1355,7 @@ class Route {
 		} else {
 			local acceptedCargo = IsValidDestStationCargo();
 			if(!acceptedCargo) {
-				HgLog.Warning("not accepted destStation "+this);
+				HgLog.Warning("not accepted destStation place:"+destHgStation.place+" "+this);
 				if(destHgStation.place == null) {
 					// destHgStationをshareしているとplace==nullになる事がある
 					//この場合、placeが一時的に閉じただけなのかどうかがわからない。Routeがplaceを持つ必要があるかもしれない

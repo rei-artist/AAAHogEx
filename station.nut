@@ -2162,7 +2162,7 @@ class HgStation {
 	}
 	
 	function BuildSpreadPieceStations() {
-		if(lastSpreadDate!=null && lastSpreadDate < AIDate.GetCurrentDate() + 365 * 5) return false;
+		if(lastSpreadDate!=null && AIDate.GetCurrentDate() < lastSpreadDate + 365 * 5) return false;
 		lastSpreadDate = AIDate.GetCurrentDate();
 		HgLog.Info("BuildSpreadPieceStations ["+AICargo.GetName(cargo)+"] "+this);	
 
