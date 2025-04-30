@@ -779,6 +779,25 @@ class StationGroup {
 		}
 	}
 
+	function IsBestEngineSetUsingSrouce(currentEngineSet) {
+		// waterの駅共有で使われる
+		local r = false;
+		local routes = [];
+		routes.extend(GetUsingRoutesAsSource());
+		/*if(IsBiDirectional()) {
+			この方がパフォーマンスが良い。たぶんwaterのdestはfull loadじゃないのでdest同士の競合はrate上もプラスなのかも
+			routes.extend(destHgStation.stationGroup.GetUsingRoutesAsSource());
+		}*/
+		foreach(route in routes) {
+			if(route.cargo != currentEngineSet.cargo) continue;
+			if(route.IsTransfer()) r = true;
+			local engineSet = route.GetLatestEngineSet();
+			if(engineSet != null && currentEngineSet.routeIncome < engineSet.routeIncome) r = true;
+		}
+		return !r;
+	}
+
+
 	function NotifyAddTransfer() {
 		expectedProductionCache.clear();
 		producingCargoCache.clear();
@@ -2145,7 +2164,8 @@ class HgStation {
 	function BuildSpreadPieceStations() {
 		if(lastSpreadDate!=null && lastSpreadDate < AIDate.GetCurrentDate() + 365 * 5) return false;
 		lastSpreadDate = AIDate.GetCurrentDate();
-	
+		HgLog.Info("BuildSpreadPieceStations ["+AICargo.GetName(cargo)+"] "+this);	
+
 		local airSpread = this instanceof AirStation && !TownBus.CanUse(cargo);
 	
 		local span = airSpread ? 4 : 5;
@@ -2183,7 +2203,7 @@ class HgStation {
 			if(ngTileList.HasItem(tile)) {
 				continue;
 			}
-			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ), true/*supressWarning*/)) {
+			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ) , true/*supressWarning*/)) {
 				Rectangle.Center(HgTile(tile), span).AppendToTileList(ngTileList);
 				success = true;
 			}
@@ -2519,9 +2539,6 @@ class HgStation {
 		return true;
 	}
 	
-	function CanShareByMultiRoute(infrastractureType) {
-		return true; // CommonRouteBuilderから呼ばれる
-	}
 	
 	function GetUsingRoutes() {
 		return usingRoutes;
@@ -2606,6 +2623,10 @@ class HgStation {
 			}
 		}
 		return true;
+	}
+
+	function CanShareByMultiRoute(infrastractureType) {
+		return true; // CommonRouteBuilderから呼ばれる
 	}
 	
 	function Share() {

@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 107;
+	static version = 108;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -1674,6 +1674,7 @@ class HogeAI extends AIController {
 				} else if(vt == AIVehicle.VT_WATER) {
 					if(!WaterRoute.CanBuild(orgPlace,  t.place, cargo, isBidirectional)) { 
 						// 距離と収益性だけで候補を選ぶと、どことも接続できない事がある。
+						//HgLog.Info("!WaterRoute.CanBuild "+orgPlace+" "+t.place);
 						continue;
 					}
 				} else if(vt == AIVehicle.VT_AIR) {

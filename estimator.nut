@@ -1850,41 +1850,17 @@ class TrainEstimator extends Estimator {
 	}
 	
 	function GetSuitestRailType(trainEngine, checkRailType) {
-		local maxSpeed = 0;
-		local cost = 0;
-		local result = null;
-		foreach(railType,v in AIRailTypeList()) {
-			/*if(checkRailType) {
-				if(!InfrastructureCost.Get().CanExtendRail(railType)) {
-					continue;
-				}
-			}*/
-			
-			//HgLog.Info("AIRail.GetBuildCost:"+ AIRail.GetBuildCost(railType, AIRail.BT_TRACK)+" "+AIRail.GetName(railType));
-			
-			if(AIEngine.HasPowerOnRail(trainEngine, railType)) {
-				local railSpeed = AIRail.GetMaxSpeed (railType);
-				railSpeed = railSpeed == 0 ? 10000 : railSpeed;
-				local speed = min(railSpeed, AIEngine.GetMaxSpeed(trainEngine));
-				if(result != null && maxSpeed == speed) {
-					/* if(HogeAI.Get().IsRich() && !HogeAI.Get().IsInfrastructureMaintenance()) {
-						if(AIRail.GetMaintenanceCostFactor(railType) < AIRail.GetMaintenanceCostFactor(result)) {
-							result = railType;
-						} Convertは時間がかかるので本当に必要になるまでチェンジしない
-					} else {*/
-						local resultRailSpeed = AIRail.GetMaxSpeed (result);
-						resultRailSpeed = resultRailSpeed == 0 ? 10000 : resultRailSpeed;
-						if(resultRailSpeed < railSpeed) {
-							result = railType;
-						}
-					//}
-				} else if(maxSpeed <= speed) {
-					maxSpeed = speed;
-					result = railType;
-				}
-			}
-		}
-		return result;
+		local engineMaxSpeed = AIEngine.GetMaxSpeed(trainEngine);
+		local list = AIRailTypeList();
+		list.Valuate( function(r):(trainEngine){ return AIEngine.HasPowerOnRail(trainEngine, r); } );
+		list.KeepValue(1);
+		if(list.Count()==0) return null;
+		list.Sort(AIList.SORT_BY_VALUE, AIList.SORT_DESCENDING);
+		list.Valuate( function(r):(engineMaxSpeed) { return min(engineMaxSpeed,AIRail.GetMaxSpeed(r)); } );
+		list.KeepValue(list.GetValue(list.Begin()));
+		list.Sort(AIList.SORT_BY_VALUE, AIList.SORT_ASCENDING );
+		list.Valuate( function(r){ return AIRail.GetBuildCost(r, AIRail.BT_TRACK); } );
+		return list.Begin();
 	}
 
 	function GetCargoWeight(cargo, quantity) {

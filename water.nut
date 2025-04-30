@@ -127,6 +127,9 @@ class WaterRoute extends CommonRoute {
 			}
 			if(prev != null) {
 				if(AIMarine.IsLockTile(tile)) {
+					local dir = (tile - prev) / 2;
+					WaterRoute.usedTiles.rawset(tile + dir ,true);
+					WaterRoute.usedTiles.rawset(tile - dir ,true);
 					AIMarine.BuildBuoy(prev);
 				}
 				if(AIMarine.IsLockTile(prev)) {
@@ -822,6 +825,7 @@ class WaterStation extends HgStation {
 				return false;
 			}
 			//HgLog.Warning("WaterStation hgTile("+hgTile+").GetConnectionCorners:"+next);
+			/*
 			local success = false;
 			foreach(corner in HgTile(platformTile).GetConnectionCorners(HgTile(next))) {
 				//HgLog.Warning("WaterStation GetCornerHeight("+hgTile+" "+next+" "+corner+"):"+AITile.GetCornerHeight(hgTile.tile, corner));
@@ -838,6 +842,12 @@ class WaterStation extends HgStation {
 			if(!success) {
 				if(!isTestMode) {
 					HgLog.Warning("WaterStation.Build !success");
+				}
+				return false;
+			}*/
+			if(!HgTile.LevelBound(platformTile, next, 0, false)) {
+				if(!isTestMode) {
+					HgLog.Warning("WaterStation.Build HgTile.LevelBound(platformTile, next, 1, false)");
 				}
 				return false;
 			}
@@ -1154,6 +1164,8 @@ class CanalStation extends HgStation {
 		foreach(t in [At(0,2),At(0,3),At(x,3)]) {
 			WaterRoute.usedTiles.rawset(t,true);
 		}
+		AIMarine.BuildBuoy(At(x,0));
+		AIMarine.BuildBuoy(At(x,3));
 		return true;
 	}
 	
@@ -1627,7 +1639,9 @@ class WaterPathFinder {
 				//HgTile(next_tile).BuildSign(""+mode);
 			} else if(lowerMode) {
 				if(WaterPathFinder.IsSea(next_tile)) {
-					tiles.push([next_tile, dir, {mode = 0, level = curLevel}]);
+					if(!AIMarine.IsLockTile(next_tile) && !AIMarine.IsWaterDepotTile(next_tile)) {
+						tiles.push([next_tile, dir, {mode = 0, level = curLevel}]);
+					}
 				} else if(WaterPathFinder.LowerToZero(next_tile)) {
 					local p = par;
 					local i = 0;

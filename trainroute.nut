@@ -2267,6 +2267,7 @@ class TrainRoute extends Route {
 		
 		local isBiDirectional = IsBiDirectional();
 		local needsAddtinalProducing = NeedsAdditionalProducing(null,false);
+
 		if( AIBase.RandRange(100) < 10 && CargoUtils.IsPaxOrMail(cargo)) { // 作った時には転送が無い時がある
 			foreach(townCargo in HogeAI.Get().GetPaxMailCargos()) {
 				if(!HasCargo(townCargo)) continue;
@@ -2354,7 +2355,7 @@ class TrainRoute extends Route {
 				change = true;
 			}
 		}
-		if(change) {
+		if(change || vehicles.Count() == 0) {
 			BuildNewTrain();
 		}
 	}
@@ -2525,6 +2526,11 @@ class TrainRoute extends Route {
 			Remove();
 			return;
 		}
+	
+	
+		Route.CheckClose();
+		return; // 基本的に終端dest以外は全部消すのでここまで(ECSは？)
+ 
 	
 		if(IsTransfer() || IsSingle()) {
 			Route.CheckClose();

@@ -208,9 +208,7 @@ class PlaceProduction {
 				pieceInfo.count ++;
 				pieceInfo.places.push(place);
 			} else {
-				if(place instanceof TownCargo) {
-					pieceInfo.usedPlaces.push(place);
-				}
+				pieceInfo.usedPlaces.push(place);
 			}
 		}
 		return pieceInfos;
@@ -443,11 +441,11 @@ class PlaceProduction {
 	}
 
 	function GetIndexesInSegment(segmentIndex, segmentNum) {
-		local all = [];
-		for(local i=0; i<pieceNumX * pieceNumY; i++) all.push(i);
+		/*local all = [];
+		for(local i=0; i<pieceNumX * pieceNumY; i++) all.push(i);*/
 	
 		if(pieceNumX * pieceNumY < segmentNum) {
-			return all;
+			return null;
 		}
 		local samples = {};
 		for(local i=1; i<=4; i++) {
@@ -475,7 +473,7 @@ class PlaceProduction {
 			}
 		}
 		if(best==null) {
-			return all;
+			return null;
 		}
 		local pieceNum = pieceNumX * pieceNumY;
 		local minSeg = best[0];
@@ -1080,10 +1078,15 @@ class Place {
 	}
 
 	static function GetNotUsedProducingPlaces( cargo, limit, indexes ) {
-		assert(indexes != null);
+		//assert(indexes != null);
 	
-		local placeDictionary = PlaceDictionary.Get();
-		local places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
+		local places;
+		if(indexes == null) {
+			places = Place.GetCargoPlaces( cargo, true );
+		} else {
+			places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
+		}
+		//local places = PlaceProduction.Get().GetPlacesInIndexes( cargo, true, indexes );
 		local result = [];
 		if(places.len() > limit) {
 			local list = AIList();
@@ -1286,6 +1289,7 @@ class Place {
 			return true;
 		}
 		if(this instanceof TownCargo) {
+			//return true;
 			local maxStationGroups = GetPopulation() / 10000 + 1; // TODO: spreadの有無やバスの有無で変わる
 			local count = 0;
 			foreach(group in GetStationGroups()) {
@@ -2006,6 +2010,7 @@ class Place {
 			local result;
 			if(!placeDictionary.nearWaters.rawin(id) || placeDictionary.nearWaters[id]==true || placeDictionary.nearWaters[id]==false) {
 				result = FindCoast(cargo);
+				//HgLog.Info("GetCoasts "+this+" "+AICargo.GetName(cargo)+" result:"+result);
 				placeDictionary.nearWaters[id] <- [ (result==null?null:result.id), AITown.GetPopulation(town) ];
 				return result;
 			} else {
@@ -2024,7 +2029,7 @@ class Place {
 			local result;
 			if(!placeDictionary.nearWaters.rawin(id) || placeDictionary.nearWaters[id]==true || placeDictionary.nearWaters[id]==false) {
 				result = FindCoast(cargo);
-				//HgLog.Info("CheckNearWater "+this+" "+AICargo.GetName(cargo)+" result:"+result);
+				//HgLog.Info("GetCoasts "+this+" "+AICargo.GetName(cargo)+" result:"+result);
 				placeDictionary.nearWaters[id] <- result == null ? null : result.id;
 				return result;
 			} else {
@@ -2847,7 +2852,10 @@ class TownCargo extends Place {
 	function FindCoastTileList(cargo) {
 		local r = GetRadius();
 		if(!HogeAI.Get().IsDistantJoinStations() || HogeAI.Get().IsAvoidExtendCoverageAreaInTowns()) {
-			r -= 2; // 船にとって街は遠い
+			//r -= 2; // 船にとって街は遠い
+			r += 1;
+		} else {
+			r += 3;
 		}
 		local rectangle = Rectangle.Center(HgTile(GetLocation()),r);
 		local tileList = rectangle.GetEdgeTileList();

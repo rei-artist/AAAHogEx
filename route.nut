@@ -660,7 +660,7 @@ class Route {
 		} else {
 			maxCapacity = GetMaxRouteCapacity(cargo, callRoutes);
 			// TownTransferをなかなかしてくれない maxCapacity /= 3;
-			if(HogeAI.Get().IsDebug()) maxCapacity /= 3;
+			maxCapacity /= 3;
 		}
 		if(maxCapacity == 0) {
 			return 0;
@@ -1268,7 +1268,7 @@ class Route {
 	}
 
 	function CheckClose() {
-		// TrainRouteの時は、singleがtransferの時のみ呼ばれる
+		// TrainRouteの時は、singleかtransferの時のみ呼ばれる
 		if(IsRemoved() || IsBuilding()) {
 			return;
 		}
@@ -1354,14 +1354,23 @@ class Route {
 			}
 		} else {
 			local acceptedCargo = IsValidDestStationCargo();
-			if(destHgStation.place == null && !acceptedCargo) {
-				// destHgStationをshareしているとplace==nullになる事がある
-				//この場合、placeが一時的に閉じただけなのかどうかがわからない。Routeがplaceを持つ必要があるかもしれない
-				HgLog.Warning("Route Remove (destStation.place == null && not accept cargo)"+this); 
-				Remove();
-				return;
+			if(!acceptedCargo) {
+				HgLog.Warning("not accepted destStation "+this);
+				if(destHgStation.place == null) {
+					// destHgStationをshareしているとplace==nullになる事がある
+					//この場合、placeが一時的に閉じただけなのかどうかがわからない。Routeがplaceを持つ必要があるかもしれない
+					HgLog.Warning("Route Remove (destStation.place == null && not accept cargo)"+this); 
+					Remove();
+					return;
+				} else if(HogeAI.Get().IsDistantJoinStations() && destHgStation.place instanceof TownCargo) {
+					if(destHgStation.BuildSpreadPieceStations()) {
+						destHgStation.stationGroup.ClearCache();
+						acceptedCargo = IsValidDestStationCargo();
+					}
+				}
 			}
-			if(!IsClosed() && !acceptedCargo) {
+			if(!IsClosed() && !acceptedCargo && (destHgStation.place == null || !(destHgStation.place instanceof TownCargo))) {
+				// town cargoの場合、closeしないで送ってるとそのうち発展したり関係改善して復活する事ある
 				HgLog.Warning("Route Close (dest can not accept)"+this);
 				saveData.lastDestClosedDate = lastDestClosedDate = AIDate.GetCurrentDate();
 				Close();
@@ -1372,7 +1381,8 @@ class Route {
 				} else if(destPlace instanceof TownCargo) { //街の受け入れ拒否は一時的なものと判断
 					Close();
 				}*/
-			} else if(IsClosed() && acceptedCargo) {
+			}
+			if(IsClosed() && acceptedCargo) {
 				ReOpen();
 			}
 
@@ -1396,6 +1406,16 @@ class Route {
 					HgLog.Warning("Route Remove (Collided rail route found)"+this);
 					Remove();
 					return;
+				}
+			}
+			if(!IsSupport() && GetVehicleType() == AIVehicle.VT_WATER) {
+				local engineSet = GetLatestEngineSet();
+				if(engineSet != null && srcHgStation.stationGroup != null) {
+					if(!srcHgStation.stationGroup.IsBestEngineSetUsingSrouce(engineSet)) {
+						HgLog.Warning("Route Remove (more profitable route or transfer found)"+this);
+						Remove();
+						return;
+					}
 				}
 			}
 		}
@@ -1969,6 +1989,7 @@ class CommonRoute extends Route {
 			if(depot != null) {
 				return true;
 			}
+			path = path.GetParent();
 		}
 		depot = path.BuildDepot(GetVehicleType());
 		if(srcHgStation instanceof CanalStation || srcHgStation instanceof WaterStation) {
@@ -1996,6 +2017,7 @@ class CommonRoute extends Route {
 			if(destDepot != null) {
 				return true;
 			}
+			path = path.GetParent();
 		}
 		destDepot = path.BuildDepot(GetVehicleType());
 		if(destHgStation instanceof CanalStation || destHgStation instanceof WaterStation) {
@@ -2748,7 +2770,6 @@ class CommonRoute extends Route {
 			//c22.Stop();
 		}
 
-		
 		
 		if( AIBase.RandRange(100) < 10 && CargoUtils.IsPaxOrMail(cargo)) { // 作った時には転送が無い時がある
 			//local c4 = PerformanceCounter.Start("c4");	
@@ -3785,6 +3806,13 @@ class CommonRouteBuilder extends RouteBuilder {
 				}
 			}
 		}
+		if(isShareSrcStation && vehicleType == AIVehicle.VT_WATER && srcHgStation.stationGroup != null) {
+			if(!srcHgStation.stationGroup.IsBestEngineSetUsingSrouce(engineSet)) {
+				HgLog.Warning("Cannot share station (current route is more profittable)."+this);
+				return null;
+			}
+		}
+		
 
 		{
 			local execMode = AIExecMode();
@@ -4004,18 +4032,30 @@ class CommonRouteBuilder extends RouteBuilder {
 	
 	
 	function SearchSharableStation(placeOrGroup, stationType, cargo, isAccepting, infrastractureType=null) {
-		foreach(station in HgStation.SearchStation(placeOrGroup, stationType, cargo, isAccepting)) {
-			if(stationType == AIStation.STATION_TRUCK_STOP && !isAccepting) {
-				if(station.cargo != cargo /*&& station.place != null && station.place.IsProducing()*/) { // Roadで異なるcargoを1つのstationでは受けると詰まってwaitingしているcargoのvehicleが量産される。
-					continue;
-				}
+		local placeOrGroups;
+		if(stationType == AIStation.STATION_DOCK && placeOrGroup instanceof TownCargo && CargoUtils.IsPaxOrMail(placeOrGroup.cargo)) {
+			placeOrGroups = []; // waterはmailとpax共通でシェア
+			foreach(eachCargo in HogeAI.Get().GetPaxMailCargos()) {
+				placeOrGroups.push(TownCargo(placeOrGroup.town, eachCargo, placeOrGroup.isProducing));
 			}
-			/*
-			if(!isAccepting && placeOrGroup instanceof TownCargo) {
-				if(station.stationGroup.GetCargoWaiting(cargo) < 300) continue; // townの場合、余ってない駅に対しては新駅
-			}*/
-			if(station.CanShareByMultiRoute(infrastractureType)) {
-				return station;
+		} else {
+			placeOrGroups = [placeOrGroup];
+		}
+		
+		foreach(eachPlaceOrGroup in placeOrGroups) {
+			foreach(station in HgStation.SearchStation(eachPlaceOrGroup, stationType, cargo, isAccepting)) {
+				if(stationType == AIStation.STATION_TRUCK_STOP && !isAccepting) {
+					if(station.cargo != cargo /*&& station.place != null && station.place.IsProducing()*/) { // Roadで異なるcargoを1つのstationでは受けると詰まってwaitingしているcargoのvehicleが量産される。
+						continue;
+					}
+				}
+				/*
+				if(!isAccepting && placeOrGroup instanceof TownCargo) {
+					if(station.stationGroup.GetCargoWaiting(cargo) < 300) continue; // townの場合、余ってない駅に対しては新駅
+				}*/
+				if(station.CanShareByMultiRoute(infrastractureType)) {
+					return station;
+				}
 			}
 		}
 		return null;
