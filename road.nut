@@ -881,11 +881,11 @@ class RoadBuilder {
 			pathFindLimit = HogeAI.Get().roiBase ? 200 : 100;
 		}*/
 		local distance = AIMap.DistanceManhattan(starts[0],goals[0]);
-		if(HogeAI.Get().IsInfrastructureMaintenance()) {
+		if(HogeAI.Get().IsInfrastructureMaintenance() || HogeAI.Get().IsPreferReusingExistingRoads()) {
 //			pathfinder._cost_no_existing_road = 40; //distance < 150 ? 200 : 40 // 距離が長いと200は成功しない
 			pathfinder._cost_tile = 50;
 			pathfinder._cost_no_existing_road = 140;
-			if(HogeAI.Get().IsInflation() && !isRetry) {
+			if((HogeAI.Get().IsInflation() || HogeAI.Get().IsPreferReusingExistingRoads()) && !isRetry) {
 				retry = true;
 				pathfinder._estimate_rate = 1; //距離が長いと成功しなくなる
 				pathFindLimit = 300; // 既存路が利用できるときのみ成功するのはむしろ合理的。max(300, distance * distance / 30);

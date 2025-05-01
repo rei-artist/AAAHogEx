@@ -2556,7 +2556,7 @@ class TrainRoute extends Route {
 				}
 			}
 			local acceptableStationIndex;
-			local cargoCapacities = GetCargoCapacities();
+			local cargoCapacities = GetEngineCargos();
 			for(acceptableStationIndex=destHgStations.len()-1; acceptableStationIndex>=0 ;acceptableStationIndex--) {
 				if(destHgStations[acceptableStationIndex].IsRemoved()) { // destへの転送路線が削除されると一緒にRemoveされることがある
 					continue;

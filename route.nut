@@ -322,7 +322,7 @@ class Route {
 		return 0;
 	}
 	
-	function GetCargoCapacities() {
+	function GetEngineCargos() {
 		local engineSet = GetLatestEngineSet();
 		if(engineSet != null) {
 			return engineSet.cargoCapacity;
@@ -860,7 +860,12 @@ class Route {
 	}
 	
 	function IsValidDestStationCargo() {
-		foreach(cargo,_ in GetCargoCapacities()) {
+		// TrainRouteでオーバーライド
+		local engineCargos = GetEngineCargos();
+		if(engineCargos.len() == 0) { // latestEngineSetが無い時
+			engineCargos.rawset(cargo,0);
+		}
+		foreach(cargo,_ in engineCargos) {
 			if(destHgStation.stationGroup.IsAcceptingCargo(cargo)) {
 				if(IsBiDirectional()) {
 					if(srcHgStation.stationGroup.IsAcceptingCargo(cargo)) {
@@ -1355,7 +1360,8 @@ class Route {
 		} else {
 			local acceptedCargo = IsValidDestStationCargo();
 			if(!acceptedCargo) {
-				HgLog.Warning("not accepted destStation place:"+destHgStation.place+" "+this);
+				local latestEngineSet = GetLatestEngineSet();
+				HgLog.Warning("not accepted destStation place:"+destHgStation.place+" engineSet:"+latestEngineSet+" "+this);
 				if(destHgStation.place == null) {
 					// destHgStationをshareしているとplace==nullになる事がある
 					//この場合、placeが一時的に閉じただけなのかどうかがわからない。Routeがplaceを持つ必要があるかもしれない
@@ -1363,7 +1369,7 @@ class Route {
 					Remove();
 					return;
 				} else if(HogeAI.Get().IsDistantJoinStations() && destHgStation.place instanceof TownCargo) {
-					if(destHgStation.BuildSpreadPieceStations()) {
+					if(destHgStation.BuildSpreadPieceStations(true)) {
 						destHgStation.stationGroup.ClearCache();
 						acceptedCargo = IsValidDestStationCargo();
 					}

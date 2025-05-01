@@ -2790,6 +2790,7 @@ class TownCargo extends Place {
 	
 	
 	function GetSpreadPopulation(spread) {
+		// spreadが人口の何割をカバーしているかの推定に使われる
 		if(!TownCargo.spreadPopulation.rawin(spread)) {
 			TownCargo.spreadPopulation.rawset(spread,_GetSpreadPopulation(spread-5/*駅自体の大きさ TODO:Roadはもっち小さいとかある*/));
 		}
@@ -3319,6 +3320,8 @@ class CoastPlace extends Place {
 
 
 class ProducingRate {
+	// firs系の入出力割合の推定
+	
 	static instance = GeneratorContainer(function() { 
 		return ProducingRate(); 
 	});
@@ -3388,3 +3391,4 @@ class ProducingRate {
 		return industryTypeProdRate.rawget(industryType);
 	}
 }
+

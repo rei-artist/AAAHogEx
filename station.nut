@@ -41,6 +41,10 @@ class StationGroup {
 		return "StationGroup:"+id;
 	}
 	
+	function GetFacilityId() {
+		return GetGId();
+	}
+	
 	function Save() {
 		return {
 			name="StationGroup"
@@ -1746,6 +1750,16 @@ class HgStation {
 		}
 		HgTable.Extend(HgStation.tileStation, data.tileStation); 
 		HgTable.Extend(HgStation.townUsed, data.townUsed); 
+		/*
+		foreach(rect in HgStation.worldInstances[66].stationGroup.GetCoverageRectangles()) {
+			HgLog.Warning("GetCoverageRectangles:"+rect);
+			local coverageTileList = AITileList_StationCoverage( HgStation.worldInstances[66].GetAIStation() );
+			local b = "";
+			foreach(tile,_ in coverageTileList) {
+				b += HgTile(tile)+",";
+			}
+			HgLog.Warning("AITileList_StationCoverage:"+b);
+		}*/
 	}
 
 	static function SearchStation(placeOrGroup, stationType, cargo, isAccepting) {
@@ -2098,9 +2112,7 @@ class HgStation {
 					}
 				}
 				foreach(town,_ in towns) {
-					if(AITown.GetRating(town, AICompany.COMPANY_SELF) <= AITown.TOWN_RATING_VERY_POOR) {
-						HogeAI.PlantTreeTown(town);
-					}
+					BuildUtils.Get().PlantTreeTown(town, AITown.TOWN_RATING_POOR);
 				}
 				continue;
 			}
@@ -2161,20 +2173,22 @@ class HgStation {
 		return pieceStation.BuildExec();
 	}
 	
-	function BuildSpreadPieceStations() {
-		if(lastSpreadDate!=null && AIDate.GetCurrentDate() < lastSpreadDate + 365 * 5) return false;
+	function BuildSpreadPieceStations(notAccepted = false) {
+		if(lastSpreadDate!=null && AIDate.GetCurrentDate() < lastSpreadDate + (notAccepted ? 30 : 5 * 365)) return false;
 		lastSpreadDate = AIDate.GetCurrentDate();
-		HgLog.Info("BuildSpreadPieceStations ["+AICargo.GetName(cargo)+"] "+this);	
+		local execMode = AIExecMode();
+		HgLog.Info("BuildSpreadPieceStations ["+AICargo.GetName(cargo)+"] "+this);
 
 		local airSpread = this instanceof AirStation && !TownBus.CanUse(cargo);
 	
 		local span = airSpread ? 4 : 5;
+		if(notAccepted) span = 1;
 		local success = false;
 		local platform = GetPlatformRectangle();
 		local area = Rectangle.Center(platform.GetCenter(), min(63,HogeAI.Get().maxStationSpread)).GetTileList();
 		platform.Extend(span).RemoveToTileList(area);
-		local existsStations = AITileList();
-		if(!airSpread) {
+		if(!airSpread && !notAccepted) {
+			local existsStations = AITileList();
 			existsStations.AddList(area);
 			existsStations.Valuate(AITile.IsStationTile);
 			existsStations.KeepValue(1);
@@ -2203,7 +2217,7 @@ class HgStation {
 			if(ngTileList.HasItem(tile)) {
 				continue;
 			}
-			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ) , true/*supressWarning*/)) {
+			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ) ,notAccepted ? false : true/*supressWarning*/)) {
 				Rectangle.Center(HgTile(tile), span).AppendToTileList(ngTileList);
 				success = true;
 			}
@@ -2254,6 +2268,7 @@ class HgStation {
 	}
 	
 	function BuildExec() {
+		local execMode = AIExecMode();
 		local isTownPlace = false;
 		local isForTownPaxMail = false;
 		if(!(this instanceof PieceStation)) {
@@ -3324,7 +3339,7 @@ class PieceStation extends HgStation {
 				//HgLog.Info("debug: "+HgTile(platformTile)+"-"+HgTile(platformTile + HgTile.DIR4Index[0])+" "+AIError.GetLastErrorString());
 				if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES) {
 					// この場合、他のエラーが取れないので建築可能か不明になる。道路形状も取れないので事前確認不能
-					HogeAI.PlantTree(platformTile);
+					BuildUtils.Get().PlantTreeFor(platformTile, AITown.TOWN_RATING_POOR);
 					if(AIRoad.BuildDriveThroughRoadStation(platformTile, platformTile + HgTile.DIR4Index[roadDir],roadVehicleType , joinStation)) {
 						return true;
 					}

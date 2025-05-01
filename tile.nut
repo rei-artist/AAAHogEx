@@ -814,7 +814,7 @@ class HgTile {
 		return true;
 	}
 
-	function CloseDoubleDepot(depotInfo) {
+	static function CloseDoubleDepot(depotInfo) {
 		local p = depotInfo.mainTiles;
 		foreach(d in [1,AIMap.GetMapSizeX()]) {
 			if(!AIRail.AreTilesConnected(p[0],p[1],p[2])) {
@@ -823,7 +823,7 @@ class HgTile {
 		}
 	}
 	
-	function OpenDoubleDepot(depotInfo) {
+	static function OpenDoubleDepot(depotInfo) {
 		local p = depotInfo.mainTiles;
 		foreach(d in [1,AIMap.GetMapSizeX()]) {
 			if(!AIRail.AreTilesConnected(p[0],p[1],p[2])) {
@@ -832,7 +832,7 @@ class HgTile {
 		}
 	}
 
-	function IsDoubleDepotTracks(tile) {
+	static function IsDoubleDepotTracks(tile) {
 		local tracks = AIRail.GetRailTracks(tile);
 		if(tracks == AIRail.RAILTRACK_INVALID) {
 			return false;
@@ -841,7 +841,7 @@ class HgTile {
 		return (tracks & flags) == flags;
 	}
 	
-	function BuildCommonDepot(depotTile,front,vehicleType) {
+	static function BuildCommonDepot(depotTile,front,vehicleType) {
 		switch(vehicleType) {
 		case AIVehicle.VT_ROAD:
 			return HgTile.BuildRoadDepot(depotTile, front);
@@ -853,7 +853,7 @@ class HgTile {
 		}
 	}
 	
-	function BuildRoadDepot(depotTile,front,demolished=false) {
+	static function BuildRoadDepot(depotTile,front,demolished=false) {
 		local aiTest = AITestMode();
 		if(AIRoad.IsRoadDepotTile(depotTile) 
 				&& AIRoad.HasRoadType(depotTile, AIRoad.GetCurrentRoadType())
@@ -864,31 +864,33 @@ class HgTile {
 				return true; // 再利用
 			}
 		}
+		HogeAI.WaitForMoney(10000);
 		if(AIRoad.BuildRoadDepot(depotTile, front)) {
 			local aiExec = AIExecMode();
-			HogeAI.WaitForMoney(10000);
 			/*
 			if( AIRoad.GetRoadTramType( AIRoad.GetCurrentRoadType() ) ==  AIRoad.ROADTRAMTYPES_ROAD ) {
 				if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(depotTile, front)) {
 					return false;
 				}
 			}*/
-			if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !AIRoad.BuildRoad(front, depotTile)) {
+			if(!AIRoad.AreRoadTilesConnected(depotTile, front) && !BuildUtils.BuildRoadSafe(front, depotTile)) {
 				return false;
 			}
 			if( RoadRoute.IsTramCurrent() ) {
-				AITile.DemolishTile(depotTile);
+				AITile.DemolishTile(depotTile); // トラムのレールが邪魔でdepotの作成ができないので
 			}
 			if(!AIRoad.BuildRoadDepot( depotTile, front )) {
 				return false;
 			}
 			return true;
-		} else if(!demolished && BuildUtils.CanTryToDemolish(depotTile)) {
+		} else if(!demolished && HogeAI.Get().IsRich() && BuildUtils.CanTryToDemolish(depotTile)) {
 			if(AITile.GetSlope(depotTile) == AITile.SLOPE_FLAT && AITile.GetSlope(front) == AITile.SLOPE_FLAT 
+					&& !HgTile.IsDriveThroughSideTile(front, depotTile)
 					&& !AITile.HasTransportType(depotTile, AITile.TRANSPORT_ROAD )) {
+				//if(!AIRoad.BuildRoad(front, depotTile)) return false;
 				local aiExec = AIExecMode();
 				if(BuildUtils.DemolishTileSafe(depotTile)) {
-					HgLog.Warning("Demolish "+HgTile(depotTile)+" for BuildRoadDepot");
+					HgLog.Warning("Demolished for BuildRoadDepot "+HgTile(depotTile));
 					return HgTile.BuildRoadDepot(depotTile,front,true);
 				}
 			}
@@ -896,7 +898,14 @@ class HgTile {
 		return false;
 	}
 	
-	function BuildWaterDepot(depotTile,front,force=false) {
+	static function IsDriveThroughSideTile(stationTile, tile) {
+		if( !AIRoad.IsDriveThroughRoadStationTile(stationTile) ) return false;
+		if( AIRoad.GetRoadStationFrontTile(stationTile) == tile ) return false;
+		if( AIRoad.GetDriveThroughBackTile(stationTile) == tile ) return false;
+		return true;
+	}
+	
+	static function BuildWaterDepot(depotTile,front,force=false) {
 		local aiExec = AIExecMode();
 		
 		if(AIMarine.IsWaterDepotTile(depotTile) 
@@ -976,7 +985,7 @@ class Rectangle {
 		local y = centerHgTile.Y();
 		local left = max(1,x - radius);
 		local top_ = max(1,y - radius);
-		local right = min(AIMap.GetMapSizeX() - 2, x + radius + 1);
+		local right = min(AIMap.GetMapSizeX() - 2, x + radius + 1); // TODO:画面最端は含まず。含めるように修正した場合の影響は調査が居る
 		local bottom = min(AIMap.GetMapSizeY() - 2, y + radius + 1);
 		return Rectangle(HgTile.XY(left,top_), HgTile.XY(right,bottom));
 	}
@@ -1016,11 +1025,13 @@ class Rectangle {
 	}
 	
 	function Width() {
-		return rightbottom.X() - lefttop.X();
+		local w = AIMap.GetMapSizeX();
+		return rightbottom.tile % w - lefttop.tile % w;  // rightbottomは画面端の時サイズオーバーするので直で計算が必要  rightbottom.X() - lefttop.X();
 	}
 	
 	function Height() {
-		return rightbottom.Y() - lefttop.Y();
+		local w = AIMap.GetMapSizeX();
+		return rightbottom.tile / w - lefttop.tile / w;  // rightbottom.Y() - lefttop.Y();
 	}
 	
 	function Left() {
@@ -1078,20 +1089,20 @@ class Rectangle {
 	}
 	
 	function GetRightBottomTile() {
-		return HgTile.XY( rightbottom.X()-1, rightbottom.Y()-1 );
+		return rightbottom.tile - AIMap.GetMapSizeX() - 1; // rectangleの右下隅はmapサイズを1マス超える事がある。 HgTile.XY( rightbottom.X()-1, rightbottom.Y()-1 );
 	}
 	
 	function AppendToTileList(tileList) {
-		tileList.AddRectangle(lefttop.tile, GetRightBottomTile().tile);
+		tileList.AddRectangle(lefttop.tile, GetRightBottomTile());
 	}
 	
 	function RemoveToTileList(tileList) {
-		tileList.RemoveRectangle(lefttop.tile, GetRightBottomTile().tile);
+		tileList.RemoveRectangle(lefttop.tile, GetRightBottomTile());
 	}
 	
 	function GetTileList() {
 		local result = AITileList();
-		result.AddRectangle(lefttop.tile, (rightbottom-OneTile).tile);
+		AppendToTileList(result);
 		return result;
 	}
 	
@@ -1188,7 +1199,7 @@ class Rectangle {
 	}
 	
 	function _tostring() {
-		return lefttop + "-" + rightbottom;
+		return lefttop + "-" + HgTile(GetRightBottomTile());
 	}
 	
 	static function Test() {
@@ -1536,20 +1547,23 @@ class TileListUtils {
 		return result;
 	}
 	
-	static function GetRectangles(tileListIn) {
+	static function GetRectangles(tileListIn, maxWidth=null, maxHeight=null) {
+		if(maxWidth==null) maxWidth = IntegerUtils.IntMax;
+		if(maxHeight==null) maxHeight = IntegerUtils.IntMax;
 		local tileList = AITileList();
 		tileList.AddList(tileListIn);
 		local result = [];
 		tileList.Sort(AIList.SORT_BY_ITEM, true);
+		local dv = AIMap.GetMapSizeX();
 		while(tileList.Count() >= 1) {
 			local cur = tileList.Begin();
-			local dv = AIMap.GetMapSizeX();
 			local width = IntegerUtils.IntMax;
 			local height = 0;
 			for(local curV = cur; ; curV += dv) {
 				local w = 0;
 				for(local curH = curV; w < width && tileList.HasItem(curH); curH++) {
 					w ++;
+					if(w == maxWidth) break;
 				}
 				if(width == IntegerUtils.IntMax) {
 					width = w;
@@ -1557,6 +1571,7 @@ class TileListUtils {
 					break;
 				}
 				height ++;
+				if(height == maxHeight) break;
 			}
 			local rectangle = Rectangle.LeftTopWidthHeight(HgTile(cur), width, height);
 			result.push(rectangle);

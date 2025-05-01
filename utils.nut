@@ -1,4 +1,48 @@
 ﻿
+class Container {
+	instance = null;
+	
+	constructor(instance=null) {
+		this.instance = instance;
+	}
+	
+	function Get() {
+		return instance;
+	}
+	
+	function GetName() {
+		return "This is container";
+	}
+}
+
+class GetterFunction {
+	func = null;
+	
+	constructor(func) {
+		this.func = func;
+	}
+	
+	function Get() {
+		return func();
+	}
+}
+
+class GeneratorContainer {
+	instance = null;
+	gen = null;
+
+	constructor(gen) {
+		this.gen = gen;
+	}
+	
+	function Get() {
+		if(instance == null) {
+			instance = gen();
+		}
+		return instance;
+	}
+}
+
 class Utils {
 	static function DivCeil(a,b) {
 		return (a+b-1)/b;
@@ -596,6 +640,14 @@ class DateUtils {
 }
 
 class BuildUtils {
+	static instance = GeneratorContainer(function() { 
+		return BuildUtils(); 
+	});
+
+	static function Get() {
+		return BuildUtils.instance.Get();
+	}
+	
 	static function BuildSafe(func, limit=100) {
 		return BuildUtils.RetryUntilFree(function():(func) {
 			return BuildUtils.WaitForMoney(func);
@@ -644,7 +696,6 @@ class BuildUtils {
 			return AITile.DemolishTile(tile);
 		});
 	}
-	
 	
 	static function CheckCost(func) {
 		local cost;
@@ -812,6 +863,12 @@ class BuildUtils {
 		
 	}
 	
+	static function BuildRoadSafe(a,b) {
+		return BuildUtils.RetryUntilFree( function():(a,b) {
+			return AIRoad.BuildRoad(a,b);
+		});
+	}
+
 	static function RemoveSignalSafe(a,b) {
 		return BuildUtils.WaitForMoney( function():(a,b) {
 			return AIRail.RemoveSignal(a, b);
@@ -855,24 +912,24 @@ class BuildUtils {
 		});
 	}
 
-
 	static function RemoveBridgeUntilFree(p1) {
 		return BuildUtils.RetryUntilFree( function():(p1) {
 			return AIBridge.RemoveBridge(p1);
 		});
 	}
+
 	static function RemoveTunnelUntilFree(p1) {
 		return BuildUtils.RetryUntilFree( function():(p1) {
 			return AITunnel.RemoveTunnel(p1);
 		});
 	}
 
-
 	static function RemoveBridgeSafe(p1) {
 		return BuildUtils.BuildSafe( function():(p1) {
 			return AIBridge.RemoveBridge(p1);
 		});
 	}
+
 	static function RemoveTunnelSafe(p1) {
 		return BuildUtils.BuildSafe( function():(p1) {
 			return AITunnel.RemoveTunnel(p1);
@@ -882,6 +939,12 @@ class BuildUtils {
 	static function RemoveAirportSafe(tile) {
 		return BuildUtils.BuildSafe( function():(tile) {
 			return AIAirport.RemoveAirport(tile);
+		});
+	}
+
+	static function PlantTreeRectangleSafe(a,b,c) {
+		return BuildUtils.WaitForMoney( function():(a,b,c) {
+			return AITile.PlantTreeRectangle(a,b,c);
 		});
 	}
 	
@@ -895,55 +958,83 @@ class BuildUtils {
 		}
 		return 0; //TODO 他のタイルも調べる
 	}
-	
-	
-}
 
-
-class Container {
-	instance = null;
 	
-	constructor(instance=null) {
-		this.instance = instance;
+	townPlantTreeDate = null;
+	
+	constructor() {
+		townPlantTreeDate = {};
 	}
 	
-	function Get() {
-		return instance;
+	function Save(data) {
+		data.townPlantTreeDate <- townPlantTreeDate;
 	}
 	
-	function GetName() {
-		return "This is container";
-	}
-}
-
-class GetterFunction {
-	func = null;
-	
-	constructor(func) {
-		this.func = func;
+	function Load(data) {
+		if("townPlantTreeDate" in data) townPlantTreeDate = data.townPlantTreeDate
 	}
 	
-	function Get() {
-		return func();
-	}
-}
-
-class GeneratorContainer {
-	instance = null;
-	gen = null;
-
-	constructor(gen) {
-		this.gen = gen;
-	}
-	
-	function Get() {
-		if(instance == null) {
-			instance = gen();
+	function PlantTreeFor(tile, goalRating) {
+		local town = AITile.GetTownAuthority(tile);
+		if(AITown.IsValidTown(town)) {
+			PlantTreeTown(town, goalRating);
 		}
-		return instance;
 	}
-}
 
+	function PlantTreeTown(town, goalRating) {
+		if( townPlantTreeDate.rawin(town) ) {
+			if( AIDate.GetCurrentDate() < townPlantTreeDate[town] + 90 ) {
+				HgLog.Info("PlantTreeTown skip:"+AITown.GetName(town)+" did recentrly");
+				return false;
+			}
+		}
+		HgLog.Info("PlantTreeTown before rating:" + AITown.GetRating (town, AICompany.COMPANY_SELF)+" "+AITown.GetName(town));
+		if(_PlantTreeTown(town,goalRating)) {
+			return true;
+		}
+		townPlantTreeDate.rawset(town, AIDate.GetCurrentDate()); // 駄目だった場合、木を植える場所が無いのでしばらく繰り返さない
+		return false;
+	}
+	
+	function _PlantTreeTown(town, goalRating) {
+		local execMode = AIExecMode();
+		
+		local tileList = AITileList();
+		Rectangle.Center( HgTile(AITown.GetLocation(town)), 19 ).AppendToTileList(tileList);
+		tileList.Valuate(AITile.GetTownAuthority);
+		tileList.KeepValue(town);
+		local rects = TileListUtils.GetRectangles(tileList, 20, 20);
+		while(true) {
+			local did = false;
+			foreach(rect in rects) {
+				/*
+				HogeAI.WaitForMoney(1000);
+				if(AITile.PlantTree(tile)) {
+					did = true;
+				}*/
+				if(BuildUtils.PlantTreeRectangleSafe(rect.lefttop.tile, rect.Width(), rect.Height())) {
+					//HgLog.Info("PlantTree true:"+rect);
+					did = true;
+				} else {
+					//HgLog.Info("PlantTree false:"+rect);
+				}
+				if( AITown.GetRating(town, AICompany.COMPANY_SELF) >= goalRating ) {
+					return true;
+				}
+			}
+			if(!did) break;
+		}
+		return false;
+	/*	
+		HgLog.Info("PlantTree town before rating:" + AITown.GetRating (town, AICompany.COMPANY_SELF)+" "+AITown.GetName(town));
+		HogeAI.WaitForMoney(1000);
+		local townTile = Rectangle.Center(HgTile(AITown.GetLocation(town)),10).lefttop.tile;
+		AITile.PlantTreeRectangle(townTile,20,20);
+		AIController.Sleep(10);
+		HgLog.Info("after town rating:" + AITown.GetRating (town, AICompany.COMPANY_SELF)); */
+	}
+
+}
 
 class PerformanceCounter {	
 	static table = {};
@@ -993,7 +1084,6 @@ class PerformanceCounter {
 		PerformanceCounter.table.clear();
 	}
 }
-
 
 class HgVehicleType {
 	vehicleType = null;

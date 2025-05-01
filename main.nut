@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 109;
+	static version = 110;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -966,7 +966,7 @@ class HogeAI extends AIController {
 			pendingPlans.clear();
 			if(newRoutes.len() >= 1) {
 				if("srcPlace" in t) {
-					dirtyPlaces.rawset(t.srcPlace.GetGId()+":"+t.cargo, true);
+					dirtyPlaces.rawset(t.srcPlace.GetFacilityId()+":"+t.cargo, true);
 				}
 				if(t.vehicleType == AIVehicle.VT_AIR) {
 					if(IsInfrastructureMaintenance()) builtAirOfInfrastructureMaintenance = true;
@@ -993,16 +993,22 @@ class HogeAI extends AIController {
 							route.needsAdditionalCache.clear();
 						}
 					}
-					if(newRoute.IsBiDirectional() || ecs) {
-						local dest = newRoute.destHgStation.place != null ? newRoute.destHgStation.place : newRoute.destHgStation.stationGroup;
-						dirtyPlaces.rawset(dest.GetGId()+":"+t.cargo, true);
-					}
 					if(firs && newRoute.destHgStation.place != null && newRoute.destHgStation.place.IsRaw()) {
 						// supply cargoはdirtyにしない
 					} else {
 						local src = newRoute.srcHgStation.place != null ? newRoute.srcHgStation.place : newRoute.srcHgStation.stationGroup;
-						dirtyPlaces.rawset(src.GetGId()+":"+t.cargo, true);
-						//HgLog.Info("dirtyPlaces.rawset:"+(src.GetGId()+":"+t.cargo)+" "+newRoute);
+						foreach(cargo,_ in newRoute.GetEngineCargos()) {
+							dirtyPlaces.rawset(src.GetFacilityId()+":"+cargo, true);
+							HgLog.Warning("dirtyPlaces.rawset:"+(src.GetFacilityId()+":"+cargo)+" "+newRoute);
+						}
+						if(newRoute.IsBiDirectional() || ecs) {
+							local dest = newRoute.destHgStation.place != null ? newRoute.destHgStation.place : newRoute.destHgStation.stationGroup;
+							//dirtyPlaces.rawset(dest.GetGId()+":"+t.cargo, true);
+							foreach(cargo,_ in newRoute.GetEngineCargos()) {
+								dirtyPlaces.rawset(dest.GetFacilityId()+":"+cargo, true);
+								HgLog.Warning("dirtyPlaces.rawset:"+(dest.GetFacilityId()+":"+cargo)+" "+newRoute);
+							}
+						}
 					}
 				}
 				if(roiBase && routeCandidates.Count() >= 1) {
@@ -1075,15 +1081,15 @@ class HogeAI extends AIController {
 			DoPostBuildRoute(rootBuilders);
 			return;
 		}*/
-		if((t.isBiDirectional || ecs) && dirtyPlaces.rawin(t.dest.GetGId()+":"+t.cargo)) { // 同じplaceで競合するのを防ぐ(特にAIRとRAIL)
+		if((t.isBiDirectional || ecs) && dirtyPlaces.rawin(t.dest.GetFacilityId()+":"+t.cargo)) { // 同じplaceで競合するのを防ぐ(特にAIRとRAIL)
 			HgLog.Info("dirtyPlaces dest "+explain);
 			return null;
 		}
-		if(dirtyPlaces.rawin(t.src.GetGId()+":"+t.cargo)) {
+		if(dirtyPlaces.rawin(t.src.GetFacilityId()+":"+t.cargo)) {
 			HgLog.Info("dirtyPlaces src "+explain);
 			return null;
 		}
-		if("srcPlace" in t && dirtyPlaces.rawin(t.srcPlace.GetGId()+":"+t.cargo)) {
+		if("srcPlace" in t && dirtyPlaces.rawin(t.srcPlace.GetFacilityId()+":"+t.cargo)) {
 			HgLog.Info("dirtyPlaces srcPlace "+t.srcPlace+" "+explain);
 			return null;
 		}
@@ -1110,7 +1116,7 @@ class HogeAI extends AIController {
 		local destRoute = ("route" in t) ? t.route : null;
 		if(destRoute != null) {
 			if(!destRoute.NeedsAdditionalProducingCargo( t.cargo, null, destRoute.destHgStation.stationGroup==t.dest )) {
-				HgLog.Warning("!destRoute.NeedsAdditionalProducing "+explain+" destRoute:"+destRoute);
+				HgLog.Info("skip transfer build !destRoute.NeedsAdditionalProducing "+explain+" destRoute:"+destRoute);
 				return null;
 			}
 			if(t.estimate.destRouteCargoIncome > 0) {
@@ -2785,7 +2791,7 @@ class HogeAI extends AIController {
 		while(routePlans.Count() >= 1) {
 			local plan = routePlans.Pop();
 			HgLog.Info("DoRoutePlans plan:"+plan.estimate.value+"/"+limitValue+" "+plan.dest.GetName()+"<-"+plan.src.GetName()+" "+plan.estimate);
-			if(dirtyPlaces.rawin(plan.src.GetGId()+":"+plan.cargo)) {
+			if(dirtyPlaces.rawin(plan.src.GetFacilityId()+":"+plan.cargo)) {
 				HgLog.Info("dirtyPlaces src "+plan.src.GetName());
 				continue;
 			}
@@ -4086,6 +4092,8 @@ class HogeAI extends AIController {
 
 		HgLog.Info("TownBus.SaveStatics consume ops:"+(remainOps - AIController.GetOpsTillSuspend()));
 
+		BuildUtils.Get().Save(table);
+
 		table.routeCandidates <- routeCandidates.Save();
 		table.constractions <- constructions;
 		table.pendingConstructions <- pendingConstructions;
@@ -4153,6 +4161,7 @@ class HogeAI extends AIController {
 		WaterRoute.LoadStatics(loadData);
 		AirRoute.LoadStatics(loadData);
 		TownBus.LoadStatics(loadData);
+		BuildUtils.Get().Load(loadData);
 		
 		//routeCandidates.Load(loadData.routeCandidates);
 		
@@ -4359,6 +4368,10 @@ class HogeAI extends AIController {
 	
 	function IsAvoidExtendCoverageAreaInTowns() {
 		return GetSetting("IsAvoidExtendCoverageAreaInTowns") == 1;
+	}
+	
+	function IsPreferReusingExistingRoads() {
+		return GetSetting("IsPreferReusingExistingRoads") == 1;
 	}
 	
 	function CanExtendCoverageAreaInTowns() {
