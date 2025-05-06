@@ -567,10 +567,12 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 		local coastPlace = CoastPlace( coastTile );
 		
 		if(isDestFarFromSea) {
+			// src側が海
 			local srcRoute = WaterRouteBuilder( coastPlace, src, cargo, {
 				searchTransfer = false
 				transfer = true, 
-				notUseCompoundRoute = true, 
+				isWaitingDestRoute = true,
+				notUseCompoundRoute = true,  // Compoundの入れ子は認めない
 				notNeedToMeetDemand = true } ).Build();
 			if(srcRoute == null) {
 				return null;
@@ -591,6 +593,7 @@ class WaterRouteBuilder extends CommonRouteBuilder {
 			srcRoute.ChooseEngineSet(); //destへ繋がったので再見積もりを行う
 			return srcRoute;
 		} else {
+			// src側が陸
 			local destRoute = WaterRouteBuilder( dest, coastPlace, cargo, {
 				searchTransfer = true
 				isWaitingProduction = true

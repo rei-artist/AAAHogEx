@@ -774,6 +774,10 @@ class TrainRoute extends Route {
 		saveData.engineSetsCache = engineSetsCache = null;
 	}
 
+	function InvalidateDestRoute() {
+		destRoute = null;
+	}
+
 	function ChooseEngineSet() {
 		local a = GetEngineSets();
 		if(a.len() == 0){ 
@@ -2309,7 +2313,7 @@ class TrainRoute extends Route {
 			saveData.lastChangeDestDate = lastChangeDestDate = null;
 		}
 		
-		if(!HogeAI.HasIncome(20000) && !ExistsMainRouteExceptSelf()) {
+		if(!HogeAI.HasIncome(20000) || !ExistsMainRouteExceptSelf()) {
 			//HgLog.Warning("Cannot renewal train "+this);
 			return;
 		}
@@ -2344,9 +2348,6 @@ class TrainRoute extends Route {
 		if(engineSet == null) {
 			HgLog.Warning("No usable engineSet ("+AIRail.GetName(GetRailType())+") "+this);
 			return;
-		}
-		if(engineSet.price > HogeAI.Get().GetUsableMoney()) {
-			return; // すぐに買えない場合はリニューアルしない。車庫に列車が入って収益性が著しく悪化する場合がある
 		}
 		local change = false;
 		foreach(engineVehicle, v in vehicles) {
@@ -2520,12 +2521,12 @@ class TrainRoute extends Route {
 			HgLog.Warning("IsTransfer:"+IsTransfer()+" IsBiDirectional:"+IsBiDirectional());
 			Initialize();
 		}*/
-
+		/*
 		if(srcHgStation.place != null && srcHgStation.place.IsClosed()) {
 			HgLog.Warning("Route Remove (src place closed)"+this);
 			Remove();
 			return;
-		}
+		}*/
 	
 	
 		Route.CheckClose();

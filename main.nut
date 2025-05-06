@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 110;
+	static version = 111;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -993,6 +993,9 @@ class HogeAI extends AIController {
 							route.needsAdditionalCache.clear();
 						}
 					}
+					local finalDestRoute = newRoute.GetFinalDestRoute();
+					if(finalDestRoute.IsBiDirectional()) lastTransferCandidates.rawdelete(finalDestRoute.id);
+					
 					if(firs && newRoute.destHgStation.place != null && newRoute.destHgStation.place.IsRaw()) {
 						// supply cargoはdirtyにしない
 					} else {
@@ -1918,12 +1921,15 @@ class HogeAI extends AIController {
 			routes = [];
 			local routeList = AIList();
 			local current = AIDate.GetCurrentDate();
-			routeList.Sort(AIList.SORT_BY_VALUE,false);
+			routeList.Sort(AIList.SORT_BY_VALUE,true);
 			local allRoutes = Route.GetAllRoutes();
 			foreach(index,route in allRoutes) {
+				local d = !lastTransferCandidates.rawin(route.id) ? 0 : lastTransferCandidates.rawget(route.id);
+				routeList.AddItem(index, d);
+				/*
 				if(!lastTransferCandidates.rawin(route.id) || lastTransferCandidates.rawget(route.id) + 365 * 5 < current) {
 					routeList.AddItem(index, route.GetDistance());
-				}
+				}*/
 			}
 			foreach(index,_ in routeList) {
 				routes.push(allRoutes[index]);
@@ -1979,15 +1985,15 @@ class HogeAI extends AIController {
 					if(!destOnly) {
 						plans.extend(CreateTransferPlans(route, false, vehicleType, options));
 					}
-					if(!notTreatDest && route.IsBiDirectional() && !route.IsChangeDestination()) {
+					if(!notTreatDest && route.IsBiDirectional() && !route.IsChangeDestination()) { // TODO: railの場合、これ以上のびなさそうかのチェック
 						plans.extend(CreateTransferPlans(route, true, vehicleType, options));
 					}else {
 						//HgLog.Info("notTreatDest:"+notTreatDest+" IsBiDirectional:"+route.IsBiDirectional()+" IsChangeDestination:"+route.IsChangeDestination()+" "+route);
 					}
 				}
-				if(route.GetDistance() > 1000) { // 転送があると伸びなくなるので路線がすでに長い時にやる
-					plans.extend(CreateDestTransferPlans(route, vehicleType));
-				}
+				// if(route.GetDistance() > 1000) { // 転送があると伸びなくなるので路線がすでに長い時にやる
+				// 	plans.extend(CreateDestTransferPlans(route, vehicleType));
+				// }
 				HgLog.Info("CreateTransferPlans "+plans.len()+ " by "+ HgVehicleType(vehicleType)+ " "+route);
 				transferPlans.extend(plans);
 			}
@@ -2272,7 +2278,7 @@ class HogeAI extends AIController {
 						t.src <- srcInfo.place;
 						t.srcPlace <- srcInfo.place;
 						t.distance <- srcInfo.distance;
-						t.production <- min(route.GetLeftCapacity(cargo), production);
+						t.production <- min(route.GetLeftCapacity( cargo, isDest && route.HasCargo(cargo) ? true : false), production);
 						t.useLastMonthProduction <- useLastMonthProduction;
 						//HgLog.Info("additionalSrcPlace:"+t.srcPlace.GetName()+" dest:"+t.dest+ " production:"+t.production+"["+AICargo.GetName(t.cargo)+"] capa:"+route.GetLeftCapacity(cargo)+" distance:"+t.distance+" vt:"+routeClass.GetLabel()+" isDest:"+isDest+" for:"+route);
 						additionalPlaces.push(t);

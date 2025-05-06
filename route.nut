@@ -727,17 +727,31 @@ class Route {
 		}
 		local result = {};
 		local ss = [];
-		foreach(cargo in GetCargos()) {
-			local prod = GetProductionCargo(cargo);
-			local waiting = srcHgStation.GetCargoWaiting(cargo);
-			result[cargo] <- prod + waiting / 8;
-			ss.push(AICargo.GetName(cargo)+"="+prod);
+		if(IsBiDirectional()) {
+			local cargoProds = {};
+			local srcIsLarge = false;
+			foreach(cargo in GetCargos()) {
+				local ps = srcHgStation.stationGroup.GetExpectedProduction( cargo, GetVehicleType() ) + srcHgStation.GetCargoWaiting(cargo) / 8;
+				local pd = destHgStation.stationGroup.GetExpectedProduction( cargo, GetVehicleType() ) + destHgStation.GetCargoWaiting(cargo) / 8;
+				cargoProds.rawset(cargo,[ps,pd]);
+				if(ps >= pd) srcIsLarge = true;
+			}
+			foreach(cargo,prods in cargoProds) {
+				result[cargo] <- (srcIsLarge ? max(prods[0],prods[1]) : prods[0]);
+				ss.push(AICargo.GetName(cargo)+"="+result[cargo]);
+			}
+		} else {
+			foreach(cargo in GetCargos()) {
+				result[cargo] <- srcHgStation.stationGroup.GetExpectedProduction( cargo, GetVehicleType() ) + srcHgStation.GetCargoWaiting(cargo) / 8;
+				ss.push(AICargo.GetName(cargo)+"="+result[cargo]);
+			}
 		}
 		HgLog.Info("GetCargoProductions:"+HgArray(ss)+" "+this);
 
 		productionCargoCache.rawset("cargoProductions", result);
 		return result;
 	}
+	
 
 	function GetTotalDelivableProduction() {
 		local result = 0;
@@ -957,7 +971,7 @@ class Route {
 	
 	function GetDestRoutes() {
 		local destRoutes = [];
-		if(isTransfer) {
+		if(IsTransfer()) {
 			if(destHgStation.stationGroup == null) {
 				HgLog.Warning("destHgStation.stationGroup == null "+this);
 				return [];
@@ -1241,6 +1255,10 @@ class Route {
 		// overrideして使う
 	}
 
+	function InvalidateDestRoute() {
+		// overrideして使う
+	}
+	
 	function CreateGroupName() {
 		local src = srcHgStation.GetName();
 		local dest = destHgStation.GetName();
@@ -1289,6 +1307,7 @@ class Route {
 		}
 		if(srcHgStation.place != null && srcHgStation.place.IsClosed()) {
 			local transfer = false;
+			
 			foreach(srcRoute in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
 				if(srcRoute.HasCargo(cargo)) transfer = true;
 			}
@@ -1435,6 +1454,7 @@ class Route {
 		}
 		callers.rawset(this,0);
 		HgLog.Info("NotifyChangeDestRoute "+this);
+		InvalidateDestRoute();
 		InvalidateEngineSet();
 		if(!IsBiDirectional()) {
 			foreach(route in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
@@ -1820,6 +1840,7 @@ class CommonRoute extends Route {
 	isClosed = null;
 	isRemoved = null;
 	isWaitingProduction = null; // まだcargoが来ていないrouteかどうか
+	isWaitingDestRoute = null; // まだdestrouteが完成したいないrouteかどうか
 	lastDestClosedDate = null;
 	useDepotOrder = null;
 	useServiceOrder = null;
@@ -1904,6 +1925,7 @@ class CommonRoute extends Route {
 		isClosed = t.isClosed;
 		isRemoved = t.isRemoved;
 		isWaitingProduction = t.isWaitingProduction;
+		isWaitingDestRoute = saveData.rawin("isWaitingDestRoute") ? t.isWaitingDestRoute : false;
 		lastDestClosedDate = t.lastDestClosedDate;
 		cannotChangeDest = t.cannotChangeDest;
 		latestEngineSet = t.latestEngineSet != null ? delegate CommonEstimation : t.latestEngineSet : null;
@@ -1935,6 +1957,7 @@ class CommonRoute extends Route {
 			isClosed = isClosed
 			isRemoved = isRemoved
 			isWaitingProduction = isWaitingProduction
+			isWaitingDestRoute = isWaitingDestRoute
 			lastDestClosedDate = lastDestClosedDate
 			cannotChangeDest = cannotChangeDest
 			latestEngineSet = latestEngineSet
@@ -2256,6 +2279,10 @@ class CommonRoute extends Route {
 		if(latestEngineSet != null) {
 			latestEngineSet.isValid = false;
 		}
+	}
+
+	function InvalidateDestRoute() {
+		destRoute = null;
 	}
 
 	function ChooseEngineSet() {
@@ -2603,8 +2630,17 @@ class CommonRoute extends Route {
 			if(GetProduction() == 0) {
 				return;
 			}
+			HgLog.Info("found production(isWaitingProduction=true) "+this);
 			saveData.isWaitingProduction = isWaitingProduction = false;
 		}
+		if(isWaitingDestRoute) {
+			if(GetDestRoute() == false) {
+				return;
+			}
+			HgLog.Info("found destRoute(isWaitingDestRoute=true) "+this);
+			saveData.isWaitingDestRoute = isWaitingDestRoute = false;
+		}
+		
 		local townTransfer = IsTownTransferRoute();
 		if(townTransfer && AIBase.RandRange(100)<80) { // towntransferは大量にあるのでたまにしか実行しない
 			return;
@@ -2823,13 +2859,12 @@ class CommonRoute extends Route {
 				local firstBuild = 0;
 				
 				if(latestVehicle == null) {
-					BuildVehicleFirst();
+					local c9 = PerformanceCounter.Start("BuildVehicle");	
+					latestVehicle = BuildVehicleFirst();
 					//HgLog.Info("BuildVehicle "+this);
 					if(showLog) {
 						HgLog.Info("BuildVehicle "+this);
 					}
-					local c9 = PerformanceCounter.Start("BuildVehicle");	
-					latestVehicle = BuildVehicle();
 					c9.Stop();
 					if(latestVehicle != null) {
 						local c8 = PerformanceCounter.Start("CloneVehicle");	
@@ -3480,8 +3515,8 @@ class RouteBuilder extends Construction {
 			if(currentProduction<200 || currentProduction < srcPlace.GetExpectedProduction( cargo, GetVehicleType())) {
 				needsToMeetDemand = true;
 			}
-			if(needsToMeetDemand && currentProduction<50) {
-				// 場所がなくなる可能性があるので少量生産以外は後からやる
+			if(needsToMeetDemand && currentProduction < 50 && srcPlace.GetAccepting().GetRoutesUsingDest().len() == 0) {
+				// 場所がなくなる可能性があるので存在しない以外はあとからやる
 				foreach(route in HogeAI.Get().SearchAndBuildToMeetSrcDemandMin( srcPlace, null, 
 						{capacity = 1}, 
 						{searchTransfer = false, setRouteCandidates = GetOption("setRouteCandidates", false)})) {
@@ -3692,6 +3727,7 @@ class CommonRouteBuilder extends RouteBuilder {
 		local path = GetOption("path",null);
 		local noDepot = GetOption("noDepot",false);
 		local isWaitingProduction = GetOption("isWaitingProduction",false);
+		local isWaitingDestRoute = GetOption("isWaitingDestRoute",false);
 		local production = GetOption("production",null);
 		local sourceRouteId = GetOption("sourceRoute",null);
 		local sourceRoute = sourceRouteId != null ? Route.allRoutes[sourceRouteId] : null;
@@ -3705,6 +3741,9 @@ class CommonRouteBuilder extends RouteBuilder {
 		local distance = AIMap.DistanceManhattan( src.GetLocation(), dest.GetLocation() );
 		if(production == null) {
 			production = src.GetExpectedProduction( cargo, vehicleType );
+		}
+		if(production == 0) {
+			production = 40;
 		}
 		local infrastractureTypes = null;
 		if(vehicleType == AIVehicle.VT_AIR && srcHgStation != null && destHgStation != null) { // exchange air用
@@ -3949,9 +3988,10 @@ class CommonRouteBuilder extends RouteBuilder {
 			route.isSrcTransfer = IsSrcTransfer();
 			route.isBiDirectional = isBiDirectional;
 			route.isWaitingProduction = isWaitingProduction;
+			route.isWaitingDestRoute = isWaitingDestRoute;
 			route.isBuilding = true;
 			
-			if(HogeAI.Get().openttdVersion >= 14 && route.GetVehicleType() == AIVehicle.VT_WATER && route.isTransfer) {
+			if(HogeAI.Get().openttdVersion >= 14 && route.GetVehicleType() == AIVehicle.VT_WATER && route.isTransfer && !isWaitingDestRoute) {
 				local finalDest = route.GetFinalDestStationForWater();
 				route.destHgStation = finalDest.station;
 				route.isTransfer = finalDest.isTransfer;
@@ -3979,7 +4019,7 @@ class CommonRouteBuilder extends RouteBuilder {
 			route.UpdateSavedData();
 			ClearRollback();
 			route.instances.push(route); // ChooseEngine内、インフラコスト計算に必要
-			if(!isWaitingProduction) {
+			if(!isWaitingProduction && !isWaitingDestRoute) {
 				if(route.BuildVehicleFirst() == null && HogeAI.Get().IsInfrastructureMaintenance()) {
 					HgLog.Warning("route Remove.(route.BuildVehicleFirst() == null && IsInfrastructureMaintenance)"+route);
 					route.isBuilding = false;
