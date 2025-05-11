@@ -2270,15 +2270,15 @@ class TrainRoute extends Route {
 		}
 		
 		local isBiDirectional = IsBiDirectional();
-		local needsAddtinalProducing = NeedsAdditionalProducing(null,false);
+		//local needsAddtinalProducing = NeedsAdditionalProducing(null,false);
 
 		if( AIBase.RandRange(100) < 10 && CargoUtils.IsPaxOrMail(cargo)) { // 作った時には転送が無い時がある
 			foreach(townCargo in HogeAI.Get().GetPaxMailCargos()) {
 				if(!HasCargo(townCargo)) continue;
-				if(needsAddtinalProducing) {
+				if(!IsOverflow(townCargo,false)) { //NeedsAdditionalProducingはtown内の最大productionを得ている前提なので必要なのにfalseになる事がある
 					CommonRouteBuilder.CheckTownTransferCargo(this,srcHgStation,townCargo);
 				}
-				if(isBiDirectional && NeedsAdditionalProducing(null, true)) {
+				if(isBiDirectional && !IsOverflow(townCargo,true) /*NeedsAdditionalProducing(null, true)*/) {
 					CommonRouteBuilder.CheckTownTransferCargo(this,destHgStation,townCargo);
 				}
 			}
@@ -3185,6 +3185,7 @@ class TrainRouteExtendBuilder extends RouteModificatin {
 	function DoBuild() {
 		// 0:成功 1:station作成失敗 2:失敗
 		HgLog.Info("# TrainRoute: Try Extend:"+additionalPlace.GetName()+" route: "+route);
+		if(route.IsRemoved()) return 2;
 		local execMode = AIExecMode();
 		AIRail.SetCurrentRailType(route.GetRailType());
 		local lastStation = route.GetLastDestHgStation();

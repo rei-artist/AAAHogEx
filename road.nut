@@ -433,33 +433,37 @@ class RoadRoute extends CommonRoute {
 	function OnVehicleLost(vehicle) {
 		HgLog.Warning("RoadRoute OnVehicleLost  "+this);
 		local execMode = AIExecMode();
-		AppendRemoveOrder(vehicle); // routeを外れているケースもあるので
-		if(HogeAI.Get().IsInfrastructureMaintenance()) return; // ゴミ道路が収益を圧迫する
+		//if(HogeAI.Get().IsInfrastructureMaintenance()) return; // ゴミ道路が収益を圧迫する
 		if(isRemoved) return; // 道路の再作成は無駄
 		
-		if(lastRebuildDate != null && lastRebuildDate + 30 > AIDate.GetCurrentDate()) {
+		/*if(lastRebuildDate != null && lastRebuildDate + 7 > AIDate.GetCurrentDate()) 複数個所で同時に来る事ある {
+			//AppendRemoveOrder(vehicle);
 			return;
-		}
+		}*/
 		lastRebuildDate = AIDate.GetCurrentDate();
 		
 		local roadBuilder = RoadBuilder();
 		roadBuilder.engine = AIVehicle.GetEngineType(vehicle);
-		if(!roadBuilder.BuildPath(destHgStation.GetEntrances(), srcHgStation.GetEntrances(), true)) {
+		
+		local dest = AIOrder.GetOrderDestination(vehicle, AIOrder.ORDER_CURRENT);
+		HgLog.Warning("BuildPath dest: "+HgTile(dest)+" src:"+HgTile(AIVehicle.GetLocation(vehicle))+" "+this);
+		if(!roadBuilder.BuildPath([AIVehicle.GetLocation(vehicle)], [dest], true)) {
+		//if(!roadBuilder.BuildPath(destHgStation.GetEntrances(), srcHgStation.GetEntrances(), true)) {
 			HgLog.Warning("RoadRoute removed.(Rebuild road failed) "+this);
 			Remove();
 		} else {
-			if(!BuildDepot(roadBuilder.path)) {
+			/*if(!BuildDepot(roadBuilder.path)) {
 				HgLog.Warning("RoadRoute removed.(BuildDepot failed) "+this);
 				Remove();
 				UpdateSavedData();
 				return;
-			}
+			}*/
 			//TODO: 故障有効モデルの途中depotへのorderだと壊れるかもしれない。orderの再構築も必要になるRoute.Removeでいいかも
 			local isTram = IsTram();
 			foreach(tile in usedTiles) {
 				RoadRoute.RemoveUsedTile(tile, isTram);
 			}
-			BuildDestDepot(roadBuilder.path);
+			//BuildDestDepot(roadBuilder.path);
 			usedTiles = ArrayUtils.Or(usedTiles,roadBuilder.path.GetTiles());
 			foreach(tile in usedTiles) {
 				RoadRoute.AddUsedTile(tile,isTram);
@@ -1536,6 +1540,9 @@ class TownBus {
 		roadRoute.useServiceOrder = true;
 		roadRoute.Initialize();
 		roadRoute.SetPath(path);
+		if(toHgStation instanceof RoadStation && roadRoute.BuildDestDepot(path)) {
+			roadRoute.useServiceOrder = false;
+		}
 		local vehicle = roadRoute.BuildVehicleFirst();
 		if(vehicle==null) {
 			HgLog.Warning("BuildVehicle failed.(TownBus.CreateTransferRoadRoute)"+this);
@@ -1677,47 +1684,6 @@ class TownBus {
 		if(stations.len() < 2 || !GetDepot()) {
 			return;
 		}
-		local townLocation = GetPlace().GetLocation();
-		local toHgStation = null;
-		local minDistance = IntegerUtils.IntMax;
-		local placeStationCanBeTransfer = false;
-		foreach(station in placeStation.stationGroup.hgStations) {
-			if((station instanceof PieceStation || station instanceof RoadStation) && station.cargo == cargo) {
-				if(AIRoad.HasRoadType(station.platformTile, GetRoadType())) {
-					if(station == placeStation) {
-						placeStationCanBeTransfer = true;
-					} else {
-						local distance = AIMap.DistanceManhattan(station.platformTile,townLocation);
-						if(distance < minDistance) {
-							toHgStation = station;
-							minDistance = distance;
-						}
-					}
-				}
-			}
-		}
-		if(toHgStation == null) {
-			toHgStation = RoadStationFactory(cargo).CreateBest( placeStation.stationGroup, cargo, GetPlace().GetLocation() );
-			if(toHgStation == null && !placeStationCanBeTransfer/*road stationに無理にpiace stationをくっつけない*/) {
-				toHgStation = RoadStationFactory(cargo,true/*piaceStation*/).CreateBest(
-						placeStation.stationGroup, cargo, GetPlace().GetLocation() );
-			}
-			
-			local execMode = AIExecMode();
-			if(toHgStation == null || !toHgStation.BuildExec()) {
-				if(placeStationCanBeTransfer) {
-					toHgStation = placeStation;
-				} else {
-					HgLog.Warning("Not found town transfer station for "+placeStation+" "+this);
-					return;
-				}
-			}
-		}
-		local busEngine = TownBus.GetStandardBusEngine(cargo); /*Road typeの識別で使う*/
-		if(busEngine == null) {
-			HgLog.Warning("Cannot detect road type(Not found bus engine)"+this);
-			return;
-		}
 		if(HogeAI.Get().CanExtendCoverageAreaInTowns()) {
 			for(local i=0; i<stations.len(); i++) {
 				local hgStation = GetHgStation(stations[i]);
@@ -1725,19 +1691,7 @@ class TownBus {
 				hgStation.BuildSpreadPieceStations();
 			}
 		}
-		if(CanBuildNewBusStop()) { // 探索に時間がかかるので5つまでにする。沢山あっても渋滞しだす
-			// TODO: joinできるのならjoinした方が有利
-			local busStop = FindNewBusStop(HogeAI.GetPassengerCargo() == cargo ? 60 : 30, placeStation);
-			if(busStop != null) {
-				busStop.name = CreateNewBusStopName(stations.len()+1);
-				local execMode = AIExecMode();
-				if(!busStop.BuildExec() || !MakeRouteToDepot(busStop.platformTile)) {
-					HgLog.Warning("Create new busstop failed."+busStop+" "+this+" "+AIError.GetLastErrorString());
-				} else {
-					stations.push(busStop.platformTile);
-				}
-			}
-		}
+		
 		
 		for(local i=0; i<stations.len(); i++) {
 			local hgStation = GetHgStation(stations[i]);
@@ -1753,6 +1707,64 @@ class TownBus {
 					continue;
 				}
 			}
+				
+			local toHgStation = null;
+			local toHgSubStation = null;
+			local placeStationCanBeTransfer = false;
+			foreach(station in placeStation.stationGroup.hgStations) {
+				if((station instanceof PieceStation || station instanceof RoadStation) && station.cargo == cargo) {
+					if(AIRoad.HasRoadType(station.platformTile, GetRoadType())) {
+						if(station == placeStation) {
+							placeStationCanBeTransfer = true;
+						} else {
+							toHgSubStation = station;
+							if(station.CanShareByMultiRoute(GetRoadType(),cargo)) {
+								toHgStation = station;
+								break;
+							}
+						}
+					}
+				}
+			}
+			if(toHgStation == null) {
+				toHgStation = RoadStationFactory(cargo).CreateBest( placeStation.stationGroup, cargo, GetPlace().GetLocation() );
+				if(toHgStation == null && !placeStationCanBeTransfer/*road stationに無理にpiace stationをくっつけない*/) {
+					toHgStation = RoadStationFactory(cargo,true/*piaceStation*/).CreateBest(
+							placeStation.stationGroup, cargo, GetPlace().GetLocation() );
+				}
+				
+				local execMode = AIExecMode();
+				if(toHgStation == null || !toHgStation.BuildExec()) {
+					if(placeStationCanBeTransfer) {
+						toHgStation = placeStation;
+					} else if(toHgSubStation != null) {
+						toHgStation = toHgSubStation;
+					} else {
+						HgLog.Warning("Not found town transfer station for "+placeStation+" "+this);
+						return;
+					}
+				}
+			}
+			local busEngine = TownBus.GetStandardBusEngine(cargo); /*Road typeの識別で使う*/
+			if(busEngine == null) {
+				HgLog.Warning("Cannot detect road type(Not found bus engine)"+this);
+				return;
+			}
+			if(CanBuildNewBusStop()) { // 探索に時間がかかるので5つまでにする。沢山あっても渋滞しだす
+				// TODO: joinできるのならjoinした方が有利
+				local busStop = FindNewBusStop(HogeAI.GetPassengerCargo() == cargo ? 60 : 30, placeStation);
+				if(busStop != null) {
+					busStop.name = CreateNewBusStopName(stations.len()+1);
+					local execMode = AIExecMode();
+					if(!busStop.BuildExec() || !MakeRouteToDepot(busStop.platformTile)) {
+						HgLog.Warning("Create new busstop failed."+busStop+" "+this+" "+AIError.GetLastErrorString());
+					} else {
+						stations.push(busStop.platformTile);
+					}
+				}
+			}
+			
+			
 			if(Place.IsNgPathFindPair(stations[i],toHgStation.platformTile, AIVehicle.VT_ROAD)) {
 				continue;
 			}

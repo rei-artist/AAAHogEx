@@ -13,7 +13,7 @@ class Air {
 			airportType = AIAirport.AT_SMALL
 			supportBigPlane = false
 			population = 800
-			maxPlanes = 4
+			terminals = 2
 			runways = 1
 			stationDateSpan = 20
 			cost = 5500
@@ -23,7 +23,7 @@ class Air {
 			airportType = AIAirport.AT_COMMUTER
 			supportBigPlane = false
 			population = 1000
-			maxPlanes = 5
+			terminals = 3
 			runways = 1
 			stationDateSpan = 16
 			cost = 10000
@@ -33,7 +33,7 @@ class Air {
 			airportType = AIAirport.AT_LARGE
 			supportBigPlane = true
 			population = 2000
-			maxPlanes = 5
+			terminals = 3
 			runways = 1
 			stationDateSpan = 10
 			cost = 16000
@@ -43,7 +43,7 @@ class Air {
 			airportType = AIAirport.AT_METROPOLITAN
 			supportBigPlane = true
 			population = 4000
-			maxPlanes = 10
+			terminals = 3
 			runways = 2
 			stationDateSpan = 8
 			cost = 17000
@@ -53,7 +53,7 @@ class Air {
 			airportType = AIAirport.AT_INTERNATIONAL
 			supportBigPlane = true
 			population = 10000
-			maxPlanes = 12			
+			terminals = 6			
 			runways = 2
 			stationDateSpan = 5
 			cost = 22000
@@ -63,7 +63,7 @@ class Air {
 			airportType = AIAirport.AT_INTERCON
 			supportBigPlane = true
 			population = 20000
-			maxPlanes = 20
+			terminals = 8
 			runways = 4
 			stationDateSpan = 4
 			cost = 46000
@@ -355,29 +355,6 @@ class AirRoute extends CommonRoute {
 	function OnVehicleLost(vehicle) {
 	}
 	
-	/*
-	function EstimateMaxVehicles(distance, vehicleLength = 0) {
-		local airportTraits = Air.Get().GetAvailableAiportTraits()
-		if(airportTraits.len() == 0) {
-			return 0;
-		}
-		return airportTraits[0].maxPlanes;
-	}
-	
-	function GetMaxVehicles() {
-		local srcMax = Air.Get().GetAiportTraits(srcHgStation.airportType).maxPlanes;
-		srcMax = ceil(srcMax / (ArrayUtils.Without(srcHgStation.GetUsingRoutes(),this).len()+1));
-		local destMax = Air.Get().GetAiportTraits(destHgStation.airportType).maxPlanes;
-		destMax = ceil(destMax / (ArrayUtils.Without(destHgStation.GetUsingRoutes(),this).len()+1));
-		local latestVehicle = GetLatestVehicle();
-		if(latestVehicle != null) {
-			local engine = AIVehicle.GetEngineType(latestVehicle);
-			AIEngine.GetMaxSpeed(engine)
-			local days = distance * 664 /  / 24 + 5; // TODO 積み込み時間の考慮
-		}
-		
-		return min(srcMax.tointeger(), destMax.tointeger()) * 
-	}*/
 }
 
 
@@ -462,7 +439,15 @@ class AirRouteBuilder extends CommonRouteBuilder {
 				}
 			} else {
 				local noiseLevelIncrease = AIAirport.GetNoiseLevelIncrease( location, traits.airportType );
-				if( noiseLevelIncrease <= AITown.GetAllowedNoise(AIAirport.GetNearestTown( location, traits.airportType )) + distanceCorrection) {
+				local town;
+				if( HogeAI.Get().isUseAirportNoise ) {
+					town = AIAirport.GetNearestTown( location, traits.airportType );
+				} else {
+					town = AITile.GetClosestTown( location );
+				}
+				
+				
+				if( noiseLevelIncrease <= AITown.GetAllowedNoise(town) + distanceCorrection) {
 					result.push(traits.airportType);
 				}
 			}
@@ -472,7 +457,7 @@ class AirRouteBuilder extends CommonRouteBuilder {
 	
 	function GetUsableStation(placeOrGroup, cargo) {
 		foreach(station in HgStation.SearchStation(placeOrGroup, AIStation.STATION_AIRPORT, cargo, placeOrGroup instanceof Place ? placeOrGroup.IsAccepting() : null)) {
-			if(station.CanShareByMultiRoute()) {
+			if(station.CanShareByMultiRoute(null, cargo)) {
 				return station;
 			}
 		}
@@ -508,6 +493,7 @@ class ExchangeAirsBuilder {
 		local options = {
 			pendingToDoPostBuild = false
 			destRoute = null
+			transfer = false
 		};
 		local newRoute1 = AirRouteBuilder(s1,d1,cargo,options).DoBuild();
 		if(newRoute1 == null) {
@@ -644,10 +630,19 @@ class AirStation extends HgStation {
 		return AIAirport.BuildAirport(platformTile, airportType, joinStation);
 	}
 	
+	function GetAuthorityTown() {
+		if( HogeAI.Get().isUseAirportNoise ) {
+			return AIAirport.GetNearestTown( platformTile, airportType );
+		} else {
+			return AITile.GetClosestTown( platformTile );
+		}
+	}
+	
+	
 	function Build(levelTiles=true,isTestMode=true) {
 		if(levelTiles) {
 			if(isTestMode) {
-				local allowdNoise = AITown.GetAllowedNoise( AIAirport.GetNearestTown( platformTile, airportType ));
+				local allowdNoise = AITown.GetAllowedNoise( GetAuthorityTown() );
 				if(AIAirport.GetNoiseLevelIncrease( platformTile, airportType ) > allowdNoise) {
 					return false;
 				}
@@ -677,7 +672,7 @@ class AirStation extends HgStation {
 
 		if(!BuildPlatform(isTestMode)) {
 			if(!isTestMode) {
-				HgLog.Warning("BuildPlatform(AirStation) failed");
+				HgLog.Warning("BuildPlatform(AirStation) failed (town:"+AITown.GetName(GetAuthorityTown())+")");
 			}
 			return false;
 		}
@@ -731,7 +726,7 @@ class AirStation extends HgStation {
 		return 0;
 	}
 	
-	function CanShareByMultiRoute(infrastractureType = null) {
+	function CanShareByMultiRoute(infrastractureType = null, cargo = null) {
 		local traits = GetAirportTraits();
 		if(infrastractureType != null) {
 			if( traits.level < Air.Get().GetAiportTraits(infrastractureType).level ) {
@@ -739,17 +734,19 @@ class AirStation extends HgStation {
 			}
 		}
 		usingRoutes = GetUsingRoutes();
-		if(usingRoutes.len() >= 3) { // 最低数1のルートが大量にシェアされて小型空港が溢れかえるので
+		if(usingRoutes.len() >= traits.terminals - 1) {
 			return false;
 		}
 		local arrivesPerYear = 0;
 		foreach(route in usingRoutes) {
 			if(route.IsBiDirectional()) {
-				return false;
+				if(cargo == null || route.cargo == cargo) {
+					return false;
+				}
 			}
 			if(route.GetLatestEngineSet() == null) continue;
 			arrivesPerYear += 365 / route.GetLatestEngineSet().GetInterval();
-			if(arrivesPerYear > 365 / traits.stationDateSpan) {
+			if(arrivesPerYear > 365 / traits.stationDateSpan / 2) { // 半分以上空いている時のみ新規航路を受け入れる
 				return false;
 			}
 		}

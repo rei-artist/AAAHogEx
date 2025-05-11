@@ -739,6 +739,8 @@ class Place {
 	static ngPlaces = {};
 	static ngCandidatePlaces = {};
 	static placeStationDictionary = {};
+	static facilityStationsDictionary = {};
+	static facilityStationGroupsDictionary = {};
 	static canBuildAirportCache = {};
 	static notUsedProducingPlaceCache = ExpirationTable(90);
 	static cargoProducingCache = ExpirationTable(180);
@@ -1236,8 +1238,6 @@ class Place {
 		cache = {
 			expectedProduction = ExpirationTable(30)
 			currentExpectedProduction = ExpirationTable(30)
-			sourceStationGroups = {}
-			stationGroups = null
 		}
 		Place.placeCache.rawset(id,cache);
 		return cache;
@@ -1293,6 +1293,7 @@ class Place {
 			local maxStationGroups = GetPopulation() / 10000 + 1; // TODO: spreadの有無やバスの有無で変わる
 			local count = 0;
 			foreach(group in GetStationGroups()) {
+				if(group.IsTownStop()) continue;
 				if(group.HasCargoRating(cargo)) count++;
 			}
 			if(count < maxStationGroups) return true;
@@ -1319,6 +1320,7 @@ class Place {
 					&& (route.GetVehicleType() == AIVehicle.VT_ROAD || route.IsSingle())) {
 				continue;
 			}*/
+			if(route.IsTownTransferRoute()) continue;
 			if(route.IsOverflowPlace(this,cargo)) {
 				continue;
 			}
@@ -1344,32 +1346,6 @@ class Place {
 		return result;
 	}
 	
-	
-	function GetSourceStationGroups(cargo = null) {
-		local cache = GetPlaceCache();
-		if(cache.sourceStationGroups.rawin(cargo)) {
-			return cache.sourceStationGroups.rawget(cargo);
-		}
-		local result = _GetSourceStationGroups(cargo);
-		cache.sourceStationGroups.rawset(cargo,result);
-		return result;
-	}
-	
-	function _GetSourceStationGroups(cargo = null) {
-		local table = {};
-		foreach(route in GetRoutesUsingSource(cargo)) {
-			if(route.IsTownTransferRoute()) {
-				continue;
-			}
-			if(route.IsBiDirectional() && route.destHgStation.place != null && route.destHgStation.place.IsSamePlace(this)) {
-				table.rawset( route.destHgStation.stationGroup, 0 );
-			} else if(route.srcHgStation.stationGroup != null) {
-				table.rawset( route.srcHgStation.stationGroup, 0 );
-			}
-		}
-		return HgTable(table).Keys();
-	}
-
 	function GetRoutesUsingDest(cargo = null) {
 		if(cargo == null) {
 			return PlaceDictionary.Get().GetRoutesByDest(GetAccepting());
@@ -1434,9 +1410,8 @@ class Place {
 		} else {
 			Place.placeStationDictionary[facilityId].push(station.id);
 		}
-		local cache = GetPlaceCache();
-		cache.sourceStationGroups.clear();
-		cache.stationGroups = null;
+		Place.facilityStationsDictionary.rawdelete(facilityId);
+		Place.facilityStationGroupsDictionary.rawdelete(facilityId);
 	}
 
 	function RemoveStation(station) {
@@ -1444,14 +1419,17 @@ class Place {
 		if(Place.placeStationDictionary.rawin(facilityId)) {
 			ArrayUtils.Remove( Place.placeStationDictionary[facilityId], station.id );
 		}
-		local cache = GetPlaceCache();
-		cache.sourceStationGroups.clear();
-		cache.stationGroups = null;
+		Place.facilityStationsDictionary.rawdelete(facilityId);
+		Place.facilityStationGroupsDictionary.rawdelete(facilityId);
 	}
 	
 	function GetStations() {
 		local result = [];
 		local facilityId = GetFacilityId();
+		if(Place.facilityStationsDictionary.rawin(facilityId)) {
+			return Place.facilityStationsDictionary.rawget(facilityId);
+		}
+		
 		if(Place.placeStationDictionary.rawin(facilityId)) {
 			foreach(id in Place.placeStationDictionary[facilityId]) {
 				if(!HgStation.worldInstances.rawin(id)) {
@@ -1460,10 +1438,9 @@ class Place {
 				}
 				result.push(HgStation.worldInstances[id]);
 			}
-			return result;
-		} else {
-			return [];
 		}
+		Place.facilityStationsDictionary.rawset(facilityId,result);
+		return result;
 	}
 	
 	function HasStation(station) {
@@ -1479,11 +1456,13 @@ class Place {
 	}
 	
 	function GetStationGroups() {
-		local cache = GetPlaceCache();
-		if(cache.stationGroups == null) {
-			cache.stationGroups = _GetStationGroups();
+		local facilityId = GetFacilityId();
+		if(Place.facilityStationGroupsDictionary.rawin(facilityId)) {
+			return Place.facilityStationGroupsDictionary.rawget(facilityId);
 		}
-		return cache.stationGroups;
+		local result = _GetStationGroups();
+		Place.facilityStationGroupsDictionary.rawset(facilityId, result);
+		return result;
 	}
 	
 	function _GetStationGroups() {
@@ -1514,6 +1493,12 @@ class Place {
 	}
 
 	function GetRoutesUsingSource(cargo = null) {
+		local result = [];
+		foreach(stationGroup in GetStationGroups()) {
+			result.extend(stationGroup.GetRoutesUsingSource(cargo));
+		}
+		return result;
+	/*
 		if(cargo == null) {
 			local result = [];
 			foreach(producingCargo in GetProducing().GetCargos()) {
@@ -1528,13 +1513,14 @@ class Place {
 			local result = [];
 			foreach(routeId,_ in usingRoutes) {
 				if(Route.allRoutes.rawin(routeId)) { // removeされるといなくなる
-					result.push(Route.allRoutes[routeId]);
+					local route = Route.allRoutes[routeId];
+					if(!route.IsRemoved()) result.push(route);
 				}
 			}
 			return result;
 		} else {
 			return [];
-		}
+		}*/
 	}
 /*
 	
@@ -1551,16 +1537,7 @@ class Place {
 		}
 		return result;
 	}*/
-	
-	function GetRouteCountUsingSource(cargo = null) {
-		local result = 0;
-		foreach(route in GetRoutesUsingSource(cargo)) {
-			if(!route.IsTownTransferRoute() /* && !route.IsOverflowPlace(this,cargo)*/) {
-				result ++;
-			}
-		}
-		return result;
-	}
+
 	
 	function GetLastMonthTransportedPercentage(cargo) {
 		return 0; // オーバーライドして使う
@@ -1948,9 +1925,14 @@ class Place {
 	}
 	
 	function AdjustUsing(production,cargo,isMine) {
-		local key = Id()+"-"+cargo;
-		local stationGroups = GetSourceStationGroups(cargo);
-		if(stationGroups.len() == 0 && (!Place.maybeNotUsed.rawin(key) || Place.maybeNotUsed[key])) {
+		local count = 0;
+		foreach(route in GetRoutesUsingSource(cargo)) {
+			if(route.IsTownTransferRoute()) continue;
+			count ++;
+		}
+		//HgLog.Info("AdjustUsing count:"+count+" production:"+production+" isMine:"+isMine+" cargo:"+AICargo.GetName(cargo)+" "+this);
+		local key = GetFacilityId()+"-"+cargo;
+		if(count == 0 && (!Place.maybeNotUsed.rawin(key) || Place.maybeNotUsed[key])) {
 			if(GetLastMonthTransportedPercentage(cargo) >= 1) {
 				Place.maybeNotUsed.rawset(key,false);
 			} else {
@@ -1958,8 +1940,6 @@ class Place {
 			}
 		}
 		local otherCompanies = !Place.maybeNotUsed.rawin(key) || Place.maybeNotUsed.rawin(key) ? 0 : 1;
-		local usingRoutes = GetRoutesUsingSource(cargo);
-		local count = usingRoutes.len();
 		local isTownCargo = this instanceof TownCargo;
 		if(count == 0 && (!isTownCargo || (isTownCargo && !TownBus.Exists(town,cargo)))) { // 他社は1社であると仮定している
 			return 70 * production / (GetLastMonthTransportedPercentage(cargo) + 70);
@@ -2116,7 +2096,7 @@ class Place {
 			}
 		}
 		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			if(station.CanShareByMultiRoute(airportType)) {
+			if(station.CanShareByMultiRoute(airportType,cargo)) {
 				result = max(station.GetAirportTraits().level, result)
 			}
 		}
@@ -2141,7 +2121,7 @@ class Place {
 			return true;
 		}
 		foreach(station in HgStation.SearchStation(this, AIStation.STATION_AIRPORT, cargo, IsAccepting())) { 
-			if(station.CanShareByMultiRoute(airportType) && Air.Get().IsCoverAiportType(station.GetAirportType(),airportType)) {
+			if(station.CanShareByMultiRoute(airportType, cargo)) {
 				return true;
 			}
 		}

@@ -747,12 +747,8 @@ class StationGroup {
 	}
 
 	function IsTownStop() {
-		foreach(station in hgStations) {
-			if(station.IsTownStop()) {
-				return true;
-			}
-		}
-		return false;
+		if(hgStations.len() == 0) return false;
+		return hgStations[0].IsTownStop();
 	}
 	
 	function HasAirport() {
@@ -2217,7 +2213,9 @@ class HgStation {
 			if(ngTileList.HasItem(tile)) {
 				continue;
 			}
-			if(BuildPieceStation(tile, TownCargo( AITile.GetClosestTown(tile), cargo, true ) ,notAccepted ? false : true/*supressWarning*/)) {
+			if(BuildPieceStation(tile, place 
+					/*他townも含まれてproductionが増えすぎる。TownCargo( AITile.GetClosestTown(tile), cargo, true )*/ 
+					,notAccepted ? false : true/*supressWarning*/)) {
 				Rectangle.Center(HgTile(tile), span).AppendToTileList(ngTileList);
 				success = true;
 			}
@@ -2640,7 +2638,7 @@ class HgStation {
 		return true;
 	}
 
-	function CanShareByMultiRoute(infrastractureType) {
+	function CanShareByMultiRoute(infrastractureType,cargo) {
 		return true; // CommonRouteBuilderから呼ばれる
 	}
 	
@@ -3207,7 +3205,7 @@ class RoadStation extends HgStation {
 	}
 
 
-	function CanShareByMultiRoute(infrastractureType) {
+	function CanShareByMultiRoute(infrastractureType,cargo) {
 		if(AIRoad.GetRoadTramType(infrastractureType) == AIRoad.ROADTRAMTYPES_TRAM) {
 			if(!isTram) return false;
 		} else {
@@ -3467,13 +3465,11 @@ class PieceStation extends HgStation {
 		return result;
 	}
 	
-	function CanShareByMultiRoute(infrastractureType) {
-		return false;
-		/*渋滞の原因になるので使わないでみる
+	function CanShareByMultiRoute(infrastractureType,cargo) {
 		if(AIRoad.GetRoadTramType(infrastractureType) == AIRoad.ROADTRAMTYPES_TRAM) {
 			return false;
 		}
-		return usingRoutes.len() < 1;*/
+		return usingRoutes.len() < 1;
 	}
 	
 	static function GetStationTypeCargo(cargo) {
