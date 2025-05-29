@@ -1458,7 +1458,7 @@ class Route {
 		HgLog.Info("NotifyChangeDestRoute "+this);
 		InvalidateDestRoute();
 		InvalidateEngineSet();
-		if(!IsBiDirectional()) {
+		if(!IsBiDirectional() && srcHgStation.stationGroup!=null) {
 			foreach(route in srcHgStation.stationGroup.GetUsingRoutesAsDest()) {
 				route.NotifyChangeDestRoute(callers);
 			}
@@ -1474,8 +1474,8 @@ class Route {
 		callers.rawset(this,0);
 		HgLog.Info("NotifyAddTransfer cargo["+AICargo.GetName(cargo)+"] "+this);
 		if(HasCargo(cargo)) {
-			srcHgStation.stationGroup.ClearCache();
-			destHgStation.stationGroup.ClearCache();
+			if(srcHgStation.stationGroup!=null) srcHgStation.stationGroup.ClearCache();
+			if(destHgStation.stationGroup!=null) destHgStation.stationGroup.ClearCache();
 			needsAdditionalCache.clear();
 			productionCargoCache.clear();
 			InvalidateEngineSet();
