@@ -297,10 +297,13 @@ CommonEstimation <- delegate Estimation : {
 
 		if( vehicleType == AIVehicle.VT_AIR && cargo == HogeAI.GetPassengerCargo() && isBidirectional) {
 			// TODO: もっと汎用的にすべきかも
-			local mailCargoIncome = AICargo.GetCargoIncome( HogeAI.GetMailCargo(), totalDistance, cruiseDays + additionalCruiseDays);
-			local mailCapacity = Air.Get().GetMailSubcargoCapacity(engine);
-			incomePerOneTime += mailCargoIncome * mailCapacity;
-			incomePerOneTimeReturn += mailCargoIncome * mailCapacity;
+			local mail = HogeAI.GetMailCargo();
+			if(mail != null) {
+				local mailCargoIncome = AICargo.GetCargoIncome( mail, totalDistance, cruiseDays + additionalCruiseDays);
+				local mailCapacity = Air.Get().GetMailSubcargoCapacity(engine);
+				incomePerOneTime += mailCargoIncome * mailCapacity;
+				incomePerOneTimeReturn += mailCargoIncome * mailCapacity;
+			}
 		}
 
 		incomePerOneTime += incomePerOneTimeReturn;
