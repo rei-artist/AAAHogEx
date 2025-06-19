@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 113;
+	static version = 114;
 
 	static container = Container();
 	static notBuildableList = AIList();
