@@ -2021,7 +2021,9 @@ class CommonRoute extends Route {
 			if(depot != null) {
 				return true;
 			}
-			path = path.GetParent();
+			if (path.GetParent() != null) {
+				path = path.GetParent();
+			}
 		}
 		depot = path.BuildDepot(GetVehicleType());
 		if(srcHgStation instanceof CanalStation || srcHgStation instanceof WaterStation) {
