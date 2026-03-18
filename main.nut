@@ -15,7 +15,7 @@ require("air.nut");
 
 
 class HogeAI extends AIController {
-	static version = 114;
+	static version = 115;
 
 	static container = Container();
 	static notBuildableList = AIList();
@@ -1477,7 +1477,7 @@ class HogeAI extends AIController {
 				
 				HgLog.Info("Estimate:" + routeClass.GetLabel()+"["+AICargo.GetName(cargo)+"] prod:"+stdProduction);
 				foreach(distanceIndex, distance in distanceEstimateSamples) {
-					if(vehicleType != AIVehicle.VT_AIR && distance > 550) {
+					if(vehicleType != AIVehicle.VT_AIR && distance > 1000) {
 						continue;
 					}
 					local estimate = Route.Estimate(routeClass.GetVehicleType(), cargo, distance, stdProduction, CargoUtils.IsPaxOrMail(cargo) ? true: false, infrastractureTypes);
@@ -3331,10 +3331,9 @@ class HogeAI extends AIController {
 			estimate.AppendCruiseDistance(cruiseDistance);
 			estimate.AppendSources(srcCenterTile, srcCruiseDays, placeScore[0]);
 			estimate.Estimate();
-			local buildingTime = 100 + max(100,buildingDistance * 4);
+			local buildingTime = 100 + max(100,buildingDistance * 4) + 400/*refactorにかかる時間*/;
 			
 			local value = (estimate.routeIncome - estimateCurrent.routeIncome) / buildingTime;
-			HgLog.Info("addtional place:"+placeScore[0]+" value:"+value+" routeIncome:"+estimate.routeIncome+" cargoDist:"+cargoDistance+" reuseDist:"+reuseDistance+" buildingDist:"+buildingDistance);
 			if(value < currentValue / 5) continue;
 			local slopeRate = VehicleUtils.AdjustTrainScoreBySlope( 100, route.GetLatestEngineSet().engine, forkPoint, placeLocation, true );
 			if(slopeRate < 50) {
@@ -3354,6 +3353,8 @@ class HogeAI extends AIController {
 					placeScore[1] += (orgScore * AICargo.GetCargoIncome(subCargo, cargoDistance, estimate.cruiseDays).tofloat() * prod / income).tointeger();
 				}
 			}
+			HgLog.Info("addtional place:"+placeScore[0]+" score:" +placeScore[1]+ " slopeRate:"+slopeRate
+				+" value:"+value+" routeIncome:"+estimate.routeIncome+" cargoDist:"+cargoDistance+" reuseDist:"+reuseDistance+" buildingDist:"+buildingDistance);
 			placeScores.push(placeScore);
 			DoInterval();
 		}
